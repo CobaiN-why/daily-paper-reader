@@ -1,0 +1,336 @@
+Title: Cost-Effective Repository Exploration for Agentic Issue Localization
+
+URL Source: https://arxiv.org/pdf/2608.29675v1
+
+Published Time: Tue, 01 Sep 2026 01:35:38 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+# Cost-Effective Repository Exploration for Agentic Issue Localization 
+
+# Mohammad Nour Al Awad ✉
+
+ITMO University Saint Petersburg, Russian Federation mohammadnouralawad@itmo.ru 
+
+# Sergey Ivanov 
+
+ITMO University Saint Petersburg, Russian Federation svivanov@itmo.ru 
+
+## Abstract 
+
+Repository exploration is a distinct and costly stage of coding-agent pipelines: before generating a patch, an agent must identify which repository files are likely to matter. We study whether this stage can be delegated to lower-cost models while retaining useful local-ization quality. Using our IssueLoc-Bench, we evaluate five explorer models under the same read-only interactive interface on 499 SWE-bench Verified-derived tasks and 500 tasks from 153 additional repositories. We measure early candidate discovery, top-three gold-file coverage, strict file-set recovery, agent time, and token usage, with paired instance-level uncertainty and repository-clustered sensitivity analysis. The highest-quality explorer leads across local-ization metrics, but substantially cheaper operating points emerge: depending on the model and evaluation arm, lower-cost explorers retain approximately 78–94% of the reference Hit@3 and 73–92% of its F1 while reducing mean agent time by 41–88% and token usage by 84–95%. The preferred operating point depends on how localization is consumed downstream: ranking and coverage met-rics characterize recoverable candidate handoffs, whereas F1 and exact match characterize restrictive file gates. These results support treating repository exploration as an independently measurable and budgetable stage of modular coding agents, with explorer selection guided by the downstream handoff contract. 
+
+## CCS Concepts 
+
+• Software and its engineering → Software defect analysis ;
+
+Software maintenance tools ; • Computing methodologies → In-telligent agents ; • Information systems → Evaluation of re-trieval results. 
+
+## Keywords 
+
+issue localization, coding agents, repository exploration, model allocation, large language models 
+
+ACM Reference Format: 
+
+Mohammad Nour Al Awad and Sergey Ivanov. 2026. Cost-Effective Repos-itory Exploration for Agentic Issue Localization. In Proceedings of the 1st International Workshop on Agentic AI for Next-Generation Software Develop-ment (AgenticDev ’26), October 12–16, 2026, Munich, Germany. ACM, New York, NY, USA, 11 pages. https://doi.org/10.1145/3843282.3844422 
+
+> This work is licensed under a Creative Commons Attribution 4.0 International License.
+> AgenticDev ’26, Munich, Germany
+> © 2026 Copyright held by the owner/author(s). ACM ISBN 979-8-4007-2985-0/2026/10 https://doi.org/10.1145/3843282.3844422
+
+## 1 Introduction 
+
+Modern coding agents are multi-stage systems: they interpret an issue, explore the repository, synthesize a patch, and validate the result. Model allocation across these stages is usually implicit be-cause one model performs most or all of the trajectory. Repository exploration is an especially natural stage at which to make alloca-tion explicit. It produces a compact intermediate artifact—a ranked candidate-file list—whose quality and production cost can be mea-sured independently of patch generation. Before repair, the agent must determine where to look by mapping a natural-language issue report to files containing relevant evidence and plausible edit locations. This repository-exploration problem is difficult because issue reports are often incomplete, repositories are large, and the connection between a problem description and concrete files is rarely explicit [3, 4, 7, 10]. Poor exploration can in-troduce irrelevant context, consume downstream reasoning budget, and misdirect subsequent work. We therefore ask: under a fixed repository-interaction interface, what localization-quality and operational-cost trade-offs arise when different models serve as the dedicated explorer? Loc2Repair provides evidence that predicted file localization can improve resolved rates across multiple repair backbones [2]. We study the complementary upstream decision: which quality–cost operating points are avail-able when producing that localization signal? This motivates the split-allocation design in Figure 1, in which a dedicated explorer identifies candidate files before repair and validation. This study evaluates production of the localization signal; it does not directly measure the end-to-end repair effect of each explorer. Repository-grounded benchmarks have made issue resolution in-creasingly realistic. SWE-bench evaluates end-to-end resolution of real GitHub issues, SWE-agent demonstrates the value of repository interaction, and RepoBench and RepoGraph emphasize repository-level context and structure [6, 9, 12, 21]. Yet end-to-end outcomes conflate issue understanding, exploration, localization, patch gen-eration, execution, and retry policy [3, 20]. They therefore do not isolate the narrower allocation question studied here: how should model choice and operational budget be assigned to exploration before repair begins? We study this question using IssueLoc-Bench as a controlled file-level localization substrate. Given an issue report and a pre-fix repository snapshot, an explorer interacts with the repository through a fixed read-only interface and returns an ordered list of repository-relative candidate files. The interface is held constant; the main experimental variable is the explorer model . This keeps the study focused on model allocation rather than on interface or retrieval-method comparisons. arXiv:2608.29675v1 [cs.SE] 30 Aug 2026 AgenticDev ’26, October 12–16, 2026, Munich, Germany Mohammad Nour Al Awad and Sergey Ivanov     
+
+> Lower-cost explorer Stronger repairer
+> Issue report Repository exploration
+> ls ,find ,grep ,cat
+> Ranked candidates
+> ordered repository-relative files
+> Decision point
+> top-𝑘 files + evidence
+> Patch synthesis
+> given file hints
+> Validation
+> tests + semantic checks
+> Accepted fix
+
+Figure 1: Model-allocation pipeline in which a lower-cost explorer ranks candidate files before stronger repair and validation. 
+
+File-level localization matches this upstream repository-exploration role. Before a repair model can reason about a patch, the agent must decide which files to open, search within, summa-rize, or pass forward as context. Because the resulting ordered paths can be scored without generating a patch, they create an observable boundary between exploration and the later stages of an agent trajectory. The paper evaluates two fixed arms. The first is a SWE-bench Verified-derived arm with 499 tasks, connecting the analysis to a widely used repair benchmark while changing the target to file-level localization. The second is an IssueLoc random-repository arm with 500 tasks, evaluating the same explorer interface on repository-disjoint issues from the IssueLoc construction pipeline. Together, the arms test whether the same model-allocation trade-off persists across substantially different repository and gold-file distributions. The controlled comparison tests whether lower-cost checkpoints occupy useful explorer operating points under the same interface. We distinguish two handoff contracts: a soft handoff , in which ranked candidates guide subsequent inspection while repository access remains recoverable, and a hard gate , in which the predicted file set constrains downstream access. Ranking and coverage met-rics characterize the former, while F1 and exact match characterize the latter. This distinction prevents a single aggregate score from obscuring which part of localization quality a downstream design would consume. This boundary improves both measurement and system con-trol. An end-to-end resolved-rate score cannot identify whether a failure originated in repository search, patch synthesis, valida-tion, or retry policy. By contrast, a structured ranked-file artifact exposes whether the explorer found a useful entry point, covered a multi-file footprint, or calibrated the final file set. Holding the interface constant then attributes differences to complete explorer configurations rather than to different tool protocols. The same boundary also makes the stage independently budgetable: a system can choose an explorer operating point, candidate budget, and es-calation condition without changing the representation passed to later stages. 
+
+## 1.1 Research Questions 
+
+We organize the empirical study around four research questions: (1) RQ1 (Quality retention). How much localization quality do lower-cost explorer models retain relative to the highest-performing evaluated explorer? (2) RQ2 (Cost reduction). How much agent time and token use do lower-cost explorers save? (3) RQ3 (Candidate discovery vs. exact recovery). How does quality retention differ between candidate discovery and strict file-set recovery across models and evaluation arms? (4) RQ4 (Cross-arm consistency). Are conclusions consis-tent across the SWE-bench Verified-derived and random-repository arms? 
+
+Contributions. This paper makes four main contributions: 
+
+• We formulate explorer-model allocation as a design prob-lem in modular coding agents, separating explorer choice from downstream patch synthesis and validation. 
+
+• We conduct a controlled comparison of five explorer models under a fixed read-only interactive interface on SWE-bench Verified-derived tasks and our 500-task random-repository arm. 
+
+• We characterize quality–cost operating points using early ranking, top-three gold coverage, strict set recovery, agent time, and token usage, together with paired instance-level uncertainty and repository-clustered sensitivity analysis. 
+
+• We show that explorer selection depends on the localiza-tion handoff contract: early-ranking metrics characterize recoverable candidate handoffs, while F1 and exact match characterize restrictive file gates. The remainder of the paper reviews related work, defines the file-level exploration task, describes the two evaluation arms and fixed interactive runner, reports quality–cost results, and discusses implications and threats to validity. Cost-Effective Repository Exploration for Agentic Issue Localization AgenticDev ’26, October 12–16, 2026, Munich, Germany 
+
+## 2 Background and Related Work 2.1 Issue Localization and Evaluation 
+
+A long line of work formulates bug or issue localization as a retrieval problem: given a natural-language report, rank source artifacts by their likelihood of requiring modification. Prior work has shown that localization quality depends on how textual relevance is com-bined with additional evidence such as report structure, version history, related reports, and repository organization [14, 17–19, 22]. More recent surveys show that this remains true in neural settings, where strong performance often depends on hybridization of lexi-cal, historical, and learned signals rather than on a single modeling advance [11]. Recent work extends this perspective to LLM-based issue localization over repositories, including retrieve-and-rerank formulations, graph-guided agentic search, and multi-turn reposi-tory exploration [3, 5, 13, 23]. Two lessons from this literature are directly relevant here. First, localization quality depends strongly on benchmark construction and evaluation protocol. Second, the meaning of a localization target depends on the artifact granularity and supervision semantics used to define it. Bug-localization research has repeatedly shown that benchmark design materially affects conclusions. Bench4BL highlighted repro-ducibility difficulties across datasets and implementations [8], and Akbar et al. showed that preprocessing and evaluation choices can substantially change both absolute performance and relative rank-ings among techniques [1]. These findings motivate benchmarks with explicit supervision semantics, leakage-resistant splits, and multiple complementary metrics. For agentic repository exploration, ranking metrics and set met-rics have different operational meanings. Ranking metrics indicate whether useful files are surfaced early enough to guide downstream inspection or repair. Exact set recovery and F1 measure a stricter target: how well the final predicted file set matches the histori-cal resolution footprint. This distinction is especially important in recent localization benchmarks, where dataset scope, issue type diversity, and supervision targets vary substantially across Loc-Bench, SweLoc, MULocBench, and issue-at-large style collections [3, 10, 13, 26]. 
+
+## 2.2 Repository Exploration in Repair Pipelines 
+
+Recent benchmarks have shifted software-engineering evaluation from isolated snippets to full repositories. RepoBench studies repository-level retrieval and completion in multi-file settings [9]. SWE-bench evaluates end-to-end resolution of real GitHub issues against executable test outcomes [6]. SWE-agent further shows that interactive repository use can improve repository-grounded issue resolution [21]. These benchmarks have been highly influential, but they evaluate composed behavior: issue understanding, repository search, localization, patch generation, execution, and interaction policy all contribute to final outcomes. SWE-Explore asks how repository exploration should be bench-marked and connects fine-grained exploration quality to repair behavior [25]; SWE-Router asks when a cheap ongoing repair tra-jectory should be escalated [16]. In contrast, we hold the repository-exploration interface fixed and directly measure how explorer model choice changes file-level candidate quality, runtime, and token use across two evaluation arms. IssueLoc-Bench complements these benchmarks by isolating file-level localization under repository-grounded pre-fix conditions while preserving the artifact structure used by modern repair sys-tems. This supports a narrower systems question: which evaluated model should serve as a dedicated explorer? Several recent systems make localization explicit within repository-grounded repair. Agentless uses a localization–repair– validation pipeline; LocAgent, CoSIL, RGFL, and SGAgent likewise connect localization to issue resolution [3, 5, 15, 20, 23, 24]. Loc2Repair directly evaluates the downstream half of this pipeline: it decouples file localization from patch synthesis, applies local-ization across multiple repair backbones, and observes higher resolved rates [2]. Given that localization is an empirically useful repair lever, IssueLoc-Bench studies its production: repository-grounded file-level candidate discovery over pre-fix snapshots with commit-linked supervision and a fixed interface. Together, the studies expose two separable pipeline decisions: how localization is consumed by repair and which model and operational budget are used to produce it. 
+
+## 3 Task Definition 3.1 Task and Formalization 
+
+We formulate repository-grounded file-level issue localization as an upstream exploration task. Given a natural-language issue report and a repository snapshot taken immediately before the historical human fix, an explorer must rank existing repository files that are plausible candidates for downstream repair. The task isolates repos-itory exploration from patch synthesis and validation: explorers do not modify code, execute fixes, or predict files absent from the pre-fix snapshot. Each instance is defined by an issue-side input 𝐼 and a pre-fix repository snapshot 𝑅 . In the main study, 𝐼 contains the issue text available in the task record: issue title and body for IssueLoc in-stances, and linked issue text or SWE-bench problem-statement fallback for transformed SWE-bench instances. Let F ( 𝑅 ) denote the set of repository-relative file paths present in snapshot 𝑅 . Given 
+
+(𝐼, 𝑅 ), a system must produce an ordered list of distinct predicted files 
+
+𝑓 (𝐼, 𝑅 ) → [ 𝑝 1, 𝑝 2, . . . , 𝑝 𝑘 ]
+
+such that each 𝑝 𝑗 ∈ F ( 𝑅 ).The gold label set 𝐺 contains files modified by the historical human resolving commit after the filters in §4; it operationalizes a reproducible historical resolution footprint rather than a minimal causal file set. The task is file-level, repository-grounded, pre-fix, and localization-only: outputs are existing repository-relative paths, and systems neither modify code nor validate a repair. Function- or line-level localization can be useful after a repair model has selected a candidate region, but file-level prediction is the natural operational unit for repository-scale exploration and context selection. It determines which files an agent reads, searches, summarizes, ranks, or passes to downstream synthesis and valida-tion stages. AgenticDev ’26, October 12–16, 2026, Munich, Germany Mohammad Nour Al Awad and Sergey Ivanov 
+
+## 3.2 Interactive Explorer and Handoff 
+
+The evaluated setting is interactive repository exploration. An agent may inspect the pre-fix repository snapshot through read-only exploration before emitting a final ranked file list. Interaction is restricted to repository inspection. Agents may browse directories, search for identifiers or strings, and inspect candidate files, but they may not modify repository contents. Each run must terminate with a final structured prediction containing an ordered list of repository-relative file paths. The runner records interaction traces, command counts, elapsed time, and token usage when available. This design fixes the agent interface while varying the explorer model. We evaluate both a soft handoff , where ranking and cover-age measure whether relevant files surface early for downstream inspection, and a hard gate , where F1 and exact match measure how well the emitted set constrains downstream access. The distinction is operational, not merely metric terminology. Under a recoverable soft handoff, a false positive consumes inspec-tion budget, but a repair stage that retains repository access can still follow imports, symbols, tests, or newly discovered evidence. Missing every relevant file near the top then provides a weak start-ing signal. Under a hard gate, an omitted file becomes inaccessible downstream, while an unnecessary file enlarges the permitted con-text; set completeness and calibration consequently matter more. The same ranked output can therefore have different value under the two contracts, so explorer selection should be tied to how the downstream stage uses the prediction. 
+
+## 4 Benchmark Construction and Evaluation Arms 
+
+IssueLoc-Bench is a benchmark artifact contributed by this work, combining task and label manifests, deterministic pre-fix snapshots, a shared evaluator, and runnable explorer pipelines. Its two arms connect a standard repair benchmark to our independently collected repository sample. 
+
+## 4.1 IssueLoc Collection and Manifest Design 
+
+We construct the random-repository arm from recent issue-resolution activity in popular, actively maintained public GitHub repositories. Within this source population, the collection samples issue–pull-request pairs and retains only merged pull requests that GitHub links to exactly one issue and that contain exactly one commit. The one-to-one linkage removes ambiguous multi-issue resolutions, while the single-commit constraint provides an unambiguous resolving revision from which to derive file labels. Repositories are separated across the released IssueLoc splits. Recency mitigates contamination risk because newer issue–pull-request pairs have had less opportunity to enter pretraining corpora than long-established benchmark instances. It cannot guarantee non-exposure, especially for public, popular repositories; possible training exposure therefore remains a validity threat. Each retained instance has task and label records joined by 
+
+instance_id . Task records contain the issue title, body, available discussion, repository and pull-request identifiers, split, and snap-shot locators. Label records contain the resolving commit and the filtered gold file set as repository-relative paths. These labels rep-resent the historical resolution footprint, not a minimal causal file set. The released builder fetches each resolving commit and mate-rializes its parent tree as the explorer workspace, reducing direct post-fix leakage. Together, the public manifest, builder, evaluator, and scoring code make the inputs, labels, and reconstruction proce-dure inspectable and reproducible. The code-focused view excludes instances whose histori-cal change would require predicting newly added or removed files, binary-like files, empty gold sets after filtering, or entirely markdown/text-like targets. These filters keep the target aligned with localization of existing implementation artifacts. 
+
+## 4.2 Evaluation Arms and Characteristics 
+
+The empirical study uses two fixed evaluation arms, summarized in Table 1. The SWE-bench Verified-derived arm comes from the test 
+
+split of SWE-bench/SWE-bench_Verified ; it materializes snap-shots from SWE-bench base commits and derives file-level labels from patch decomposition. Of 500 source instances, 499 remain after filtering. Our IssueLoc arm comprises 500 random-repository test instances from 153 repositories, with repositories kept disjoint across IssueLoc splits. We use both arms as evaluation sets, not as train/development/test stages for model selection. The two arms differ in useful ways for model-allocation analy-sis. The SWE-bench Verified-derived arm has fewer gold files per task on average but much larger repositories, making candidate discovery a broad search problem. The random-repository arm has smaller repositories on average but a larger historical file foot-print per task. These differences make the arms complementary: one connects to a widely used repair benchmark, and the other evaluates repository-disjoint issue localization under the IssueLoc construction pipeline. We report the arms separately rather than pooling their instances. A pooled average would mix two different deployment questions and would be dominated by whichever composition happened to receive more weight. Separate results reveal whether a model is consistently useful when exploration requires searching a large tree, when the historical resolution spans several files, or both. They also make the unit of generalization explicit: the SWE-derived arm supplies many tasks from a small group of repositories, whereas the random-repository arm distributes tasks across a much broader repository sample. This difference motivates both instance-level and repository-clustered uncertainty analysis. 
+
+## 5 Evaluation Protocol 5.1 Discovery and Set-Recovery Metrics 
+
+For instance 𝑖 , let 𝐺 𝑖 denote the gold file set and let 𝜋 𝑖 =
+
+[𝑝 𝑖 1, 𝑝 𝑖 2, . . . ] be the ranked prediction list. We make ranking met-rics primary because an explorer is most useful when it surfaces relevant candidate files early for downstream repair. We define Hit@ 𝑘 𝑖 = 1 ∃𝑗 ≤ 𝑘 : 𝑝 𝑖 𝑗 ∈ 𝐺 𝑖 
+
+ ,
+
+and RR 𝑖 =
+
+( 1min { 𝑗 |𝑝 𝑖 𝑗 ∈𝐺 𝑖 } if such 𝑗 exists 0 otherwise. Cost-Effective Repository Exploration for Agentic Issue Localization AgenticDev ’26, October 12–16, 2026, Munich, Germany 
+
+Table 1: Summary of the two evaluation arms. Repository size is the number of paths in the materialized pre-fix snapshot.             
+
+> Arm Inst. Repos Gold avg Repo avg SWE-bench Verified-derived 499 12 1.24 3898.5 IssueLoc random-repository 500 153 2.27 614.2
+
+We report Hit@1, Hit@3, Hit@5, and mean reciprocal rank (MRR). We also report gold-file recall@3 (R@3). Let 𝑃 (3) 
+
+> 𝑖
+
+be the distinct paths among the first three predictions: R@3 𝑖 = |𝑃 (3) 
+
+> 𝑖
+
+∩ 𝐺 𝑖 ||𝐺 𝑖 | .
+
+The reported R@3 is the macro average over instances. Hit@3 records whether any gold file is found, whereas R@3 measures the fraction of the gold set covered within the same candidate budget. Together with MRR, these metrics capture candidate-discovery util-ity even when the final list is incomplete or overinclusive. Because prediction lists are variable-length, metrics at larger 𝑘 need not differ when an explorer emits fewer than 𝑘 candidates. Let 𝑃 𝑖 be the deduplicated predicted file set derived from the ranked output. Define TP 𝑖 = |𝑃 𝑖 ∩ 𝐺 𝑖 |, FP 𝑖 = |𝑃 𝑖 \ 𝐺 𝑖 |, FN 𝑖 = |𝐺 𝑖 \ 𝑃 𝑖 |.
+
+Per-instance set metrics are Prec 𝑖 = TP 𝑖 
+
+TP 𝑖 + FP 𝑖 
+
+, Rec 𝑖 = TP 𝑖 
+
+TP 𝑖 + FN 𝑖 
+
+,
+
+F1 𝑖 = 2 · Prec 𝑖 · Rec 𝑖 
+
+Prec 𝑖 + Rec 𝑖 
+
+, EM 𝑖 = 1[𝑃 𝑖 = 𝐺 𝑖 ].
+
+For an empty predicted set, we define per-instance precision as zero; whenever Prec 𝑖 + Rec 𝑖 = 0, we define F1 𝑖 = 0, consistent with the evaluator. We report macro-averaged set metrics across scored instances 
+
+I:F1 macro = 1
+
+|I| ∑︁ 𝑖 ∈ I 
+
+F1 𝑖 , EM = 1
+
+|I| ∑︁ 𝑖 ∈ I 
+
+EM 𝑖 .
+
+These set metrics capture final prediction calibration . Exact match is intentionally strict: it measures whether the emitted file set ex-actly matches the historical resolution footprint under the bench-mark definition. Macro F1 is less brittle and reflects partial recovery of the gold set while penalizing overprediction. 
+
+## 5.2 Scoring and Operational Metrics 
+
+The evaluator also reports execution and validity statistics, includ-ing attempted rows, missing-label rows, error rows, error rate, and non-empty prediction rate. In our benchmark setting, an error row 
+
+is an instance for which the runner does not produce a valid final prediction payload within the allowed execution constraints, most commonly because the trajectory times out. Thus, ErrorRate should be interpreted as the fraction of attempted instances that fail to complete with a valid prediction under the benchmark runtime rules, rather than as a model-internal decoding error alone. ErrorRate = 𝑁 error 
+
+𝑁 attempted 
+
+,
+
+NonEmptyRate = 𝑁 pred_nonempty 
+
+𝑁 scored 
+
+.
+
+These statistics expose whether an operating point completes reli-ably. Scoring applies to every recorded prediction row with a matching label; rows without matching labels are excluded. All such labeled rows remain in the denominators for Hit@k, MRR, macro F1, and exact match, including failed/error runs. If a failed run has no valid prediction, its prediction list is empty and receives zero localization credit. A valid but empty prediction likewise receives zero localiza-tion credit but is not counted as an execution error. If a predicted path does not exist in the materialized repository snapshot, it is retained and counted as a false positive under set-based metrics. The evaluator does not impose a post-hoc list-length cap; it scores the emitted prediction list as produced by the runner or model. Schema violations and timeouts are counted in error statis-tics but do not remove labeled rows from quality scoring. From runner traces and per-instance metadata, we aggregate av-erage agent steps, reads, writes, shell commands, agent time, token usage, and output size. Agent time is the mean per-attempt wall-clock agent elapsed time; it includes model/API waiting, repository-tool execution, and timeout penalties. Average token counts are computed only over instances for which token-usage metadata was recorded; usage coverage can differ across model runs because failed trajectories do not always report token counts. Reported reductions are observed explorer operating-point differences, not intrinsic model-speed differences: the complete operating point includes model behavior, interaction turns, repository-tool use, stopping behavior, and serving/runtime characteristics. In IssueLoc-Bench, localization is both an accuracy task and an operational control point. Accordingly, a setting that improves exact recovery at materi-ally higher agent time or token use should be interpreted differently from one that offers a lower-cost trajectory with weaker final set recovery. 
+
+## 5.3 Paired Uncertainty Quantification 
+
+For each arm, we align every alternative explorer with the highest-quality reference explorer by instance and define each difference as alternative minus reference. We reconstruct Hit@1, Hit@3, Hit@5, R@3, MRR, per-instance F1, exact match, agent time, and input, output, and total tokens directly from the run artifacts using the evaluator’s scoring and markdown-filtering functions. We use a percentile paired bootstrap with 10,000 resamples, fixed seed 1729, and 95% marginal confidence intervals. Quality metrics use all 499 or 500 aligned instances; operational metrics use pairwise-complete observations, with the exact sample size reported in the artifact. For binary Hit@ 𝑘 and exact-match outcomes, we additionally report two-sided exact McNemar tests and Holm-adjusted values across the 32 binary comparisons. Instances from the same repository need not be independent. As a sensitivity analysis, we therefore resample repositories with AgenticDev ’26, October 12–16, 2026, Munich, Germany Mohammad Nour Al Awad and Sergey Ivanov 
+
+replacement while retaining every aligned instance in each sampled repository. This clustered bootstrap uses the 12 repositories in the SWE-bench Verified-derived arm and the 153 repositories in the random-repository arm. We treat a directional difference as supported by a given analysis only when its interval excludes zero. These intervals quantify uncertainty under instance or repository resampling of the recorded runs; they do not estimate run-to-run variability from repeated stochastic model executions. 
+
+## 6 Experimental Setup 6.1 Artifact and Serving Environment 
+
+All experiments are conducted on a fixed released version of IssueLoc-Bench. For each instance, we use the released task input together with the aligned commit-linked label metadata to recon-struct the corresponding pre-fix repository snapshot. Specifically, evaluation is performed on the repository state immediately preceding the historical human resolving commit. This ensures that explorers localize against the unresolved codebase rather than against post-fix artifacts. Experiments are orchestrated on a server with four NVIDIA RTX 6000 Ada GPUs. Models are served locally through vLLM OpenAI-compatible endpoints. Every model receives the same localization task, read-only interaction contract, and per-instance time budget. 
+
+## 6.2 Models and Interactive Runner 
+
+We evaluate the following five checkpoints: 
+
+• zai-org/GLM-4.7-Flash ;
+
+• google/gemma-4-E4B-it ;
+
+• Qwen/Qwen3-30B-A3B-Instruct-2507 ;
+
+• Qwen/Qwen3-Coder-30B-A3B-Instruct ; and 
+
+• Qwen/Qwen3-4B-Instruct-2507 .These checkpoints cover general-purpose, code-specialized, and compact explorer configurations. The controlled comparison asks how model choice changes explorer quality and observed opera-tional cost. Our setting uses an interactive mini-agent localization runner operating over the materialized pre-fix snapshot. Concretely, this runner follows a constrained mini-SWE-agent-style interaction pattern: for each instance, it prepares a temporary workspace, con-structs the issue prompt, and launches an agent that is instructed to perform localization only and terminate with a final structured ranked file prediction. The agent interacts with the repository exclusively through shell-based read-only inspection commands. In our standard configura-tion, prompts restrict tool use to commands such as ls , find , grep ,
+
+cat , nl , and sed -n , preventing file modification and keeping the interaction focused on repository inspection rather than repair. In the standard setup, the per-instance timeout is 600 seconds. 
+
+## 6.3 Implementation and Evaluation Procedure 
+
+The released artifact contains the components required to recon-struct and evaluate the reported experiments: deterministic snap-shot materialization, constrained per-instance execution, the shared evaluator, runnable localization pipelines, and result-generation utilities. Runs use isolated workspaces and support optional Docker sandboxing, parallel and resumable execution, and persistent inter-action traces. These traces record elapsed time, interaction counts, token-usage metadata, and execution errors, which are used to analyze localization quality jointly with operational behavior. After prediction generation, explorer outputs are scored against the released label manifests using the shared evaluation pipeline. We evaluate the two arms in Table 1 for each model under the same interactive runner. Unless otherwise specified, the results use the markdown-ignored evaluation view, in which markdown-and text-like files are excluded during scoring so that the analysis focuses on code-file localization. All runs use the same issue-text mode within each arm. For IssueLoc instances this corresponds to title and body fields; for transformed SWE-bench instances it uses linked issue text when available and the SWE-bench problem statement as fallback. 
+
+## 7 Results 
+
+The results focus on explorer-model allocation under the fixed interactive interface. Tables 2 and 3 report raw point estimates, and Table 4 reports paired uncertainty. We also express quality retention and cost reduction relative to the highest-quality reference explorer. 
+
+## 7.1 Evaluation-Arm Results 
+
+SWE-bench Verified-Derived Arm. Table 2 shows that the refer-ence explorer leads every localization metric on the SWE-bench Verified-derived arm, but also produces the longest and most token-intensive trajectories. Qwen3-Coder-30B-A3B comes closest on top-three discovery. Qwen3-30B-A3B provides the strongest alternative-explorer F1 and the lowest token total, while Gemma-4-E4B and Qwen3-4B occupy shorter-time operating points. The ranking columns also show that the comparison is effectively concentrated near the head of the list. Almost every prediction contains no more than three files, so Hit@5 usually equals Hit@3. Only Qwen3-Coder gains an additional hit below rank three. This output pattern reinforces Hit@3 and R@3 as the most informative fixed-budget handoff measures for these runs. 
+
+Random-Repository Arm. Table 3 shows the same broad order-ing on our random-repository arm: the reference explorer leads localization quality and uses the most time and tokens. Among the alternatives, Qwen3-30B-A3B has the strongest Hit@3, F1, and exact match, whereas Qwen3-Coder-30B-A3B has the strongest R@3. Gemma-4-E4B and Qwen3-4B again trade additional quality for shorter mean completion time. 
+
+## 7.2 Paired Model-Comparison Uncertainty 
+
+At the instance level, every alternative explorer has Hit@3, R@3, and F1 intervals below zero relative to the reference, while ev-ery time and token interval favors the alternative. The smallest SWE-derived Hit@3 gap belongs to Qwen3-Coder; Qwen3-30B has the smallest F1 gap and is also closest on both measures in the random-repository arm. Table 4 reports the corresponding effect sizes and intervals. Quality and time use the complete arms; token comparisons use instances with usage recorded for both paired runs. Repository clustering chiefly changes the SWE-derived inter-pretation. Its Hit@3 and F1 intervals include zero for Gemma and Cost-Effective Repository Exploration for Agentic Issue Localization AgenticDev ’26, October 12–16, 2026, Munich, Germany 
+
+Table 2: Explorer quality and operational cost on the SWE-bench Verified-derived arm (499 instances).                                                                                 
+
+> Explorer Utility Strict Secondary Average Ops
+> Model Hit@1 Hit@3 Hit@5 R@3 MRR F1 Exact Error (%) Steps Time (s) Input tok. Output tok. Total tok. GLM-4.7-Flash 0.7535 0.7756 0.7756 0.7291 0.7642 0.6965 0.5691 6.6 27.02 241.58 230373 2921 233294 Gemma-4-E4B 0.6653 0.6774 0.6774 0.6271 0.6710 0.6281 0.5551 0.6 5.27 43.09 25076 1563 26640 Qwen3-30B-A3B 0.6693 0.6934 0.6934 0.6495 0.6814 0.6400 0.5571 4.8 4.77 66.28 10376 748 11123
+> Qwen3-Coder-30B-A3B 0.6673 0.7315 0.7335 0.6816 0.6986 0.6173 0.4449 2.2 8.34 81.29 25954 1162 27116 Qwen3-4B 0.6052 0.6453 0.6453 0.5956 0.6232 0.5711 0.4629 0.8 3.49 30.15 14412 564 14976
+
+Table 3: Explorer quality and operational cost on the IssueLoc random-repository arm (500 instances).                                                                                 
+
+> Explorer Utility Strict Secondary Average Ops
+> Model Hit@1 Hit@3 Hit@5 R@3 MRR F1 Exact Error (%) Steps Time (s) Input tok. Output tok. Total tok. GLM-4.7-Flash 0.7720 0.8400 0.8460 0.6671 0.8058 0.6724 0.4300 0.8 18.30 142.95 139941 1822 141762 Gemma-4-E4B 0.6820 0.7420 0.7440 0.5664 0.7115 0.5787 0.3880 1.0 5.17 43.80 20441 1444 21885 Qwen3-30B-A3B 0.7080 0.7560 0.7560 0.5819 0.7307 0.5963 0.3920 2.6 4.70 51.65 9876 752 10629
+> Qwen3-Coder-30B-A3B 0.6960 0.7460 0.7500 0.5858 0.7209 0.5730 0.3480 4.0 7.30 84.14 21765 1002 22767 Qwen3-4B 0.5820 0.6540 0.6580 0.4915 0.6164 0.4880 0.3040 0.6 3.29 29.50 10558 555 11113
+
+Table 4: Paired alternative-minus-reference mean differences with 95% per-instance bootstrap confidence intervals. Negative operational differences indicate lower cost.   
+
+> Arm Explorer
+
+ΔHit@3 ΔR@3 ΔF1 ΔTime (s) ΔTokens (K) SWE-derived Gemma-4-E4B -0.098 [-0.134, -0.062] -0.102 [-0.137, -0.066] -0.068 [-0.103, -0.034] -198.5 [-212.3, -184.8] -207.4 [-227.9, -187.7] SWE-derived Qwen3-30B -0.082 [-0.118, -0.046] -0.080 [-0.114, -0.045] -0.056 [-0.090, -0.023] -175.3 [-191.7, -158.8] -218.9 [-239.5, -199.2] SWE-derived Qwen3-Coder-30B -0.044 [-0.080, -0.008] -0.048 [-0.083, -0.012] -0.079 [-0.113, -0.046] -160.3 [-175.8, -145.0] -208.9 [-229.4, -189.3] SWE-derived Qwen3-4B -0.130 [-0.170, -0.090] -0.134 [-0.173, -0.094] -0.125 [-0.164, -0.088] -211.4 [-225.8, -197.4] -218.7 [-242.3, -192.7] Random repository Gemma-4-E4B -0.098 [-0.138, -0.058] -0.101 [-0.134, -0.067] -0.094 [-0.128, -0.061] -99.2 [-110.1, -88.8] -120.5 [-134.3, -107.7] Random repository Qwen3-30B -0.084 [-0.120, -0.046] -0.085 [-0.117, -0.054] -0.076 [-0.108, -0.044] -91.3 [-102.9, -79.9] -128.3 [-142.1, -115.0] Random repository Qwen3-Coder-30B -0.094 [-0.136, -0.052] -0.081 [-0.117, -0.047] -0.099 [-0.132, -0.066] -58.8 [-70.9, -46.7] -117.4 [-131.1, -104.0] Random repository Qwen3-4B -0.186 [-0.232, -0.142] -0.176 [-0.215, -0.137] -0.184 [-0.223, -0.147] -113.5 [-123.5, -103.5] -131.1 [-147.4, -114.0] 
+
+Qwen3-30B, as does Qwen3-Coder’s Hit@3 interval; several R@3 and exact-match contrasts are similarly unresolved. By contrast, all random-arm Hit@3, R@3, and F1 gaps remain below zero. The operational reductions remain supported under clustering on both arms. Thus, the cost separation is stable, while the strength of the quality ordering depends on whether variation is measured across tasks or across repositories. 
+
+## 7.3 Quality Retention and Cost Reduction 
+
+We normalize quality and cost against the reference explorer, which has the highest point estimates on both arms. For quality 𝑄 , re-tention is 100 𝑄 𝑚 /𝑄 ref ; for operational cost 𝐶 , reduction is 100 (1 −
+
+𝐶 𝑚 /𝐶 ref ).The normalized results expose distinct operating points rather than a single uniformly best alternative. Gemma retains at least 86% of the reference Hit@3 and F1 in both arms while cutting mean agent time by more than two thirds. Qwen3-30B provides the strongest alternative F1 and reduces observed tokens by more than 90%. Qwen3-Coder sacrifices more strict set recovery but preserves the most SWE-derived top-three discovery. Table 5 presents the complete comparison. Figure 2 combines retained quality with API-equivalent cost reduction using the model-specific input and output rates recorded in mid-June 2026. Qwen3-30B remains cost-competitive through shorter, less token-intensive trajectories; Gemma combines low token prices with lower mean agent time, while Qwen3-Coder’s output-token price offsets more of its token reduction. The figure complements the hardware-dependent time measurements with a price-based deployment view. 
+
+## 7.4 Answers to the Research Questions 
+
+RQ1: Quality Retention. The best-retaining alternative depends on the arm and handoff metric. Qwen3-Coder is strongest for SWE-derived candidate discovery, while Qwen3-30B is strongest for random-arm discovery and strict F1. Thus, retention is not a single property of a checkpoint; it depends on whether the comparison rewards an early entry point, broader top-three coverage, or cali-bration of the emitted set. 
+
+RQ2: Operational Cost. All alternative explorers reduce time and tokens, with operational intervals remaining below zero under both instance-level and repository-clustered resampling. These reductions describe complete trajectories under the recorded runner and serving configuration, including interaction count, tool use, stopping behavior, and runtime; they are not estimates of intrinsic checkpoint speed. 
+
+RQ3: Handoff Contract. The relative advantage of candidate discovery over strict set recovery is model- and arm-dependent. Qwen3-Coder shows the clearest soft-handoff-oriented trade-off on the SWE-derived arm, retaining the strongest alternative early ranking despite lower F1. Gemma and Qwen3-30B retain strict set performance more strongly, so lower observed cost does not uniformly imply a larger exact-recovery degradation. AgenticDev ’26, October 12–16, 2026, Munich, Germany Mohammad Nour Al Awad and Sergey Ivanov 
+
+Table 5: Quality retention and cost reduction relative to the highest-quality reference explorer in each evaluation arm. Positive reduction means lower observed cost.                                                                   
+
+> Arm Explorer Hit@3 retained F1 retained Agent-time reduction Token reduction API-cost reduction SWE-bench Verified-derived GLM-4.7-Flash 100.0% 100.0% 0.0% 0.0% 0.0% SWE-bench Verified-derived Gemma-4-E4B 87.3% 90.2% 82.2% 88.6% 87.9% SWE-bench Verified-derived Qwen3-30B-A3B 89.4% 91.9% 72.6% 95.2% 80.8% SWE-bench Verified-derived Qwen3-Coder-30B-A3B 94.3% 88.6% 66.4% 88.4% 34.1% SWE-bench Verified-derived Qwen3-4B 83.2% 82.0% 87.5% 93.6% 92.2% IssueLoc random-repository GLM-4.7-Flash 100.0% 100.0% 0.0% 0.0% 0.0% IssueLoc random-repository Gemma-4-E4B 88.3% 86.1% 69.4% 84.6% 83.4% IssueLoc random-repository Qwen3-30B-A3B 90.0% 88.7% 63.9% 92.5% 69.5% IssueLoc random-repository Qwen3-Coder-30B-A3B 88.8% 85.2% 41.1% 83.9% 8.8% IssueLoc random-repository Qwen3-4B 77.9% 72.6% 79.4% 92.2% 90.2%
+
+Figure 2: Quality retention versus estimated API-cost reduction. Dashed lines mark the 80/80 operating region. 
+
+RQ4: Cross-Arm Consistency. The broad quality–cost trade-off recurs across arms, but the ordering among alternatives changes with the metric and arm. Repository clustering also weakens several SWE-derived quality comparisons, so cross-repository conclusions are more qualified than the corresponding instance-level compar-isons. 
+
+## 8 Analysis and Discussion 8.1 Explorer Operating Points and Handoff Contracts 
+
+The results do not identify a universally best lower-cost explorer; they expose different Pareto-like operating points. The reference configuration maximizes observed localization quality. Qwen3-Coder is attractive when early SWE-derived discovery matters; Qwen3-30B is the most balanced alternative for strict recovery and token usage; Gemma favors shorter trajectories; and Qwen3-4B is the aggressive low-time point. Explorer selection therefore de-pends on which quality dimension the handoff consumes and which operational resource is constrained. R@3 makes this distinction visible. Binary Hit@3 asks whether the explorer supplies at least one historically relevant starting point; R@3 asks how much of a multi-file footprint is already present in that same budget. On the random arm, Qwen3-30B has stronger Hit@3 and F1, while Qwen3-Coder has slightly stronger R@3. A downstream stage that can navigate outward from one plausible implementation file may value the former; one receiving a small, fixed context bundle may value broader initial coverage. Neither preference can be inferred from exact match alone. The historical footprint explains why early-ranking metrics are an appropriate proxy when downstream access remains recoverable. Human commits frequently modify a mixture of implementation, tests, configuration, or supporting files. Exact recovery treats every retained file symmetrically, whereas a later stage may use one high-ranked entry point to continue exploring repository structure. A ranked list therefore narrows the initial search space and orders the context to inspect first. F1 and exact match remain the relevant measures when the predicted set is a hard boundary. The metric panel should consequently be read as a set of contract-specific views, not as interchangeable measures of one latent score. Hit@3 records whether a small candidate budget contains any historical target, R@3 records how much of the target footprint that budget covers, and MRR rewards earlier placement of the first target. These measures characterize the recoverability of the initial search Cost-Effective Repository Exploration for Agentic Issue Localization AgenticDev ’26, October 12–16, 2026, Munich, Germany 
+
+state, but they do not establish the quality of a subsequent patch. F1 and exact match instead compare the emitted and historical sets, making them better aligned with restrictive context selection. Reporting both families prevents an explorer that is useful for one contract from being selected or rejected using a metric intended for the other. This interpretation connects the upstream and downstream evi-dence without treating stage metrics as repair outcomes. Loc2Repair shows that a lightweight localization signal can improve multiple repair backbones [2]; the present results establish distinct quality– cost choices for producing such a signal. Together, they motivate treating localization as a service with an explicit output contract, candidate budget, and escalation rule instead of an inseparable prelude to patch generation. 
+
+## 8.2 Cross-Arm Generality and Repository Dependence 
+
+The most important cross-arm result is directional stability. In both settings, the reference configuration provides the highest observed localization quality, and every alternative yields lower time and token use. This recurrence matters because the arms stress different aspects of exploration. The SWE-derived tasks require navigation through substantially larger repository trees, while our random-repository tasks more often require recovering several historically changed files. The same broad trade-off appears under both con-ditions, so it is not tied only to one repository-size or gold-set regime. The model ordering within that broad pattern is not identical. Qwen3-Coder is especially competitive on candidate coverage in the SWE-derived arm, whereas Qwen3-30B is the more balanced alternative on the random-repository arm. This variation argues against selecting an explorer from a single pooled score. A deploy-ment dominated by a few large framework repositories may value broad search and strong early ranking; a service spanning many unrelated projects may prefer the model whose balance of discovery and set recovery persists across repository types. The clustered analysis clarifies what can be generalized from the two arms. Instance resampling asks whether the recorded model difference is stable across issues in the benchmark. Repository resampling asks whether it is stable when entire repositories, rather than individual issues, are treated as the sampling unit. Because the SWE-derived arm contains only a small number of repositories, a few projects can influence its aggregate ordering and clustered intervals are necessarily less decisive. The random arm distributes evidence across many more repositories, and its quality ordering remains clearer after clustering. These are complementary views: task-level intervals describe expected performance over a similar issue mix, while clustered intervals better reflect transfer across repositories. 
+
+## 8.3 Escalation-Oriented Explorer Design 
+
+These results motivate an escalation-oriented design in which explorer-model allocation becomes a control policy rather than a one-time choice. A natural soft-handoff policy would begin with a lower-cost explorer, pass its ranked files to the repair stage, and retain the ability to broaden repository access. A stronger explorer could then be reserved for cases in which the first trajectory pro-duces no valid candidates, the candidates fail to support a plausible diagnosis, or later inspection uncovers evidence outside the ini-tial neighborhood. Such a policy could allocate exploration budget conditionally rather than selecting one operating point for every issue. The escalation signal would need to correspond to an observable failure of the handoff. Runner errors and empty predictions are immediate signals. A downstream repairer could also report that the supplied files do not contain the described behavior, relevant definitions, or reachable dependencies. For a hard gate, escalation would need to occur earlier because ordinary browsing cannot recover an omitted file. In that setting, F1 and exact match become more important selection criteria, and the gate should provide an explicit escape route rather than silently forcing repair within an incomplete set. Candidate budgets are another prospective allocation lever. A small budget limits context transfer and encourages precise ranking, but multi-file issues may require broader coverage. The joint use of Hit@3 and R@3 separates these cases: the former measures whether the budget supplies a starting point, and the latter measures how much of the known footprint fits inside it. A deployment could therefore tune candidate count independently of checkpoint choice. For example, a lower-cost explorer could emit a compact initial list, after which the repairer requests expansion only when cross-file evidence is needed. A path ranking also separates selection from context transfer . The explorer need not copy full files into the repair prompt; the repairer can open candidates in order and fetch related context as evidence develops. A low-cost explorer that forwards a large, undifferentiated prompt merely moves the operational burden downstream. Ranked paths instead form a compact control-plane artifact whose quality can be evaluated independently of the repair model and context-packing strategy. Evaluating these policies end to end is an important next step. The present metrics identify plausible explorer operating points and observable escalation signals, but a fixed-repairer experiment is needed to determine their effects on resolved rate and total pipeline cost. 
+
+## 8.4 Trajectory Cost and Practical Model Selection 
+
+The operational differences are shaped mainly by how long each explorer continues searching. The reference explorer takes substan-tially more interaction steps in both arms, while per-step elapsed time is closer among several models. Its total-time gap therefore re-flects a longer exploration policy as well as serving/runtime charac-teristics. Token consumption likewise combines the number of turns with the repository context carried through them. The observed totals are trajectory costs of complete explorer configurations— checkpoint behavior, tool use, stopping policy, and serving stack— rather than intrinsic measures of model speed. This decomposition suggests two independent optimization di-rections. Model selection changes how effectively each turn con-verts repository evidence into ranked candidates. Runner policy controls when the explorer has enough evidence to stop. A strong AgenticDev ’26, October 12–16, 2026, Munich, Germany Mohammad Nour Al Awad and Sergey Ivanov 
+
+model with an unnecessarily long stopping policy can be expensive, while a compact model that stops too early can miss important cross-file relationships. Reporting steps alongside time, tokens, and localization quality prevents these behaviors from being collapsed into a single efficiency label. The fixed interface is important to this interpretation. Every checkpoint receives the same task role, read-only repository access, and output schema, so the comparison holds the interaction con-tract constant. It does not, however, force checkpoints to take the same number of turns, inspect the same files, or stop after the same evidence. Those behaviors are part of the measured explorer oper-ating point. A deployment choosing among the configurations pays for the resulting trajectory as a whole; isolating model throughput or equalizing turn count would answer a different question. The resulting selection rule follows the handoff contract and service objective. The reference configuration has the highest ob-served quality when that criterion dominates. Qwen3-30B offers the most balanced alternative when strict set recovery and token use both matter. Qwen3-Coder favors top-three discovery and coverage, Gemma favors shorter total agent time while retaining substantial quality, and Qwen3-4B represents the most aggressive time-saving point. No alternative dominates across quality, time, and tokens; the appropriate choice depends on which resource is scarce and whether the downstream stage can recover from an incomplete prediction. 
+
+## 9 Threats to Validity 
+
+Historical-Footprint Supervision. Gold files are the filtered histori-cal commit footprint, not a proof that every touched file is necessary or that another valid repair would modify the same set. This makes exact match deliberately strict and gives ranking and coverage metrics an important complementary role. The code-focused view also excludes newly added, removed, binary-like, and entirely text-like targets; conclusions therefore concern localization of existing implementation artifacts. 
+
+Repository and Model Sampling. The SWE-derived arm contains many issues from relatively few repositories; the random arm covers more repositories but has its own IssueLoc linkage and filtering criteria. We therefore avoid pooling the arms and report repository-clustered sensitivity alongside instance-level intervals. Both arms use public repositories, so possible exposure during model training cannot be measured from the artifact. Transfer to private codebases, very large monorepos, other language distributions, and other agent interfaces remains a separate empirical question. 
+
+Operational Measurements. Time and token use describe the com-plete recorded operating points: model, serving stack, tool interac-tion, stopping behavior, and timeout policy. They are deployment-relevant totals, not isolated measures of model throughput. Token comparisons are pairwise-complete when usage metadata is present for both runs, and the API-cost view applies contemporaneous public prices rather than observed invoices. The paired bootstrap quantifies variation across recorded instances or repositories; re-peated executions would be needed to quantify stochastic trajectory variation. 
+
+Pipeline Scope. The experiment isolates localization so that ex-plorer choice can be compared under a fixed interface. Its rankings therefore guide stage allocation: end-to-end benefit also depends on the repair model, candidate budget, context format, and escalation policy. Evaluating those components in a factorial explorer–repair study would connect the present stage metrics to resolved rate and total pipeline cost. 
+
+## 10 Conclusion 
+
+Empirically, under the fixed read-only interface, the highest-quality explorer leads the localization metrics, while the alternatives pro-vide substantially lower-time and lower-token operating points. IssueLoc-Bench makes this upstream allocation visible through early ranking, top-three gold coverage, historical set recovery, tra-jectory length, agent time, and tokens across two complementary arms. Paired comparisons establish the task-level trade-offs, while repository-clustered sensitivity appropriately tempers several SWE-derived quality contrasts. Interpretively, no alternative dominates across ranking quality, strict recovery, time, and tokens. The preferred explorer depends on how localization is consumed: Hit@3, R@3, and MRR character-ize a recoverable candidate handoff, whereas F1 and exact match characterize a restrictive file gate. Architecturally, these results support treating repository exploration as a separately measurable and budgetable stage in modular coding-agent pipelines, with an explicit output contract and observable trajectory cost. 
+
+Future Work. Determining whether these localization trade-offs translate into end-to-end repair trade-offs requires a fixed-repairer evaluation and is left to future work. Such an evaluation can vary the explorer, top-𝑘 budget, and escalation rule while measuring resolved rate, recovery beyond the initial handoff, and total pipeline cost. Further directions include adaptive candidate budgets, symbol-and test-level handoffs, temporally filtered issue context, private-repository evaluation, and supervision that distinguishes minimal causal files from the broader historical commit footprint. 
+
+## 11 Data Availability Statement 
+
+The artifact at https://github.com/mohammad-nour-alawad/Issue Loc-bench contains task and label manifests, the parent-commit snapshot builder, shared evaluator, explorer runners, run outputs, and statistical reporting code. Stable identifiers and traces support reconstruction and rescoring. 
+
+## Acknowledgments 
+
+This work is supported by the Ministry of Economic Development of the Russian Federation (IGK 000000C313925P4C0002), agreement No139-15-2025-010. 
+
+## References   
+
+> [1] Shayan A. Akbar and Avinash C. Kak. 2020. A Large-Scale Comparative Eval-uation of IR-Based Tools for Bug Localization. In Proceedings of the 17th Inter-national Conference on Mining Software Repositories (Seoul, Republic of Korea)
+> (MSR ’20) . Association for Computing Machinery, New York, NY, USA, 21–31. doi:10.1145/3379597.3387474 [2] Mohammad Nour Al Awad and Sergey Ivanov. 2026. Loc2Repair: A Framework for Evaluating the Impact of File-Level Issue Localization in Repo-Level LLM Repair. arXiv:2606.30963 [cs.SE] https://arxiv.org/abs/2606.30963
+
+Cost-Effective Repository Exploration for Agentic Issue Localization AgenticDev ’26, October 12–16, 2026, Munich, Germany 
+
+[3] Zhaoling Chen, Robert Tang, Gangda Deng, Fang Wu, Jialong Wu, Zhiwei Jiang, Viktor Prasanna, Arman Cohan, and Xingyao Wang. 2025. LocAgent: Graph-Guided LLM Agents for Code Localization. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) .Association for Computational Linguistics, Vienna, Austria, 8697–8727. doi:10.1 8653/v1/2025.acl-long.426 [4] Suhwan Ji, Sanghwa Lee, Changsup Lee, Yo-Sub Han, and Hyeonseung Im. 2025. Impact of Large Language Models of Code on Fault Localization. In 2025 IEEE Conference on Software Testing, Verification and Validation (ICST) . IEEE Computer Society, Los Alamitos, CA, USA, 302–313. doi:10.1109/ICST62969.2025.10989036 [5] Zhonghao Jiang, Xiaoxue Ren, Meng Yan, Wei Jiang, Yong Li, and Zhongxin Liu. 2025. CoSIL: Software Issue Localization via LLM-Driven Code Repository Graph Searching. CoRR abs/2503.22424 (2025). arXiv:2503.22424 [cs.SE] https: //arxiv.org/abs/2503.22424 [6] Carlos E Jimenez, John Yang, Alexander Wettig, Shunyu Yao, Kexin Pei, Ofir Press, and Karthik R Narasimhan. 2024. SWE-bench: Can Language Models Resolve Real-world Github Issues?. In The Twelfth International Conference on Learning Representations . https://openreview.net/forum?id=VTF8yNQM66 [7] Sungmin Kang, Gabin An, and Shin Yoo. 2024. A Quantitative and Qualitative Evaluation of LLM-Based Explainable Fault Localization. Proc. ACM Softw. Eng. 
+
+1, FSE, Article 64 (July 2024), 23 pages. doi:10.1145/3660771 [8] Jaekwon Lee, Dongsun Kim, Tegawendé F. Bissyandé, Woosung Jung, and Yves Le Traon. 2018. Bench4BL: reproducibility study on the performance of IR-based bug localization. In Proceedings of the 27th ACM SIGSOFT International Symposium on Software Testing and Analysis (Amsterdam, Netherlands) (ISSTA 2018) . Association for Computing Machinery, New York, NY, USA, 61–72. doi:10 .1145/3213846.3213856 [9] Tianyang Liu, Canwen Xu, and Julian J. McAuley. 2024. RepoBench: Bench-marking Repository-Level Code Auto-Completion Systems. In ICLR . https: //openreview.net/forum?id=pPjZIOuQuF [10] Jesse Maarleveld, Jiapan Guo, and Daniel Feitosa. 2025. Gotta catch ’em all! Towards File Localisation from Issues at Large. arXiv:2507.18319 [cs.SE] https: //arxiv.org/abs/2507.18319 [11] Feifei Niu, Chuanyi Li, Kui Liu, Xin Xia, and David Lo. 2025. When Deep Learning Meets Information Retrieval-based Bug Localization: A Survey. ACM Comput. Surv. 57, 11, Article 296 (June 2025), 41 pages. doi:10.1145/3734217 [12] Siru Ouyang, Wenhao Yu, Kaixin Ma, Zilin Xiao, Zhihan Zhang, Mengzhao Jia, Jiawei Han, Hongming Zhang, and Dong Yu. 2025. RepoGraph: Enhancing AI Software Engineering with Repository-level Code Graph. In The Thirteenth International Conference on Learning Representations . https://openreview.net/for um?id=dw9VUsSHGB [13] Revanth Gangi Reddy, Tarun Suresh, JaeHyeok Doo, Ye Liu, Xuan-Phi Nguyen, Yingbo Zhou, Semih Yavuz, Caiming Xiong, Heng Ji, and Shafiq Joty. 2026. SWER-ank: Software Issue Localization with Code Ranking. In The Fourteenth Interna-tional Conference on Learning Representations . https://openreview.net/forum?i d=OnkRqbNhe3 [14] Ripon K. Saha, Matthew Lease, Sarfraz Khurshid, and Dewayne E. Perry. 2013. Improving bug localization using structured information retrieval. In Proceedings of the 28th IEEE/ACM International Conference on Automated Software Engineering 
+
+(Silicon Valley, CA, USA) (ASE ’13) . IEEE Press, 345–355. doi:10.1109/ASE.2013.6 693093 [15] Melika Sepidband, Hamed Taherkhani, Hung Viet Pham, and Hadi Hemmati. 2026. RGFL: Reasoning Guided Fault Localization for Automated Program Repair Using Large Language Models. arXiv:2601.18044 [cs.SE] https://arxiv.org/abs/26 01.18044 [16] Seongho Son, Sangwoong Yoon, Jiahua Tang, Shuhan Wang, Lorenz Wolf, and Ilija Bogunovic. 2026. SWE-Router: Routing in Multi-turn Agentic Software Engineering Tasks. arXiv:2607.00053 [cs.SE] https://arxiv.org/abs/2607.00053 [17] Shaowei Wang and David Lo. 2014. Version history, similar report, and structure: putting them together for improved bug localization. In Proceedings of the 22nd International Conference on Program Comprehension (Hyderabad, India) (ICPC 2014) . Association for Computing Machinery, New York, NY, USA, 53–63. doi:10 .1145/2597008.2597148 [18] Shaowei Wang and David Lo. 2016. AmaLgam+: Composing Rich Information Sources for Accurate Bug Localization. Journal of Software: Evolution and Process 
+
+28, 10 (2016), 921–942. doi:10.1002/smr.1801 [19] Shaowei Wang, David Lo, and Julia Lawall. 2014. Compositional Vector Space Models for Improved Bug Localization. In Proceedings of the 2014 IEEE Inter-national Conference on Software Maintenance and Evolution (ICSME ’14) . IEEE Computer Society, USA, 171–180. doi:10.1109/ICSME.2014.39 [20] Chunqiu Steven Xia, Yinlin Deng, Soren Dunn, and Lingming Zhang. 2025. De-mystifying LLM-Based Software Engineering Agents. Proc. ACM Softw. Eng. 2, FSE, Article FSE037 (June 2025), 24 pages. doi:10.1145/3715754 [21] John Yang, Carlos E Jimenez, Alexander Wettig, Kilian Lieret, Shunyu Yao, Karthik R Narasimhan, and Ofir Press. 2024. SWE-agent: Agent-Computer In-terfaces Enable Automated Software Engineering. In The Thirty-eighth Annual Conference on Neural Information Processing Systems . https://openreview.net/for um?id=mXpq6ut8J3 [22] Xin Ye, Razvan Bunescu, and Chang Liu. 2014. Learning to rank relevant files for bug reports using domain knowledge. In Proceedings of the 22nd ACM SIGSOFT International Symposium on Foundations of Software Engineering (Hong Kong, China) (FSE 2014) . Association for Computing Machinery, New York, NY, USA, 689–699. doi:10.1145/2635868.2635874 [23] Zhongming Yu, Hejia Zhang, Yujie Zhao, Hanxian Huang, Matrix Yao, Ke Ding, and Jishen Zhao. 2025. OrcaLoca: An LLM Agent Framework for Software Issue Localization. In Proceedings of the 42nd International Conference on Ma-chine Learning (Proceedings of Machine Learning Research, Vol. 267) , Aarti Singh, Maryam Fazel, Daniel Hsu, Simon Lacoste-Julien, Felix Berkenkamp, Tegan Maharaj, Kiri Wagstaff, and Jerry Zhu (Eds.). PMLR, 73416–73436. https: //proceedings.mlr.press/v267/yu25x.html [24] Quanjun Zhang, Chengyu Gao, Yu Han, Ye Shang, Chunrong Fang, Zhenyu Chen, and Liang Xiao. 2026. SGAgent: Suggestion-Guided LLM-Based Multi-Agent Framework for Repository-Level Software Repair. arXiv:2602.23647 [cs.SE] https://arxiv.org/abs/2602.23647 [25] Shaoqiu Zhang, Yuhang Wang, Jialiang Liang, Yuling Shi, Wenhao Zeng, Mao-quan Wang, Shilin He, Ningyuan Xu, Siyu Ye, Kai Cai, and Xiaodong Gu. 2026. SWE-Explore: Benchmarking How Coding Agents Explore Repositories. arXiv:2606.07297 [cs.SE] https://arxiv.org/abs/2606.07297 [26] Zejun Zhang, Jian Wang, Qingyun Yang, Yifan Pan, Yi Tang, Yi Li, Zhenchang Xing, Tian Zhang, Xuandong Li, and Guoan Zhang. 2025. A Benchmark for Local-izing Code and Non-Code Issues in Software Projects. arXiv:2509.25242 [cs.SE] https://arxiv.org/abs/2509.25242 
+
+Received 2026-07-27; accepted 2026-08-20

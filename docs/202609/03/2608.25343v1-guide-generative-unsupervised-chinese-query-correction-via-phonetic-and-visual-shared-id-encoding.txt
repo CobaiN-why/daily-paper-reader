@@ -1,0 +1,362 @@
+Title: GUIDE: Generative Unsupervised Chinese Query Correction via Phonetic and Visual Shared-ID Encoding
+
+URL Source: https://arxiv.org/pdf/2608.25343v1
+
+Published Time: Thu, 27 Aug 2026 00:28:23 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# GUIDE: Generative Unsupervised Chinese Query Correction via Phonetic and Visual Shared-ID Encoding 
+
+Lei Yang 1, Binbin Huang 1,2 *, Jiwei Tan 1, Xuhui Sui 1, Chang Tu 1, Yi Wang 1, Han Li 1
+
+> 1
+
+Kuaishou Technology, 2School of Data Science, Fudan University  
+
+> Correspondence: chentiancheng03@kuaishou.com
+
+Abstract 
+
+Chinese query correction (CQC) is important for search and query recommendation on con-tent platforms, but supervised methods rely on large annotated correction pairs that are costly to maintain as query vocabularies evolve. Un-supervised correction with language models is attractive, yet in the short-query setting, uncon-strained generation often over-corrects ambigu-ous inputs toward high-frequency phrases, caus-ing intent drift. We propose GUIDE, a gener-ative unsupervised framework for CQC based on a confuse-then-clarify paradigm. GUIDE encodes phonetically or visually confusable characters with shared-IDs and reconstructs the original query with an encoder–decoder architecture, which constrains correction to plausible confusion neighborhoods while learn-ing from unlabeled query streams. A time-decayed, query-frequency-weighted objective further supports adaptation to rapidly changing query vocabularies. Experiments on QSpell 250K and a large-scale real-world dataset (KwaiSearch ) show that GUIDE consistently outperforms strong baselines, while online A/B testing further confirms gains in correction quality and downstream engagement. 
+
+1 Introduction 
+
+Search queries directly express user intent and de-termine what content is retrieved and surfaced. On large content platforms such as YouTube and Tik-Tok, query recommendation modules—including search suggestions, autocomplete, and related-query recommendation—are often built from his-torical search logs and user interactions (Bacciu et al., 2024). As a result, misspellings and non-canonical variants in query streams can be repeat-edly exposed, clicked, and re-mined, causing noisy forms to propagate through downstream retrieval, ranking, and recommendation pipelines (Gao et al., 2010; Sun et al., 2012). This makes Chinese query  
+
+> *Corresponding author.
+
+correction (CQC) an important problem in indus-trial search systems. While Chinese spelling correction is often stud-ied at the sentence level, CQC is harder in practice because it faces several query-specific constraints: (Yang et al., 2023; Su et al., 2025): (1) Short Con-text : queries provide little context, making it hard to decide whether to edit and what is intended; (2) 
+
+Fast Shift : vocabularies change rapidly with new memes, influencers, and emerging entities; Cre-ative Use : homophones can be intentional puns— e.g., “ 钱途” (lit. “money road”, i.e., “money- mak-ing prospects”) puns on its homophone “ 前 途”(qiántú , “future prospects”)—so different is not al-ways wrong; and (4) Few Labels : large-scale query annotations are expensive, and even millions of labeled pairs cover only a small fraction of real er-rors. These constraints make CQC fundamentally a problem of controlled editing: the system must decide not only what to correct, but also when to correct and how far it may deviate from the original expression. Existing approaches only partially address this challenge. Supervised correctors learn a correc-tion policy from labeled pairs (Zhang et al., 2020; Xu et al., 2021), but collecting and refreshing such annotations is expensive under fast vocab-ulary shift. Weakly supervised methods typically construct pseudo pairs through synthetic corrup-tion (Liu et al., 2021; Li, 2022), which introduces a hand-designed noise process that may not match real query errors. Training-free LM-based correc-tion is attractive (Hong et al., 2019; Zhou et al., 2024), but unconstrained or weakly constrained de-coding often over-corrects short ambiguous queries, introduces unnecessary edits, or fails to preserve the original query length (Li et al., 2023; Liu et al., 2024). These limitations suggest that effective unsuper-vised CQC should not rely on free-form rewriting. Instead, correction should stay within plausible 1arXiv:2608.25343v1 [cs.CL] 26 Aug 2026 confusion neighborhoods induced by realistic input errors and shaped by the language’s writing and input system. Based on this intuition, we propose GUIDE, a generative unsupervised framework built on a confuse-then-clarify paradigm. The core idea is to map confusable characters into shared-IDs and then train an encoder–decoder model to reconstruct the original character sequence. This shared-ID reconstruction objective turns character confusion structure into a learning signal: the en-coder is encouraged to tolerate realistic ambiguity, while the decoder is forced to clarify it back into a concrete query. As a result, GUIDE learns con-trolled correction from unlabeled query streams without requiring manually annotated correction pairs. For Chinese, these neighborhoods are naturally instantiated by the two dominant query errors: 
+
+sound-alike substitutions and, to a lesser extent, 
+
+look-alike ones (Liu et al., 2010; Wu et al., 2013a). These error patterns are closely tied to Chinese Input Method Editors (IMEs), such as pinyin and handwriting. Accordingly, we implement GUIDE with two complementary clustering strategies: pho-netic shared-ID clustering based on pinyin con-fusability, and visual shared-ID clustering based on image-based character similarity. On top of these clustered inputs, we train an encoder–decoder Transformer with a time-decayed, query-frequency-weighted objective so that the model can continu-ally adapt to recent and frequent queries in evolving search traffic. Our contributions are as follows: • We propose GUIDE, a Generative Unsupervised framework for Chinese query correction based on a confuse-then-clarify paradigm, where pho-netic and visual shared-ID E ncoding provides an explicit inductive bias for controlled correction under weak query context. • We show how shared-ID reconstruction enables learning from unlabeled query streams without error–correction pairs. • We release KwaiSearch , an in-house search-log dataset, and show strong results on both QSpell 250K and KwaiSearch , supported by online A/B testing. 
+
+2 Methodology 
+
+2.1 Problem Formulation and Overview 
+
+Let D = {(xi, t i)}Ni=1 denote a training set of 
+
+N Chinese character queries collected from logs, 
+
+Phonetically Similar Case 
+
+Input 土坡 上的苟(gˇ ou) 尾草。
+
+PSC 苟(gˇ ou) 狗(gˇ ou) 够(gòu) 钩(g¯ ou) 
+
+Visually Similar Case 
+
+Input 土坡 上的狍(páo) 尾草。
+
+VSC 狍(páo) 狗(gˇ ou) 句(jù) 拘(j¯ u) Correct 土坡 上的狗(gˇ ou) 尾草。
+
+Translation Bristlegrass on a Slope. 
+
+> Table 1: Examples of phonetically similar candidates (PSC) and visually similar candidates (VSC) in Chinese spelling errors. Misspelled characters are marked in red, while the correct forms are indicated in blue. Phonetic errors are same-syllable confusions (often differing only in tone) from pinyin typing; visual errors are look-alike characters that typically share a radical/component.
+
+where xi = {xi, 1, x i, 2, . . . , x i,m i } is the observed (possibly incorrect) query at time ti. The CQC task maps an input query xi to a corrected query 
+
+yi = {yi, 1, y i, 2, . . . , y i,m i }, where yi has the same length as xi and differs only at erroneous char-acter positions. In CQC, errors often arise from phonetically or visually similar candidates, with representative examples shown in Table 1. To avoid unintended rewrites under weak query context, GUIDE constrains correction through character clustering and sequence reconstruction. As shown in Figure 1, the framework consists of two core stages: (1) character clustering , which maps an input query into a phonetic or visual shared-ID sequence, and (2) Chinese query cor-rection , which reconstructs the original character sequence with an encoder–decoder Transformer. 
+
+2.2 Character Clustering 
+
+Character clustering groups Chinese characters by phonetic or visual similarity and maps each character to a shared ID. Formally, let g(·) be a clustering-based mapping that converts a query 
+
+xi into a shared-ID sequence ˜xi = g(xi) =
+
+{˜xi, 1, . . . , ˜xi,m i }, where multiple confusable char-acters may share the same ID. This mapping is intentionally lossy: it removes fine-grained charac-ter identity at the encoder side, making the input more tolerant to typical user errors and restricting edits to plausible confusions. To cover dominant error types in practice, especially phonetic confu-sions and visually similar confusions, we design two complementary ways to construct g(·).2Figure 1: Overview of GUIDE with two clustering-based correction models: the left part shows the homophonic model, and the right part shows the visual-similarity model, based on pronunciation and character shape, respectively. 
+
+Homophonic Clustering. Most query typos on content platforms are sound-alike confusions caused by pinyin input. We therefore build a pinyin-based clustering strategy that maps each character to a pronunciation key without tones , and assigns the same shared ID to characters with the same tone–stripped pinyin. For polyphonic characters, we choose the most frequent tone–stripped pronun-ciation in query logs to determine the ID, which aligns the clusters with common user inputs and captures frequent phonetic confusions. 
+
+Visual Similarity Clustering. To handle another major error type—look-alike confusions—we clus-ter characters by visual similarity using image-based character representations. We render each character as an image and encode it with a Vision Transformer (ViT) (Dosovitskiy et al., 2020) to obtain feature vectors, then cluster characters us-ing cosine similarity between these representations. We use a threshold τ to determine whether two characters should be grouped into the same clus-ter, thereby controlling the granularity of visual neighborhoods. 
+
+2.3 Chinese Query Correction 
+
+We perform Chinese query correction with an encoder–decoder Transformer, where the encoder consumes shared-ID inputs and the decoder pre-dicts the original character IDs. In the encoder stage, input query characters are mapped to shared-IDs, enabling the model to learn robust represen-tations of error variants from large-scale, mostly error-free text data. The decoder then maps the shared-ID sequence back to the corresponding orig-inal character IDs. During inference, we decode the output sequence using beam search. In practice, we train two separate correction mod-els based on the two clustering strategies, namely the homophonic model and the visual-similarity model. The homophonic and visual-similarity mod-els can be applied independently or combined. For deployment, we use a simple dynamic fusion with-out an explicit error-type classifier: for the same query, we feed the phonetic shared-ID sequence to the homophonic model and the visual shared-ID sequence to the visual-similarity model, and obtain decoder scores (token logits) for beam can-didates from both models. We then compare the candidates from the two models and keep the one with the smaller score gap to the original query (i.e., the smaller change in normalized sequence log-likelihood relative to the original query), which helps prevent over-correction while still benefiting from beam search for plausible alternatives. 
+
+2.4 Training Objective with Time-decayed Frequency Reweighting 
+
+Given the shared-ID sequence ˜xi obtained by the clustering-based mapping in Section 2.2, we then train GUIDE to reconstruct the original query xi = {xi, 1, . . . , x i,m i } with a time-decayed frequency-reweighted negative log-likelihood: 
+
+L = − 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+wimiX
+
+> j=1
+
+log pθ(xi,j | ˜xi, x i,<j ), (1) where wi = log(1 + ci) · exp( −λ · ∆ti) is a weight that depends on the query search count ci and fresh-ness ∆ti. This reweighting shifts learning focus toward frequent and recent queries while preserv-ing the shared-ID reconstruction objective. 
+
+3 Experiments 
+
+This section evaluates GUIDE for CQC with both offline and online studies. We report offline re-3Method Model Size/Setting QSpell 250K KwaiSearch 
+
+Prec. Rec. F1 Prec. Rec. F1 Sup.  BERT — 0.1891 0.4385 0.2642 0.0624 0.2330 0.0984 MASKED -FT — 0.2931 0.6247 0.3990 0.1603 0.5734 0.2505 
+
+> Unsup.
+
+SIMPLE -CSC Qwen3-0.6B 0.3224 0.6693 0.4352 0.1450 0.6174 0.2348 Qwen3-1.7B 0.3282 0.7379 0.4543 0.1554 0.7156 0.2553 Qwen3-4B 0.3617 0.6950 0.4757 0.1732 0.6454 0.2730 LLM-ICL Qwen3-0.6B 0-shot 0.0365 0.0954 0.0528 0.0322 0.1290 0.0516 Qwen3-0.6B 10-shot 0.0352 0.1495 0.0569 0.0305 0.4424 0.0570 Qwen3-1.7B 0-shot 0.0786 0.3046 0.1249 0.0251 0.1859 0.0442 Qwen3-1.7B 10-shot 0.0975 0.5375 0.1650 0.0322 0.5010 0.0601 Qwen3-4B 0-shot 0.1645 0.2620 0.2021 0.0664 0.1937 0.0989 Qwen3-4B 10-shot 0.2105 0.5078 0.2976 0.0730 0.3424 0.1203 
+
+GUIDE (ours) 
+
+3-layer Enc–Dec 0.4244 0.5341 0.4730 0.6738 0.8476 0.7508 6-layer Enc–Dec 0.4367 0.5547 0.4887 0.6821 0.8419 0.7536 
+
+12-layer Enc–Dec 0.4321 0.5471 0.4829 0.6749 0.8364 0.7474      
+
+> Table 2: Main results on QSpell 250K and KwaiSearch . Sup./Unsup. denote supervised/unsupervised methods. Prec., Rec., and F1 denote precision, recall, and F1 score, respectively. bold indicates the best model for each dataset/metric.
+
+sults on the public QSpell 250K benchmark and an anonymized in-house dataset ( KwaiSearch ). We further validate GUIDE via an online A/B test on production traffic. 
+
+3.1 Experimental Setup Datasets. We evaluate GUIDE on two datasets that better reflect the practical CQC setting on content platforms. This differs from prior Chi-nese Spelling Correction (CSC) benchmarks (e.g., SIGHAN13/14/15 (Wu et al., 2013b; Yu et al., 2014; Tseng et al., 2015), Wang271K (Wang et al., 2018), and LEMON (Wu et al., 2023)), which are mostly sentence-oriented and less aligned with query noise patterns. Specifically, we use (i) QSpell 250K (Ye et al., 2025), a public simplified-Chinese query correction benchmark with short inputs; we train GUIDE using only the provided corrected queries; and (ii) KwaiSearch , an in-house dataset built from user search logs. It contains queries and short texts (e.g., titles and OCR-derived snippets) extracted from key search-result content, along with search-count and timestamp signals. 1 Ta-ble 3 summarizes the dataset statistics. 
+
+Evaluation Metrics. We report query-level Pre-cision, Recall, and F1, which are standard in CSC.                       
+
+> 1The dataset is available at https://github.com/ PLACEHOLDER/KwaiSearch .
+> Name Usage #Sent #Error Avg. Len.
+> QSpell 250K Train 200K 102K 8.56 Test 50K 26K 8.58
+> KwaiSearch Train 180M Unknown 9.67 Test 30K 15K 7.35
+> Table 3: Statistics of all datasets. #Sent, #Error, and Avg. Len. denote the number of queries, error queries, and average query length, respectively.
+
+Baseline Methods. We compare GUIDE with supervised and unsupervised baselines: • BERT (Devlin et al., 2019): a supervised correc-tion baseline that fine-tunes BERT-base-Chinese to predict corrected characters in context. • M ASKED -FT (Wu et al., 2023): a supervised fine-tuning strategy that masks non-error charac-ters during training to reduce trivial copying and mitigate over-correction. • S IMPLE -CSC (Zhou et al., 2024): a training-free, prompt-free LLM baseline that treats the LLM as a left-to-right language model and corrects text by constrained decoding, using a minimal-distortion constraint (phonetic/visual similarity) to keep the output close to the input. • LLM-ICL: a prompting baseline using the Qwen3 series (Yang et al., 2025). We evaluate 0-shot and 10-shot settings on three model sizes (0.6B/1.7B/4B) with randomly sampled demon-strations. 4Variant QSpell 250K KwaiSearch                        
+
+> Prec. Rec. F1 Prec. Rec. F1 Pho-only 0.4107 0.5230 0.4628 0.6661 0.8433 0.7443 Vis-only 0.0807 0.8152 0.1470 0.1326 0.7971 0.2274 Pho+Vis 0.4244 0.5341 0.4730 0.6738 0.8476 0.7508
+
+Table 4: Comparison of clustering strategies in GUIDE. “Pho” and “Vis” denote the homophonic model and the visual-similarity model, respectively. “Pho+Vis” is the combined setting used in our main experiments. 
+
+Implementation Details. We instantiate GUIDE with three Transformer encoder–decoder sizes, us-ing 3-, 6-, and 12-layer encoders and decoders, respectively. Unless otherwise specified, we use a single unified system that combines the ho-mophonic and visual-similarity models. Since 
+
+KwaiSearch has no ground-truth labels, supervised baselines are trained on QSpell 250K and evalu-ated on KwaiSearch . Detailed model configura-tions and training hyperparameters are provided in Appendix A.1. 
+
+3.2 Main Results 
+
+Table 2 reports results on QSpell 250K and 
+
+KwaiSearch . GUIDE achieves the best overall performance on both datasets, with especially large gains on KwaiSearch . This suggests that constrain-ing correction to phonetic/visual confusion neigh-borhoods is highly effective. On QSpell 250K ,SIMPLE -CSC trades precision for recall, reflect-ing more aggressive rewriting behavior. In query recommendation, however, false corrections are often more harmful than missed typos, so the stronger precision–recall balance of GUIDE is better aligned with deployment needs. In-context prompting remains consistently weaker overall. Additional qualitative examples are provided in Appendix B.3. 
+
+3.3 Online A/B Testing 
+
+We further validate GUIDE in an online A/B test on real search traffic. Here we deploy the corrector at several high-traffic query entry points, where it corrects the candidate query set for recommenda-tion: SUG search (search suggestions during typ-ing), guess you search (pre-search query guesses surfaced to users), boxed-term search (search-box guesses of likely queries), and comment/bottom-bar guess search (lightweight guesses shown in comment or bottom-bar modules). As the pro-duction baseline, we compare with the previous online correction method. Compared with this baseline, GUIDE substantially improves user-Clustering granularity (coarser finer)       
+
+> F1
+> Coarse pinyin Default Tone-aware
+> = 0.3 = 0.4 = 0.5 = 0.6
+> 0.674 0.744 0.590
+> 0.215 0.218 0.227 0.225
+> Pho-only Vis-only
+
+Figure 2: Sensitivity of GUIDE to phonetic and visual clustering granularity on KwaiSearch .
+
+perceived quality: the misspelling rate drops by 80.1% (from 2.01% to 0.40%). We also observe consistent efficiency gains across multiple entry points, including SUG search PV (+0.152%), guess you search PV (+0.576%), boxed-term search PV (+0.707%), and comment/bottom-bar guess search PV (+0.986%), together leading to a +0.122% in-crease in overall search volume. 
+
+4 Discussion 
+
+4.1 Are Homophonic and Visual-Similarity Models Complementary? 
+
+To verify whether GUIDE benefits from modeling both dominant error sources in Chinese queries, we compare three settings: (i) only the homophonic model, (ii) only the visual-similarity model, and (iii) their combination (our default setting). As shown in Table 4, Pho+Vis achieves the best F1 on both datasets, indicating that the two cluster-ing strategies are complementary. Overall, the homophonic model plays a more dominant role, while the visual-similarity model provides addi-tional gains by covering look-alike errors that are not well captured by pronunciation cues. 
+
+4.2 How Sensitive Is GUIDE to Clustering Granularity? 
+
+We examine the effect of clustering granularity on correction quality. For homophonic cluster-ing, we compare the default tone-stripped setting with two variants: a coarser pinyin setting and a finer tone-aware setting. The coarser setting merges common pinyin confusions that arise from regional accents in Mandarin and are directly re-flected as typing errors in pinyin IMEs, including retroflex/non-retroflex initials ({z, zh}, {c, ch}, {s, sh}), nasal/lateral initials ({n, l}), labiodental con-fusions ({h, f}), and front/back nasal finals ({en, eng}, {in, ing}, {an, ang}). For visual clustering, we vary the threshold τ that controls neighborhood size. Figure 2 summarizes the trends, while the 5full numerical results are provided in Table 9. The default tone-stripped clustering gives the best over-all F1 among phonetic variants, while τ = 0 .5
+
+performs best for visual similarity clustering. Over-all, moderate confusion neighborhoods provide the best balance between coverage and noise. 
+
+5 Related Work 
+
+5.1 Chinese Spelling and Query Correction 
+
+Chinese spelling correction (CSC) is typically stud-ied on sentence-level text with richer contextual information, whereas Chinese query correction (CQC) focuses on short search queries, where am-biguity is higher and vocabulary shift is faster. Be-cause query correction directly affects retrieval and recommendation, CQC places stronger emphasis on intent preservation and control over editing be-havior than general CSC. Early correction methods often followed a noisy-channel formulation with candidate generation and ranking (Brill and Moore, 2000). More recent CSC systems increasingly adopt PLM-based “detect-then-correct” architectures, such as Soft-Masked BERT (Zhang et al., 2020), to reduce unnecessary rewriting. For Chinese, phonetic and glyph simi-larity are especially important, and many models incorporate them through structured relations, mul-timodal features, including SpellGCN (Cheng et al., 2020) and ReaLiSe (Xu et al., 2021). Other effi-cient correction systems, such as FASPell (Hong et al., 2019), also show strong performance un-der realistic Chinese spelling noise, while newer datasets such as CSCD-NS broaden evaluation cov-erage (Hu et al., 2024). Within the query setting, recent work highlights the mismatch between generic CSC assumptions and real search queries. Benchmarks such as 
+
+QSpell 250K (Ye et al., 2025) better reflect nat-urally occurring query errors and rapidly changing entities. At the same time, recent studies show that strong language models can still over-correct short ambiguous inputs toward frequent or generic expressions (Li et al., 2023; Liu et al., 2024), mo-tivating stronger mechanisms for edit control. To improve robustness on rare entities and shifting queries, some systems further incorporate retrieval or orchestration components, such as RACQC (Su et al., 2025) and Trigger 3 (Zhang et al., 2024). Our work is related to these lines but differs in where the correction constraint is imposed. Prior CSC models typically inject phonetic or glyph knowledge into a supervised correction model, while training-free LLM approaches mainly con-strain decoding at inference time. By contrast, GUIDE uses phonetic and visual similarity to de-fine a shared-ID input space and learns correction through reconstruction from that lossy abstraction. This makes the confusion structure itself part of the training objective, rather than only an auxiliary feature or a decoding-time constraint. 
+
+5.2 Unsupervised Query Correction 
+
+To reduce reliance on annotated correction pairs, unsupervised and weakly supervised correction methods learn from raw text or logs via synthetic corruption, self-training, denoising, or masked re-construction. A common strategy is to generate pseudo pairs by applying confusion-set substitu-tions or masking and then train a model to recover the original text (Liu et al., 2021; Li, 2022). Several studies further argue that realistic Chinese spelling errors are strongly shaped by the input process, and therefore simulate pinyin IME decoding to create pseudo data that better matches real error patterns (Hu et al., 2024). Other work reduces dependence on fixed confusion sets by using language-model scoring, self-supervised decoding, or inference-time denoising (Jiang et al., 2024; Zhou et al., 2024). There are also flexible correction pipelines based on candidate evaluation with lightweight de-tectors and configurable candidate tables (Shao and Li, 2023). Compared with these approaches, GUIDE takes a different view of unsupervised learning. Rather than constructing synthetic error–correction pairs, we learn directly from unlabeled query streams by mapping confusable characters into shared encoder IDs and training the model to reconstruct the orig-inal query. This confuse-then-clarify formulation avoids committing to a hand-designed corruption process while still imposing a strong inductive bias toward plausible IME-shaped edits. In this sense, GUIDE is closest in spirit to input-process-aware correction, but differs in using confusion neighbor-hoods as a lossy input abstraction and reconstruc-tion signal for controlled generation. 
+
+6 Limitations and Future Work 
+
+GUIDE is designed for high-precision correction under weak query context, and this design choice also defines its current scope. First, the framework focuses on length-6preserving character substitution and does not di-rectly address insertion, deletion, segmentation, or phrase-level rewriting errors. This is a practical trade-off: in our production setting, substitution errors—especially homophonic and visually simi-lar ones—are among the most practically important query mistakes, making controlled substitution cor-rection highly valuable. In practice, we view this as a deliberate decomposition choice: different query error types can be handled by the models or mod-ules best suited to them, which is often a favorable design for industrial systems. Second, although phonetic and visual shared-ID neighborhoods cover the dominant error sources in Chinese queries, they do not capture all realistic error types. Errors falling outside the constructed neighborhoods, or cases where the neighborhood itself is noisy, may still lead to missed corrections or over-correction. This is particularly relevant for visual clustering, whose neighborhoods can be substantially noisier than phonetic ones. At the same time, our results validate the effectiveness of this neighborhood-based design. While the cur-rent construction is not perfect, it can be further improved through continued refinement of cluster-ing methods, and its failure cases remain relatively interpretable. Third, our current deployment combines pho-netic and visual signals through a simple heuris-tic selection strategy rather than a unified fusion model. We chose this decoupled design for stabil-ity and operational simplicity in production, but it leaves room for more principled integration, such as confidence-aware fusion, joint multimodal en-coding, or learned routing between error types. Finally, because our platform primarily serves Chinese queries, we focus this study on Chi-nese query correction. That said, the overall confuse-then-clarify paradigm is not inherently Chinese-specific, and can be generalized to other languages with language-appropriate neighbor-hood construction, such as phonological neighbors, keyboard-proximity errors, orthographic variants, or morphology-aware confusion structures. Explor-ing such extensions is a natural direction for future work. 
+
+7 Conclusion 
+
+We studied unsupervised Chinese query correc-tion on content platforms, where weak context and IME-shaped noise make free-form rewriting espe-cially prone to intent drift. GUIDE addresses this challenge through a confuse-then-clarify paradigm: by encoding queries in phonetic/visual shared-ID neighborhoods and reconstructing original char-acter sequences, it enables controlled correction from unlabeled query streams. Across both offline benchmarks and online A/B testing, the results sug-gest that, for short-query correction, effective con-trol over the edit space can be more important than unconstrained generation. 
+
+Acknowledgments 
+
+This work was conducted at Kuaishou Technology. We thank the company for its support, and our col-leagues on the search and recommendation team for helpful discussions and their assistance with data processing, deployment, and online experi-ments. We are especially grateful to Xuanping Li for valuable guidance and support throughout this work. We also thank the anonymous reviewers and area chairs for their constructive comments. 
+
+References                   
+
+> Andrea Bacciu, Enrico Palumbo, Andreas Dami-anou, Nicola Tonellotto, and Fabrizio Silvestri. 2024. Generating query recommendations via LLMs. ArXiv:2405.19749. Eric Brill and Robert C. Moore. 2000. An improved error model for noisy channel spelling correction. In
+> Proceedings of the 38th Annual Meeting of the Associ-ation for Computational Linguistics , pages 286–293, Hong Kong. Association for Computational Linguis-tics. Xingyi Cheng, Weidi Xu, Kunlong Chen, Shaohua Jiang, Feng Wang, Taifeng Wang, Wei Chu, and Yuan Qi. 2020. SpellGCN: Incorporating phonologi-cal and visual similarities into language models for Chinese spelling check. In Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics , pages 871–881, Online. Association for Computational Linguistics. Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. 2019. BERT: Pre-training of deep bidirectional transformers for language under-standing. In Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Tech-nologies, Volume 1 (Long and Short Papers) , pages 4171–4186, Minneapolis, Minnesota. Association for Computational Linguistics. Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Sylvain Gelly, and 1
+
+7others. 2020. An image is worth 16x16 words: Transformers for image recognition at scale. arXiv preprint arXiv:2010.11929 .Jianfeng Gao, Xiaolong Li, Daniel Micol, Chris Quirk, and Xu Sun. 2010. A large scale ranker-based system for search query spelling correction. In Proceedings of the 23rd International Conference on Computa-tional Linguistics (Coling 2010) , pages 358–366, Bei-jing, China. Coling 2010 Organizing Committee. Yuzhong Hong, Xianguo Yu, Neng He, Nan Liu, and Junhui Liu. 2019. FASPell: A fast, adaptable, sim-ple, powerful Chinese spell checker based on DAE-decoder paradigm. In Proceedings of the 5th Work-shop on Noisy User-generated Text (W-NUT 2019) ,pages 160–169, Hong Kong, China. Association for Computational Linguistics. Yong Hu, Fandong Meng, and Jie Zhou. 2024. CSCD-NS: a Chinese spelling check dataset for native speak-ers. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Vol-ume 1: Long Papers) , pages 146–159, Bangkok, Thailand. Association for Computational Linguistics. Lai Jiang, Hongqiu Wu, Hai Zhao, and Min Zhang. 2024. Chinese spelling corrector is just a language learner. In Findings of the Association for Compu-tational Linguistics: ACL 2024 , pages 6933–6943, Bangkok, Thailand. Association for Computational Linguistics. Piji Li. 2022. uChecker: Masked pretrained language models as unsupervised Chinese spelling checkers. In Proceedings of the 29th International Conference on Computational Linguistics , pages 2812–2822, Gyeongju, Republic of Korea. International Com-mittee on Computational Linguistics. Yinghui Li, Haojing Huang, Shirong Ma, Yong Jiang, Yangning Li, Feng Zhou, Hai-Tao Zheng, and Qingyu Zhou. 2023. On the (in) effectiveness of large lan-guage models for chinese text correction. arXiv preprint arXiv:2307.09007 .Chao-Lin Liu, Min-Hua Lai, Yi-Hsuan Chuang, and Chia-Ying Lee. 2010. Visually and phonologically similar characters in incorrect simplified chinese words. In Coling 2010: Posters , pages 739–747, Beijing, China. Coling 2010 Organizing Committee. Linfeng Liu, Hongqiu Wu, and Hai Zhao. 2024. Chi-nese spelling correction as rephrasing language model. Proceedings of the AAAI Conference on Arti-ficial Intelligence , 38(17). Shulin Liu, Tao Yang, Tianchi Yue, Feng Zhang, and Di Wang. 2021. PLOME: Pre-training with mis-spelled knowledge for Chinese spelling correction. In Proceedings of the 59th Annual Meeting of the Association for Computational Linguistics and the 11th International Joint Conference on Natural Lan-guage Processing (Volume 1: Long Papers) , pages 2991–3000, Online. Association for Computational Linguistics. Feiran Shao and Jinlong Li. 2023. Dual-detector: An unsupervised learning framework for chinese spelling check. In Pacific-Asia conference on knowledge dis-covery and data mining , pages 162–173. Springer. Jinbo Su, Lingzhe Gao, Wei Li, Shihao Liu, Haojie Lei, Xinyi Wang, Yuanzhao Guo, Ke Wang, Daiting Shi, and Dawei Yin. 2025. RACQC: Advanced retrieval-augmented generation for Chinese query correction. In Findings of the Association for Computational Linguistics: EMNLP 2025 , pages 675–689, Suzhou, China. Association for Computational Linguistics. Xu Sun, Anshumali Shrivastava, and Ping Li. 2012. Fast multi-task learning for query spelling correction. In 
+
+Proceedings of the 21st ACM International Confer-ence on Information and Knowledge Management (CIKM’12) , pages 285–294. ACM. Yuen-Hsien Tseng, Lung-Hao Lee, Li-Ping Chang, and Hsin-Hsi Chen. 2015. Introduction to SIGHAN 2015 bake-off for Chinese spelling check. In Proceed-ings of the Eighth SIGHAN Workshop on Chinese Language Processing , pages 32–37, Beijing, China. Association for Computational Linguistics. Dingmin Wang, Yan Song, Jing Li, Jialong Han, and Haisong Zhang. 2018. A hybrid approach to auto-matic corpus generation for Chinese spelling check. In Proceedings of the 2018 Conference on Empiri-cal Methods in Natural Language Processing , pages 2517–2527, Brussels, Belgium. Association for Com-putational Linguistics. Hongqiu Wu, Shaohua Zhang, Yuchen Zhang, and Hai Zhao. 2023. Rethinking masked language model-ing for Chinese spelling correction. In Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) ,pages 10743–10756, Toronto, Canada. Association for Computational Linguistics. Shih-Hung Wu, Chao-Lin Liu, and Lung-Hao Lee. 2013a. Chinese spelling check evaluation at sighan bake-off 2013. In Proceedings of the Seventh SIGHAN Workshop on Chinese Language Process-ing , pages 35–42, Nagoya, Japan. Asian Federation of Natural Language Processing. Shih-Hung Wu, Chao-Lin Liu, and Lung-Hao Lee. 2013b. Chinese spelling check evaluation at SIGHAN bake-off 2013. In Proceedings of the Sev-enth SIGHAN Workshop on Chinese Language Pro-cessing , pages 35–42, Nagoya, Japan. Asian Federa-tion of Natural Language Processing. Heng-Da Xu, Zhongli Li, Qingyu Zhou, Chao Li, Zizhen Wang, Yunbo Cao, Heyan Huang, and Xian-Ling Mao. 2021. Read, listen, and see: Leveraging multimodal information helps Chinese spell checking. In Findings of the Association for Computational Lin-guistics: ACL-IJCNLP 2021 , pages 716–728, Online. Association for Computational Linguistics. An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, 
+
+8Chengen Huang, Chenxu Lv, Chujie Zheng, Dayi-heng Liu, Fan Zhou, Fei Huang, Feng Hu, Hao Ge, Haoran Wei, Huan Lin, Jialong Tang, and 41 oth-ers. 2025. Qwen3 technical report. arXiv preprint arXiv:2505.09388 .Liner Yang, Xin Liu, Tianxin Liao, Zhenghao Liu, Mengyan Wang, Xuezhi Fang, and Erhong Yang. 2023. Is chinese spelling check ready? understand-ing the correction behavior in real-world scenarios. 
+
+AI Open , 4:183–192. Dezhi Ye, Haomei Jia, Junwei Hu, Tian Bowen, Jie Liu, Haijin Liang, Jin Ma, and Wenmin Wang. 2025. QSpell 250K: A large-scale, practical dataset for Chi-nese search query spell correction. In Proceedings of the 2025 Conference of the Nations of the Americas Chapter of the Association for Computational Lin-guistics: Human Language Technologies (Volume 3: Industry Track) , pages 148–155, Albuquerque, New Mexico. Association for Computational Linguistics. Liang-Chih Yu, Lung-Hao Lee, Yuen-Hsien Tseng, and Hsin-Hsi Chen. 2014. Overview of SIGHAN 2014 bake-off for Chinese spelling check. In Proceedings of the Third CIPS-SIGHAN Joint Conference on Chi-nese Language Processing , pages 126–132, Wuhan, China. Association for Computational Linguistics. Kepu Zhang, Zhongxiang Sun, Xiao Zhang, Xiaoxue Zang, Kai Zheng, Yang Song, and Jun Xu. 2024. Trigger 3: Refining query correction via adaptive model selector. ArXiv:2412.12701. Shaohua Zhang, Haoran Huang, Jicong Liu, and Hang Li. 2020. Spelling error correction with soft-masked BERT. In Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics , pages 882–890, Online. Association for Computational Lin-guistics. Houquan Zhou, Zhenghua Li, Bo Zhang, Chen Li, Shaopeng Lai, Ji Zhang, Fei Huang, and Min Zhang. 2024. A simple yet effective training-free prompt-free approach to Chinese spelling correction based on large language models. In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing , pages 17446–17467, Miami, Florida, USA. Association for Computational Lin-guistics. 
+
+9A Supplementary Experimental Settings 
+
+A.1 Training Settings 
+
+This appendix provides the detailed training config-urations for GUIDE. Unless otherwise specified, all reported results use the same training recipe across model sizes. 
+
+Hardware. We train GUIDE on a single ma-chine equipped with 4× NVIDIA L20 GPUs. Mixed-precision training is enabled. 
+
+Model Configuration. GUIDE uses a standard Transformer encoder–decoder architecture. We evaluate three sizes with {3, 6, 12 } encoder layers and {3, 6, 12 } decoder layers, respectively. For all variants, we use d_model = 768 , d_ff =3072 , # heads = 12 , dropout = 0.1, and label smoothing = 0 .1. The vocabulary consists of character IDs, and the encoder input is the shared-ID sequence produced by the clustering module (Section 2.2). 
+
+Optimization. We optimize the time-decayed, frequency-reweighted negative log-likelihood ob-jective in Eq. 1. We use AdamW with β1 = 0 .9,
+
+β2 = 0 .999 , ϵ = 1 × 10 −5, weight decay = 0 .01 ,and gradient clipping norm=1.0. The base learning rate is 5 × 10 −5, with a warmup of 5% steps of the total steps followed by a cosine decay schedule (e.g., inverse-square-root / cosine decay). Training runs for 2 epochs, with an effective batch size of 512 queries (micro-batch size 128 per GPU and gradient accumulation steps 4). We set the max-imum input length to 16 characters and truncate longer sequences. 
+
+Data and Reweighting. For each training exam-ple (xi, t i), the shared-ID input ˜xi is constructed by replacing each character with its phonetic/visual shared-ID (Section 2.2). The weight is wi =log(1 + ci) · exp( −λ∆ti), where λ = 0 .0077 and 
+
+∆ti is measured in 90 days. We sample training data proportionally to wi, and update weights every week. 
+
+Decoding and Checkpoint Selection. At infer-ence time, we use beam search with beam size 10, length penalty 1.0, and maximum decoding length mi (equal to the input length). For the uni-fied system, we run both phonetic-shared-ID and visual-shared-ID encodings and select the encoding whose best beam candidate yields the smaller score gap to the original query (Section 2.3). We select the final checkpoint using validation query-level F1 (or NLL) on a held-out set, evaluated every 2000 steps. 
+
+A.2 Baseline Settings 
+
+For supervised and fine-tuning baselines, we follow the original implementations and report the results in Section 3. For LLM-ICL, we use the Qwen3 series (0.6B/1.7B/4B) under 0-shot and 10-shot settings with randomly sampled demonstrations, using the prompt templates shown below. 
+
+Prompt Templates (LLM-ICL). 0-shot. 
+
+你是一个 query 纠错专家。请针对输
+
+入query ，判断是否包含错别字，并
+
+进行合理纠错。
+
+Query: {text} 
+
+Output: 
+
+English translation: “You are a query-correction expert. For the input query, decide whether it con-tains misspelled characters and correct them appro-priately.” 
+
+10-shot. 
+
+你是一个 query 纠错专家。请针对输
+
+入query ，进行合理的文本纠错，输
+
+出纠错后文本，禁止输出任何思考过
+
+程。
+
+示例：
+
+Query: ... 
+
+Output: ... 
+
+
+
+× 10 
+
+Query: {text} 
+
+Output: 
+
+English translation: “You are a query-correction expert. For the input query, perform reasonable text correction and output only the corrected text; do not output any reasoning process.” (“ 示例” = “Examples”.) 
+
+B Additional Experimental Results 
+
+B.1 Ablation on the Training Objective and Sensitivity to λ
+
+We ablate the two components of our training objec-tive in Eq. (1) on KwaiSearch to isolate their contri-butions. Starting from a uniform objective, adding query-frequency reweighting alone improves F1 by about 11 points, and further adding the time-decay term yields an additional gain of about 4.6 points (Table 5). This confirms that frequency reweighting 10 Objective Prec. Rec. F1          
+
+> Uniform 0.5503 0.6470 0.5947 Frequency-only 0.6314 0.7974 0.7048 Full (time-decay + freq.) 0.6738 0.8476 0.7508
+
+Table 5: Ablation of the training objective on 
+
+Kwaisearch (3-layer model). Frequency reweighting alone adds ∼11 F1 points over the uniform objective, and time decay adds a further ∼4.6 points.             
+
+> λPrec. Rec. F1
+> 0.0098 (ours) 0.6738 0.8476 0.7508
+> 0.0133 (aggressive) 0.6680 0.8422 0.7451 0.0043 (conservative) 0.6817 0.7974 0.7350
+
+Table 6: Sensitivity to the time-decay coefficient λ on 
+
+Kwaisearch (3-layer model). Targeting 50% overlap (0.0133 ) or 80% overlap ( 0.0043 ) keeps F1 within ∼1.6 points of our default λ = 0 .0098 .
+
+is the dominant factor, while time decay provides a consistent additional benefit by shifting learning focus toward recent queries. Importantly, λ is not tuned on the test set. We instead set it from a simple operational assumption: with an approximately 60% one-year query overlap and weekly model updates, requiring e−λ·52 = 0 .6
+
+over the 52 weekly steps of a year gives λ =0.0098 , which is the value used throughout our experiments. To show that this choice is robust, we also report more aggressive and more conservative alternatives obtained by targeting a 50% overlap (λ = 0 .0133 ) or an 80% overlap ( λ = 0 .0043 ). As shown in Table 6, both variants keep F1 within about 1.6 points of our default, indicating that GUIDE is not sensitive to the exact value of λ.
+
+B.2 Selection of the Visual Clustering Threshold τ
+
+The visual clustering threshold τ is selected on a separate held-out development set consisting purely of visual errors, rather than on the Kwaisearch test set. We sweep τ for the visual-similarity model on this development set and report the results in Table 7. The threshold τ = 0 .5 is optimal on the development set, and we keep this value throughout all experiments. This makes the selection protocol explicit and ensures that τ is not tuned on any test data. 
+
+B.3 Case Studies 
+
+We provide qualitative examples to complement the quantitative results in Section 3. Table 8 in-                
+
+> Threshold τPrec. Rec. F1
+> 0.3 0.5974 0.7613 0.6695 0.4 0.5969 0.7774 0.6753 0.5 (selected) 0.5999 0.7890 0.6816
+> 0.6 0.5974 0.7347 0.6590
+
+Table 7: Selection of the visual clustering threshold 
+
+τ on a held-out development set of visual errors only. 
+
+τ = 0 .5 is optimal and is used throughout.                                 
+
+> Case Good (Pho) Good (Vis) Original 时间同步板远离臧易通怎么查核酸报告
+> Target 时间同步板原理藏易通怎么查核酸报告
+> GUIDE 时间同步板原理藏易通怎么查核酸报告
+> BERT 时间同步板远离交易通怎么查核酸报
+> MASKED -FT 时间同步被远离易易 通怎么查核酸报告
+> SIMPLE -CSC 时间同步板远离臧易通怎么查核酸报告
+> LLM-ICL 时间同步板远离臧易通如何查询核酸报
+> 告
+> Case Bad (Over) Bad (Miss) Original 播音苏杨name 英标怎么写
+> Target 播音苏杨name 音标怎么写
+> GUIDE 播音素养name 英标怎么写
+> BERT 播音苏杨name 英标怎么写
+> MASKED -FT 播音苏扬name 英标怎么写
+> SIMPLE -CSC 播音苏扬name 英标怎么写
+> LLM-ICL 播音苏扬name 的英标是/nm/
+
+Table 8: Qualitative case studies on representative query correction examples. We show the original query, the target correction, and the outputs of GUIDE and base-line methods for two good cases (Pho/Vis) and two failure cases (Over/Miss). 
+
+cludes both representative good cases and bad cases for GUIDE. In good cases, GUIDE fixes typ-ical IME-shaped confusions (sound-alike or look-alike) while preserving the remaining characters, producing outputs that better match the intended query. In bad cases, two common failure modes are observed: (i) over-correction , where a rare but valid query is rewritten toward a more frequent alternative, and (ii) missed correction , where the error lies outside the clustering neighborhood or requires extra context beyond the query itself. For instance, GUIDE corrects “ 时间同步板远离” →
+
+“时间同步板原理” and “ 臧易通怎么查核酸报
+
+告” → “藏易通怎么查核酸报告”, but may over-correct “ 播音苏杨” to the frequent phrase “ 播音素
+
+养”, or keep “name 英标怎么写” unchanged when the cue is weak; this mainly happens because short queries provide little context, so the model tends to favor high-probability frequent phrases unless the phonetic/visual neighborhood offers a strong and unambiguous correction signal. 11 Setting Prec. Rec. F1                          
+
+> Phonetic clustering
+> Coarse pinyin clusters 0.6020 0.7650 0.6738 Default homophonic clustering 0.6662 0.8433 0.7443
+> Tone-aware clustering 0.4585 0.8266 0.5898
+> Visual clustering threshold
+> τ= 0 .30.1245 0.7859 0.2149
+> τ= 0 .40.1267 0.7909 0.2184
+> τ= 0 .50.1326 0.7971 0.2274
+> τ= 0 .60.1311 0.7938 0.2250
+
+Table 9: Full numerical results for the clustering-granularity analysis on KwaiSearch .        
+
+> Month 09-01 10-01 11-01 12-01
+> Misspelling rate 2.01% 0.40% 0.46% 0.33%
+
+Table 10: Post-rollout monthly tracking of the online misspelling rate after the full rollout of GUIDE (end of September 2025). The reduction is stable and sustained. 
+
+C Online A/B Testing Details 
+
+The production baseline in our online A/B test (Sec-tion 3.3) is an LLM-based corrector: a Qwen model fine-tuned on tens of thousands of manually anno-tated correction pairs, using the same prompt as provided in this paper (Appendix A.2). We com-pare GUIDE against this deployed LLM-based correction model. We run a bucketed A/B test from 2025-09-13 to 2025-09-22 (10 days) on 4.2% of production main-search traffic. Our single-day search page views (PV) are on the order of tens of millions, and the downstream query-recommendation sce-narios fed by the corrector carry far larger PV than search itself; at this scale, the A/B conclusions are highly confident. The misspelling rate is measured by random sampling of online queries followed by manual annotation. During the bucketed test, GUIDE reduces the misspelling rate from 2.58% (base) to 0.86% (exp), and yields a +0 .122% over-all search-volume lift. GUIDE was fully rolled out at the end of September 2025. We continue to monitor the on-line misspelling rate by month, as reported in Ta-ble 10. The reduction remains stable across subse-quent months rather than being a transient effect, confirming a sustained improvement in correction quality. 12

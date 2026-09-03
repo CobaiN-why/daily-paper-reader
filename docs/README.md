@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-08-05 ~ 2026-09-03</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-03</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 50 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 23 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>0</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>50</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>12</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-03 10:19:31 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-03 23:06:52 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,9 +69,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日速读50篇论文，重点聚焦AI编码智能体方向，虽无精读但有三篇高分速读推荐。</p>
-<p>最值得关注的是《DiDPO》与《Kozuchi Agent》均获满分10分，分别涉及编码智能体训练策略与跨语言软件修复，另有《Active-SWE》提出无问题报告场景的主动修复基准。</p>
-<p>建议普通读者优先浏览这三篇高分论文的摘要与结论，把握AI自动编程与修复领域的最新趋势。</p>
+<p>今日共读论文23篇，其中精读12篇、速读11篇，聚焦代码生成与多智能体协作前沿。</p>
+<p>最值得关注的是两篇9分精读：多智能体协作提升代码正确性与安全性（MACGen），以及仓库级代码推理中的“千图假说”（Thousand-Graph）。</p>
+<p>建议优先浏览精读论文的结论图表，并搭配速读中的SpecMine数据集与ProgRouter质量-成本调度框架，快速把握工具生态。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -80,12 +80,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">0 篇</strong>
+    <strong class="dpr-home-dashboard-count">12 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p class="dpr-home-dashboard-empty">今日暂无推荐。</p>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="MACGen: Toward Functionally Correct and Secure Code Generation via Multi-Agent Collaboration">MACGen: Toward Functionally Correct and Secure Code Generation via Multi-Agent Collaboration</span></li><li><span class="dpr-home-dashboard-paper-title" title="The Thousand-Graph Hypothesis: A Testable Hypothesis of Task-Conditioned Relation Materialization in Repository-Level Code Reasoning">The Thousand-Graph Hypothesis: A Testable Hypothesis of Task-Conditioned Relation Materialization in Repository-Level Code Reasoning</span></li><li><span class="dpr-home-dashboard-paper-title" title="Legacy System Modernization with Coding Agents: A Case Study">Legacy System Modernization with Coding Agents: A Case Study</span></li></ul>
   </div>
-
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>12</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -93,12 +93,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">50 篇</strong>
+    <strong class="dpr-home-dashboard-count">11 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="DiDPO: Diff-in-Diff Policy Optimization for Coding Agent Training">DiDPO: Diff-in-Diff Policy Optimization for Coding Agent Training</span></li><li><span class="dpr-home-dashboard-paper-title" title="Kozuchi Agent: A Language-Agnostic Open-Weight Agent for Software Repair">Kozuchi Agent: A Language-Agnostic Open-Weight Agent for Software Repair</span></li><li><span class="dpr-home-dashboard-paper-title" title="Active-SWE: Benchmarking Coding Agents for Proactive Bug Fixing without Issue Reports">Active-SWE: Benchmarking Coding Agents for Proactive Bug Fixing without Issue Reports</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="SpecMine: A Large-Scale Corpus of Spec-Driven Development Artifacts">SpecMine: A Large-Scale Corpus of Spec-Driven Development Artifacts</span></li><li><span class="dpr-home-dashboard-paper-title" title="ProgRouter: Online Progress-Guided Orchestration for Multi-Agent LLM Workflows under Quality-Cost Tradeoffs">ProgRouter: Online Progress-Guided Orchestration for Multi-Agent LLM Workflows under Quality-Cost Tradeoffs</span></li><li><span class="dpr-home-dashboard-paper-title" title="Co-Evolving Structured Knowledge and Reasoning in Language Models">Co-Evolving Structured Knowledge and Reasoning in Language Models</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>50</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>11</strong></span></div>
 </section>
 </div>
 
