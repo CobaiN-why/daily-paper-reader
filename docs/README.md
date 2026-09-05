@@ -48,7 +48,7 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-04</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-05</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
     <strong class="dpr-home-dashboard-count">共 17 篇</strong>
@@ -58,7 +58,7 @@
     <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-04 22:01:06 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-05 21:35:59 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日精读6篇、速读11篇，共扫描17篇论文。最值得关注的是《Credo》提出的可重用声明式原语与《AgentLogs》开源代理数据集，均获9.0高分。建议优先阅读代理工作流设计与可解释性方向，兼看语法约束解码与医疗代码生成的应用突破。</p>
+<p>今日共读17篇论文，其中重点精读智能体云工程与PR-Issue对齐分类两项高影响力工作。</p>
+<p>值得关注的方向：图与循环工程结合零信任Agent框架用于云自动化，以及微调LLM比提示更有效判别代码关联。</p>
+<p>下一步可延伸探索多语言NER、无头模型及合成世界时间评估，关注其对通用智能体的启发性。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -81,7 +83,7 @@
     <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Credo: Reusable Declarative Primitives for Agentic Workflows">Credo: Reusable Declarative Primitives for Agentic Workflows</span></li><li><span class="dpr-home-dashboard-paper-title" title="AgentLogs: A Dataset for Opening the Black Box of GitHub&#x27;s Cloud Agent">AgentLogs: A Dataset for Opening the Black Box of GitHub&#x27;s Cloud Agent</span></li><li><span class="dpr-home-dashboard-paper-title" title="Framework and Benchmark for Code-Driven Agentic Testing in Web Development">Framework and Benchmark for Code-Driven Agentic Testing in Web Development</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Towards Agentic Cloud Engineering: Graph and Loop Engineering with a Zero-Trust Agent Harness">Towards Agentic Cloud Engineering: Graph and Loop Engineering with a Zero-Trust Agent Harness</span></li><li><span class="dpr-home-dashboard-paper-title" title="Fine-Tuning Large Language Models to Classify Pull Request-Issue Alignments: Going Beyond Prompting">Fine-Tuning Large Language Models to Classify Pull Request-Issue Alignments: Going Beyond Prompting</span></li><li><span class="dpr-home-dashboard-paper-title" title="Continuous Autonomous Refactoring: A Research Roadmap for AI-Driven Code Quality Maintenance">Continuous Autonomous Refactoring: A Research Roadmap for AI-Driven Code Quality Maintenance</span></li></ul>
   </div>
   <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>6</strong></span></div>
 </section>
@@ -94,7 +96,7 @@
     <strong class="dpr-home-dashboard-count">11 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Stay Within Your Bounds: Distance-Guided Decoding for Guaranteed Context-Free Grammar Compliance">Stay Within Your Bounds: Distance-Guided Decoding for Guaranteed Context-Free Grammar Compliance</span></li><li><span class="dpr-home-dashboard-paper-title" title="Towards Fully Automated Medical Imaging Code Generation via Validation-based Context Engineering">Towards Fully Automated Medical Imaging Code Generation via Validation-based Context Engineering</span></li><li><span class="dpr-home-dashboard-paper-title" title="All You Need Is Non-Commutative Words">All You Need Is Non-Commutative Words</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Generative vs. Encoder Models for Multilingual NER: A Comprehensive Empirical Study on Naamapadam">Generative vs. Encoder Models for Multilingual NER: A Comprehensive Empirical Study on Naamapadam</span></li><li><span class="dpr-home-dashboard-paper-title" title="A Model with No Head and Many Thoughts">A Model with No Head and Many Thoughts</span></li><li><span class="dpr-home-dashboard-paper-title" title="Synthetic Worlds for Temporal Evaluation and Knowledge Updating in LLMs">Synthetic Worlds for Temporal Evaluation and Knowledge Updating in LLMs</span></li></ul>
   </div>
   <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>11</strong></span></div>
 </section>
