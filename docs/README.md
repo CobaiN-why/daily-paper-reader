@@ -48,7 +48,7 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-05</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-06</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
     <strong class="dpr-home-dashboard-count">共 17 篇</strong>
@@ -58,7 +58,7 @@
     <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-05 21:35:59 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-06 21:22:31 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,9 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日共读17篇论文，其中重点精读智能体云工程与PR-Issue对齐分类两项高影响力工作。</p>
-<p>值得关注的方向：图与循环工程结合零信任Agent框架用于云自动化，以及微调LLM比提示更有效判别代码关联。</p>
-<p>下一步可延伸探索多语言NER、无头模型及合成世界时间评估，关注其对通用智能体的启发性。</p>
+<p>今日精读6篇、速读11篇，核心聚焦LLM代码理解与测试生成；最值得关注的是从代码提交中提取架构设计决策的探索，以及两阶段强化学习用于对抗性测试生成；若想快速跟进，可从“代码智能+强化学习”这条主线切入，兼顾长上下文压缩与低资源语言推理的最新尝试。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -83,7 +81,7 @@
     <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Towards Agentic Cloud Engineering: Graph and Loop Engineering with a Zero-Trust Agent Harness">Towards Agentic Cloud Engineering: Graph and Loop Engineering with a Zero-Trust Agent Harness</span></li><li><span class="dpr-home-dashboard-paper-title" title="Fine-Tuning Large Language Models to Classify Pull Request-Issue Alignments: Going Beyond Prompting">Fine-Tuning Large Language Models to Classify Pull Request-Issue Alignments: Going Beyond Prompting</span></li><li><span class="dpr-home-dashboard-paper-title" title="Continuous Autonomous Refactoring: A Research Roadmap for AI-Driven Code Quality Maintenance">Continuous Autonomous Refactoring: A Research Roadmap for AI-Driven Code Quality Maintenance</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Can LLMs Extract Architectural Design Decisions from Source Code Commits? - A Preliminary Exploratory Study">Can LLMs Extract Architectural Design Decisions from Source Code Commits? - A Preliminary Exploratory Study</span></li><li><span class="dpr-home-dashboard-paper-title" title="Two-Stage Reinforcement Learning for Sound and Adversarial Test Generation in Code LLMs">Two-Stage Reinforcement Learning for Sound and Adversarial Test Generation in Code LLMs</span></li><li><span class="dpr-home-dashboard-paper-title" title="EvoGenUI-Bench: Evaluating LLMs as Multi-Turn Generative UI Assistants">EvoGenUI-Bench: Evaluating LLMs as Multi-Turn Generative UI Assistants</span></li></ul>
   </div>
   <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>6</strong></span></div>
 </section>
@@ -96,7 +94,7 @@
     <strong class="dpr-home-dashboard-count">11 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Generative vs. Encoder Models for Multilingual NER: A Comprehensive Empirical Study on Naamapadam">Generative vs. Encoder Models for Multilingual NER: A Comprehensive Empirical Study on Naamapadam</span></li><li><span class="dpr-home-dashboard-paper-title" title="A Model with No Head and Many Thoughts">A Model with No Head and Many Thoughts</span></li><li><span class="dpr-home-dashboard-paper-title" title="Synthetic Worlds for Temporal Evaluation and Knowledge Updating in LLMs">Synthetic Worlds for Temporal Evaluation and Knowledge Updating in LLMs</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Enhancing Low-Resource Language Reasoning via High-Resource Language Feature Transfer">Enhancing Low-Resource Language Reasoning via High-Resource Language Feature Transfer</span></li><li><span class="dpr-home-dashboard-paper-title" title="TopoCompress: Long Context Compression via Graph-Wired Semantic Trajectories">TopoCompress: Long Context Compression via Graph-Wired Semantic Trajectories</span></li><li><span class="dpr-home-dashboard-paper-title" title="CordisBench: Can Language Models Reason About Component Lifecycles in Dynamic Agent Harnesses?">CordisBench: Can Language Models Reason About Component Lifecycles in Dynamic Agent Harnesses?</span></li></ul>
   </div>
   <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>11</strong></span></div>
 </section>

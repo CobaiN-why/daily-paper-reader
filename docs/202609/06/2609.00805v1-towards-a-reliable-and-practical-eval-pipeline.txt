@@ -1,0 +1,275 @@
+Title: Towards a Reliable and Practical Eval Pipeline
+
+URL Source: https://arxiv.org/pdf/2609.00805v1
+
+Published Time: Wed, 02 Sep 2026 00:50:42 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+# Towards a Reliable and Practical Eval Pipeline 
+
+Emma Thuong Nguyen 
+
+Salesforce 
+
+emmanguyen@salesforce.com 
+
+Abhishek Ghose 
+
+Salesforce 
+
+aghose@salesforce.com 
+
+Abstract 
+
+LLM-based software systems increasingly require effective “evals” as quality gates in the development lifecycle. However, existing work typically addresses individual aspects of eval reliability rather than the full set of practical requirements. We present an end-to-end eval pipeline that combines eval checklist creation, with learned aggregation for checklist responses, to improve agreement across LLM judges and accuracy against human judgments. The framework additionally pro-vides self-consistency, explanations, and prediction uncertainty, and we empirically demonstrate its effectiveness. 
+
+1 Introduction 
+
+Over the past few years Large Language Models (LLM) have become a common ingredient in software, where they assist users in a variety of tasks such as drafting emails, writing and summarizing documents. This has engendered novel challenges in the software development process, where such product features are required to be released only after passing through rigorous quality tests. Here, the traditional practice of writing purely programmatic tests no longer suffices, and this step needs to utilize LLMs as well. For example, if a particular LLM-driven feature produces summaries, a corresponding test that checks for its coherence or fluency also typically needs to use an LLM. This creates an interesting problem: the fundamental behaviors we want our tests to check, e.g., effects of LLM non-determinism, are also possessed by the tests themselves. How do we then ensure that our tests precisely measure what we intend them to, and also provide guarantees similar to a traditional quality assurance framework? Effective LLM-as-judge evaluations (“evals” henceforth) are a topic of active research, e.g., G-Eval 
+
+[Liu et al., 2023], CheckEval [Lee et al., 2025], Prometheus-2 [Kim et al., 2024], FActScore [Min et al., 2023], dynamic rubrics based on information gain [Xu et al., 2026], hybrid judges for image caption evaluation [Matsuda et al., 2025], GraphJudge for evaluating knowledge graphs [Huang et al., 2025]. However, most research focuses on specific aspects of evals; usually certain forms of alignment with human judges. We believe that this state of the current literature leaves open many questions wrt practical deployment . These gaps exist both in form of (a) not examining different aspects of alignment, and (b) not covering the full gamut of practical use-cases. In a sense, recent research leans towards addressing challenges that may be deemed necessary , but are not sufficient for a practical setup. Our focus is the latter. Our primary contributions are: (a) first, we present the desiderata of a practical eval framework, outlining risks and benefits, and (b) then, we propose such a framework, and empirically show that it effectively satisfies those needs. Rather than a single novel idea, this work offers an assembly of strategies to create an end-to-end eval pipeline that can augment a standard quality assurance pipeline. The paper is organized as follows: we begin by listing the desiderata for a practical eval framework in §2, and then we present an overview of our framework in §3. Sections 4 - 7 present our empirical analyses. Our final section, §8, discusses limitations of the current study, and our conclusions. 
+
+> Preprint. arXiv:2609.00805v1 [cs.AI] 1 Sep 2026
+
+Figure 1: Our eval pipeline. A checklist of YES /NO eval questions are sent to an LLM, along with inputs for the eval. In this example, the eval assesses the quality of summarization, so a document and its corresponding summary constitute our additional inputs. The outputs from the LLM are sent to a tabular model, e.g., Gradient Boosted Decision Trees , to produce the final judgment score. An explanation, and some form of confidence score, are also produced. See §3 for details. 
+
+2 A Practical Eval Pipeline 
+
+We believe that a practical eval system must at least ensure the following properties: 
+
+P1. Inter-LLM Agreement (or agreement in short): An eval output must exhibit minimal variance across LLMs. The lack of this property is a business risk . LLM A might clear all tests today, but when evals are switched to use LLM B (maybe due to an organization’s policy) that’s a harsher critic, we might end up with high failure rates. 
+
+P2. Accuracy : Eval outcomes must closely match human judgments. This is in contrast to most empirical analyses where some form of correlation, e.g., Kendall’s τ or Spearman correlation coefficient ρ, is measured, e.g., Lee et al. [2025], Liu et al. [2023]. Product quality gates are almost always hard thresholds, e.g., “the coherence score for this summary must be ≥ 4”. For such scenarios, there is a budgeting risk in productizing research with reported success in correlation-type metrics. 
+
+P3. Self-consistency : An eval output should exhibit minimal variation across multiple executions against the same LLM. This directly impacts how many times a test needs to be run for it to certify that a feature works. Thus, this impacts development cost and time-to-ship .
+
+P4. Explainability : In traditional software testing, it is easy to trace failures to pinpoint a cause, by looking at a stack trace or logs . This is difficult when evals are complex and are written as large text prompts. What’s the equivalent of a stack trace in this new world? 
+
+P5. Confidence scores : Since LLM-based evals are probabilistic, we need to provide some representation of confidence for eval outcomes. We need to move away from hard predictions, e.g., “the eval score is 5” to soft estimates, e.g., “the eval score has a 90% prediction interval of 3-5” .
+
+P1 -P3 characterize forms of alignment, while P4 and P5 represent additional critical use-cases. 
+
+3 Methodology 
+
+Our eval pipeline is shown in Figure 1. All evals are represented as a checklist of d atomic YES /NO 
+
+questions. The checklist, along with eval inputs, are sent to an LLM, which produces a binary vector 2of responses x ∈ { 0, 1}d. A model f : {0, 1}d 7 → R learned earlier is used to “aggregate” these responses to predict a judgment y = f (x). We produce two additional outputs: (1) explanations using SHAP, which help a user trace back a judgment to specific questions, and (2) a representation of confidence, either in the form of a calibrated probability [Platt, 1999, Guo et al., 2017, Niculescu-Mizil and Caruana, 2005] or a high-confidence interval via conformal prediction [Shafer and Vovk, 2008]. The checklist and the model are created in a prior eval-authoring step. This requires human inputs in the form of: (a) an eval prompt - we’ll refer to this as the seed prompt, and (b) sample inputs and outputs for their eval. The step produces, as output, (1) an eval checklist, and (2) a model f .The seed prompt is decomposed into multiple simpler YES /NO questions. The idea is that (a) having targeted atomic questions leaves little room for ambiguity, and (b) having multiple of them acts as an “error buffer”: even if the LLM misinterprets one question, it is unlikely that it will misinterpret every related question, which leads to a stable fraction of YES responses. This strategy leads to both improved agreement and self-consistency (empirically shown in §5). We are motivated to follow the above strategy due to its success in a variety of eval settings [Min et al., 2023, Lee et al., 2025, Liu et al., 2024, Li et al., 2025, Xu et al., 2026]. We specifically use 
+
+CheckEval [Lee et al., 2025] because of its good results wrt inter-LLM agreement. Since our goal also is accuracy wrt human judgment, we use the eval input-output examples to construct our model f . The technique of using a model in the final step has successful precedents [Hashemi et al., 2024, Liu et al., 2024]. We use Gradient Boosted Decision Trees (GBDT) [Friedman, 2001, Ke et al., 2017] in this work, which gives us positive results (see §5). In addition to being a powerful model family, GBDTs offer other benefits: (a) they may be easily learned for a specific output type , e.g., y may be boolean, ordinal, categorical or continuous; (b) we use SHAP [Lundberg and Lee, 2017] to generate prediction explanations, which permits exact explanations for tree-based models such as GBDTs. 
+
+4 Experiment Setup 
+
+In our experiments, we rigorously measure agreement , self-consistency and accuracy , and present persuasive results for confidence scoring and explanations (these rely on standard techniques). 
+
+Dataset and LLMs : The SummEval [Fabbri et al., 2021] dataset (MIT License) is used for ex-periments. It consists of documents, their corresponding summaries (more than one summary per document), and human-provided scores per summary that assess their quality across different axes. These axes are coherence , consistency , fluency and relevance , and we have one eval corresponding to each axis 1. Each summary, per quality axis, is rated by multiple human raters, with the provided scores being in {1, 2, 3, 4, 5}. The summaries are our measurement units, and for summary si and an eval axis, we average the human ratings to obtain the ground truth (GT) label yi ∈ [1 , 5] .We generate LLM scores for two additional configuration parameters : 1. LLMs : We use L = 4 different LLMs to measure agreement. The LLMs used are Opus 4.8 (abbreviated to opus ), Sonnet 4.6 (sonnet ), GPT 5.6 Sol (sol ), Grok 4.6 (grok ). For 
+
+sonnet the temperature was set to 0; the others don’t support this parameter. 2. Number of trials: Each eval execution is repeated T times to measure statistical significance. In our experiments T = 5 .These additional configurations will be denoted by the indices l and t respectively; the predicted scores are denoted as ˆyilt for summary si for a particular eval axis. Assuming a checklist size of d questions for an eval, a response vector generated for various combinations is denoted by xilt ∈ { 0, 1}d . We train one GBDT model per eval, on tuples of the form (xilt , y i) to minimize RM SE (yi, ˆyilt ) on a held-out set. Thus, for an eval, each GT label is paired with L × T inputs. Essentially, the model is trained to map from various noisy realizations of 
+
+x to a GT label. We use a train-conformal-test split of 50 : 10 : 40 (the conformal split is used in §7), 
+
+> 1We’ll use these interchangeably - a quality axis is assessed by an eval.
+
+3and to prevent data leakage, we ensure that data related to a specific si is in exactly one split. For additional details, please see §A. 
+
+Metrics : As mentioned above, accuracy is measured using the RMSE score. Lower is better .For measuring agreement and self-consistency (note, these scores don’t use GT, only ˆyilt ), we do not use the popular Krippendorff’s -α score because: (a) we have multiple trials per rater/LLM, which α
+
+doesn’t naturally accommodate, and (b) α might be negative [Artstein and Poesio, 2008], and we prefer a range of [0 , 1] for easy interpretation. Instead we map our scores from a range of [1 , 5] to [0 , 1] , and define the disagreement between two scores a and b as D = |a − b|. For an eval, this is averaged over trials for a measurement unit (here, a summary) to produce ¯Di. For agreement , the averaging for two given LLMs 2 is over their T 2
+
+possible trial combinations, and for self-consistency the T (T − 1) /2 unique combinations for an LLM are used. Finally we report 1 − ¯Di as our score ( agreement or self-consistency , depending on the averaging) for this unit. Further averaging is called out in our analyses in §5. Of course, since these scores are not chance-adjusted, they should be interpreted jointly with accuracy .
+
+Hardware : The LLMs were accessed through an Amazon Bedrock API. All experiments were run on a M3 Max Apple Macbook Pro laptop. 
+
+5 Results 
+
+This section presents results from our setup as compared to a baseline. The latter uses seed prompts from prior literature - see §A.1. 
+
+Agreement : The average agreement for a pair of LLMs is shown as 4 × 4 heatmap in Figure 2. A particular cell further averages 1 − ¯Di over all summaries and evals in a common held-out set. Figure 2(a) shows baseline results, and both (b) and (c) come from our setup. In Figure 2(b), the aggregator model f has seen data from all LLMs during training, and a cell indexed by [A, B ] compares the agreement between LLMs A and B on a held-out set. We notice that (b) produces much higher scores than (a), and the overall average (in the plot title) improves: 
+
+0.84 → 0.96 .Perhaps more interesting is Figure 2(c). Here an LLM is held-out as well, and we cycle through all the LLMs, denoted by rows. For example, the first row indicates that the model f only saw data from 
+
+opus , sol and sonnet in the training data, but the agreement is computed between each of these and grok , on a held-out set. Even here, we note high scores for all pairs. grok opus sol sonnet grok opus sol sonnet         
+
+> 0.80 0.87 0.88 0.80 0.87 0.76 0.87 0.87 0.83 0.88 0.76 0.83
+> Agreement=0.84 (averaged across evals)
+> 0.0 0.2 0.4 0.6 0.8 1.0
+
+(a) Baseline agreements. grok opus sol sonnet grok opus sol sonnet          
+
+> 0.96 0.95 0.96 0.96 0.96 0.96 0.95 0.96 0.95 0.96 0.96 0.95
+> Agreement=0.96 (averaged across evals)
+> 0.0 0.2 0.4 0.6 0.8 1.0
+
+(b) Agreements - all LLMs in train/test. grok opus sol sonnet in-distribution LLM grok opus sol sonnet held-out / OOD LLM         
+
+> 0.95 0.95 0.95 0.96 0.96 0.96 0.95 0.96 0.95 0.96 0.96 0.95
+> Average agreement=0.95
+> 0.0 0.2 0.4 0.6 0.8 1.0
+
+(c) Agreements - with one held-out LLM. 
+
+Figure 2: LLM agreements on held-out test data (higher is better). (a) shows baseline agreements, (b) and (c) are from our setup. In (b) data from all LLMs were present both in train and test splits. In (c), for a row, data from the LLM indexing the row was absent in train, but agreements are reported with the other LLMs on a held-out set. See text for details. 
+
+> 2
+
+In our setup, to claim that an output is from a specific LLM A means that the checklist responses x ∈ { 0, 1}d were obtained using A, and then the learned aggregator model f for an eval was used to produce the final judgment. 
+
+4Self-consistency : The self-consistency scores on the baseline prompts, and then on the output from our framework, are shown in Table 1. The score for an LLM are averaged over summaries and evals. Here, the scores look good to start with, although Sol and Grok seem to benefit most from our approach, and the overall average slightly improves. 
+
+grok opus sol sonnet Average Baseline 0.94 0.97 0.96 0.99 0.97 Our setup 0.97 0.99 0.98 0.99 0.98 Table 1: Self-consistency averaged across all evals, per LLM. Higher is better. 
+
+Accuracy : Accuracy scores, per eval, are shown as grouped bar plots in Figure 3. Each group shows a bar for the baseline RMSE (labeled Baseline ), aggregation via just reporting the fraction of YES 
+
+answers (labeled CheckEval ), and the output from the entire pipeline (labeled CheckEval+ML ). We show the CheckEval bars to emphasize that reducing variability - which CheckEval is effective at when the fraction of YES es are reported as the final score (as reported in the original work Lee et al. [2025]) is insufficient to obtain good accuracy . In fact, for the coherence eval, CheckEval is worse than Baseline . In all cases, CheckEval+ML produces the lowest RMSE score. Coherence Fluency Consistency Relevance 0.00 0.25 0.50 0.75 1.00 1.25 1.50 1.75 2.00 RMSE     
+
+> 0.82 1.94 0.78 0.84 1.07 1.10 0.76 0.77 0.74 0.51 0.66 0.64
+> Baseline CheckEval CheckEval + ML
+
+Figure 3: Eval accuracy measured using RMSE (lower is better). 
+
+6 Explanations 
+
+It is often not enough to know why a test produced a certain result; the ability to trace an outcome back to causes provides an actionable path to improving a product feature. For a typical LLM eval driven by one prompt, since both the prompt and input might be long, pinpointing an exact fragment in the input, and the corresponding violated rubric in the eval prompt, is much harder. The simple strategy of asking the LLM to explain its judgment has been shown to be unreliable: LLMs tend to favor plausibility over faithfulness [Turpin et al., 2023, Madsen et al., 2024, Chen et al., 2025]. Our framework is able to sidestep this issue: • Because our eval is distilled into a checklist, there are specific contributing questions to point back to. • Using a tabular model as the aggregator allows us to use a popular technique like SHAP to identify questions most influential to a specific outcome. Additionally for GBDTs, 
+
+TreeSHAP [Lundberg et al., 2019] provides exact SHAP attribution values. Figure 4 shows a waterfall plot 3 of question influences, produced by SHAP. 
+
+> 3https://shap.readthedocs.io/en/latest/example_notebooks/api_examples/plots/waterfall.html
+
+54.72 4.74 4.76 4.78 4.80 4.82 4.84 4.86 7 other features 1 = Are the relationships between entities (such as who did what to whom) accurately preserved from the source? 1 = Are the numerical figures, dates, and quantities in the summary consistent with those stated in the source? 1 = Does the summary avoid introducing information not present in the original source? 1 = Does the summary refrain from making inferences or conclusions that go beyond what the source explicitly supports? 1 = Are all quotes or attributed statements in the summary faithful to the source? 0 = Does the summary preserve important qualifications or conditions that accompany claims in the source? 1 = Does the summary avoid introducing invented entities, names, or events not found in the source? 0 = Does the summary avoid overstating or exaggerating claims relative to how they are presented in the source? 1 = Does the summary correctly attribute statements, actions, or opinions to the appropriate individuals mentioned in the source? 7 other features Are the relationships between entities (such as who did what to whom) accurately preserved from the source? Are the numerical figures, dates, and quantities in the summary consistent with those stated in the source? Does the summary avoid introducing information not present in the original source? Does the summary refrain from making inferences or conclusions that go beyond what the source explicitly supports? Are all quotes or attributed statements in the summary faithful to the source? Does the summary preserve important qualifications or conditions that accompany claims in the source? Does the summary avoid introducing invented entities, names, or events not found in the source? Does the summary avoid overstating or exaggerating claims relative to how they are presented in the source? Does the summary correctly attribute statements, actions, or opinions to the appropriate individuals mentioned in the source? +0.11 +0.06 +0.02 +0.02 +0.02 +0.02 +0.01 +0.01 
+
+> −0.1
+> −0.04
+
+E[f(X)] = 4.712 
+
+f(x) = 4.848 
+
+Predicted score: 4.85 (claude-opus-4-8) Figure 4: A standard SHAP waterfall chart for a particular input - for the consistency eval, on opus -showing influences of various questions in a checklist, in decreasing order from top-to-bottom. 
+
+7 Prediction Confidence 
+
+We discuss how we quantify uncertainty, which arises due to various factors such as variability across LLMs, non-determinism, and eval inputs that are poorly represented in the training data. While this is convenient with a model like Gaussian Process [Rasmussen and Williams, 2005], as mentioned earlier, we prefer a tree-based model due to high-fidelity SHAP explanations. We use conformal predictions (CP) here to report prediction intervals that are likely to contain the true outcome 90% of the time. Being model-agnostic, CP also makes this step invariant to future model changes. We use the residual-normalized version [Lei et al., 2018, Cordier et al., 2023] to make the intervals input-adaptive. To validate, we generate synthetic data from valid xilt ∈ {0, 1}d vectors by flipping b ∈{0.2, 0.4, 0.6} fraction of bits, and visualize the distribution of the interval widths; shown in Figure 5, for the (a) consistency , and (b) coherence evals. The “inliers” KDE plot is on the test data, and is expected to have relatively small widths; the legend shows its empirical coverage. In both cases, we observe that higher values b lead to wider intervals (expected behavior). See §A.4 for more plots. −1 0 1 2 3 4 5
+
+90% interval width 
+
+0.0 0.2 0.4 0.6 0.8 1.0 1.2 1.4 
+
+> density
+
+CheckEval-ML (consistency): residual-normalised interval widths vs bit-flip extent 
+
+inliers (94% cov.) 20% bits flipped 40% bits flipped 60% bits flipped 
+
+(a) consistency eval 0 1 2 3 4
+
+90% interval width 
+
+0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 
+
+> density
+
+CheckEval-ML (coherence): residual-normalised interval widths vs bit-flip extent 
+
+inliers (90% cov.) 20% bits flipped 40% bits flipped 60% bits flipped (b) coherence eval 
+
+Figure 5: Distribution of interval widths on actual (inliers) vs synthetic noisy data. 
+
+8 Limitations and Conclusion 
+
+In this work we presented a reliable eval pipeline that meets multiple practical requirements, listed in §2. We think this work is important in bringing academic research into the industry; even if the exact pipeline isn’t used, the general architecture and specific components may be built upon. An obvious limitation of this work is that it is validated on a single dataset for the task of summarization, against proprietary LLMs; something that the authors are working to address. 69 Acknowledgements 
+
+This work was possible with the support of the Q3 Salescloud team in Salesforce, specifically Ronnie Fong, Nitin Jain and William Hackett. We are grateful to Harsha Medikonda, Prasad Maderamitla, Hinita Patel, Aaron Quan and Soumya Mittapalli, for pointing us to multiple real-world challenges. We also would like to thank Pratik Gupte, Kimberley Lee and Daniel May for various technical suggestions. 7References 
+
+Ron Artstein and Massimo Poesio. Inter-coder agreement for computational linguistics. Computa-tional Linguistics , 34(4):555–596, 12 2008. ISSN 0891-2017. doi: 10.1162/coli.07-034-R2. URL 
+
+https://doi.org/10.1162/coli.07-034-R2 .Yanda Chen, Joe Benton, Ansh Radhakrishnan, Jonathan Uesato, Carson Denison, John Schulman, Arushi Somani, Peter Hase, Misha Wagner, Fabien Roger, Vlad Mikulik, Samuel R. Bowman, Jan Leike, Jared Kaplan, and Ethan Perez. Reasoning models don’t always say what they think, 2025. URL https://arxiv.org/abs/2505.05410 .Thibault Cordier, Vincent Blot, Louis Lacombe, Thomas Morzadec, Arnaud Capitaine, and Nicolas Brunel. Flexible and systematic uncertainty estimation with conformal prediction via the mapie library. In Harris Papadopoulos, Khuong An Nguyen, Henrik Boström, and Lars Carlsson, editors, Proceedings of the Twelfth Symposium on Conformal and Probabilistic Prediction with Applications , volume 204 of Proceedings of Machine Learning Research , pages 549–581. PMLR, 13–15 Sep 2023. URL https://proceedings.mlr.press/v204/cordier23a.html .Alexander R. Fabbri, Wojciech Kry´ sci´ nski, Bryan McCann, Caiming Xiong, Richard Socher, and Dragomir Radev. Summeval: Re-evaluating summarization evaluation. Transactions of the Association for Computational Linguistics , 9:391–409, 04 2021. ISSN 2307-387X. doi: 10.1162/ tacl_a_00373. URL https://doi.org/10.1162/tacl_a_00373 .Jerome H. Friedman. Greedy function approximation: A gradient boosting machine. The Annals of Statistics , 29(5):1189 – 1232, 2001. doi: 10.1214/aos/1013203451. URL https://doi.org/10. 1214/aos/1013203451 .Chuan Guo, Geoff Pleiss, Yu Sun, and Kilian Q. Weinberger. On calibration of modern neural networks. In Proceedings of the 34th International Conference on Machine Learning - Volume 70 ,ICML’17, page 1321–1330. JMLR.org, 2017. Helia Hashemi, Jason Eisner, Corby Rosset, Benjamin Van Durme, and Chris Kedzie. LLM-rubric: A multidimensional, calibrated approach to automated evaluation of natural language texts. In Lun-Wei Ku, Andre Martins, and Vivek Srikumar, editors, Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 13806–13834, Bangkok, Thailand, August 2024. Association for Computational Linguistics. doi: 10.18653/v1/2024.acl-long.745. URL https://aclanthology.org/2024.acl-long.745/ .Haoyu Huang, Chong Chen, Zeang Sheng, Yang Li, and Wentao Zhang. Can LLMs be good graph judge for knowledge graph construction? In Christos Christodoulopoulos, Tanmoy Chakraborty, Carolyn Rose, and Violet Peng, editors, Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing , pages 10929–10948, Suzhou, China, November 2025. Associa-tion for Computational Linguistics. ISBN 979-8-89176-332-6. doi: 10.18653/v1/2025.emnlp-main. 554. URL https://aclanthology.org/2025.emnlp-main.554/ .Guolin Ke, Qi Meng, Thomas Finley, Taifeng Wang, Wei Chen, Weidong Ma, Qiwei Ye, and Tie-Yan Liu. Lightgbm: A highly efficient gradient boosting decision tree. In I. Guyon, U. Von Luxburg, S. Bengio, H. Wallach, R. Fergus, S. Vishwanathan, and R. Garnett, ed-itors, Advances in Neural Information Processing Systems , volume 30. Curran Associates, Inc., 2017. URL https://proceedings.neurips.cc/paper_files/paper/2017/file/ 6449f44a102fde848669bdd9eb6b76fa-Paper.pdf .Seungone Kim, Juyoung Suk, Shayne Longpre, Bill Yuchen Lin, Jamin Shin, Sean Welleck, Gra-ham Neubig, Moontae Lee, Kyungjae Lee, and Minjoon Seo. Prometheus 2: An open source language model specialized in evaluating other language models. In Yaser Al-Onaizan, Mo-hit Bansal, and Yun-Nung Chen, editors, Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing , pages 4334–4353, Miami, Florida, USA, November 2024. Association for Computational Linguistics. doi: 10.18653/v1/2024.emnlp-main.248. URL 
+
+https://aclanthology.org/2024.emnlp-main.248/ .Yukyung Lee, JoongHoon Kim, Jaehee Kim, Hyowon Cho, Jaewook Kang, Pilsung Kang, and Najoung Kim. CheckEval: A reliable LLM-as-a-judge framework for evaluating text generation 8using checklists. In Christos Christodoulopoulos, Tanmoy Chakraborty, Carolyn Rose, and Violet Peng, editors, Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing , pages 15771–15798, Suzhou, China, November 2025. Association for Computational Linguistics. ISBN 979-8-89176-332-6. doi: 10.18653/v1/2025.emnlp-main.796. URL https://aclanthology.org/2025.emnlp-main.796/ .Jing Lei, Max G’Sell, Alessandro Rinaldo, Ryan J. Tibshirani, and Larry Wasserman. Distribution-free predictive inference for regression. Journal of the American Statistical Association , 113(523): 1094–1111, 2018. doi: 10.1080/01621459.2017.1307116. URL https://doi.org/10.1080/ 01621459.2017.1307116 .Minzhi Li, Zhengyuan Liu, Shumin Deng, Shafiq Joty, Nancy Chen, and Min-Yen Kan. DnA-eval: Enhancing large language model evaluation through decomposition and aggregation. In Owen Rambow, Leo Wanner, Marianna Apidianaki, Hend Al-Khalifa, Barbara Di Eugenio, and Steven Schockaert, editors, Proceedings of the 31st International Conference on Computational Linguistics , pages 2277–2290, Abu Dhabi, UAE, January 2025. Association for Computational Linguistics. URL https://aclanthology.org/2025.coling-main.156/ .Yang Liu, Dan Iter, Yichong Xu, Shuohang Wang, Ruochen Xu, and Chenguang Zhu. G-eval: NLG evaluation using gpt-4 with better human alignment. In Houda Bouamor, Juan Pino, and Kalika Bali, editors, Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing , pages 2511–2522, Singapore, December 2023. Association for Computational Lin-guistics. doi: 10.18653/v1/2023.emnlp-main.153. URL https://aclanthology.org/2023. emnlp-main.153/ .Yuxuan Liu, Tianchi Yang, Shaohan Huang, Zihan Zhang, Haizhen Huang, Furu Wei, Weiwei Deng, Feng Sun, and Qi Zhang. HD-eval: Aligning large language model evaluators through hierarchical criteria decomposition. In Lun-Wei Ku, Andre Martins, and Vivek Srikumar, editors, Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 7641–7660, Bangkok, Thailand, August 2024. Association for Computational Linguistics. doi: 10.18653/v1/2024.acl-long.413. URL https://aclanthology.org/2024. acl-long.413/ .Scott M. Lundberg and Su-In Lee. A unified approach to interpreting model predictions. In Proceed-ings of the 31st International Conference on Neural Information Processing Systems , NIPS’17, page 4768–4777, Red Hook, NY, USA, 2017. Curran Associates Inc. ISBN 9781510860964. Scott M. Lundberg, Gabriel G. Erion, and Su-In Lee. Consistent individualized feature attribution for tree ensembles, 2019. URL https://arxiv.org/abs/1802.03888 .Andreas Madsen, Sarath Chandar, and Siva Reddy. Are self-explanations from large language models faithful? In Lun-Wei Ku, Andre Martins, and Vivek Srikumar, editors, Findings of the Association for Computational Linguistics: ACL 2024 , pages 295–337, Bangkok, Thailand, August 2024. Association for Computational Linguistics. doi: 10.18653/v1/2024.findings-acl.19. URL 
+
+https://aclanthology.org/2024.findings-acl.19/ .Kazuki Matsuda, Yuiga Wada, Shinnosuke Hirano, Seitaro Otsuki, and Komei Sugiura. VELA: An LLM-hybrid-as-a-judge approach for evaluating long image captions. In Christos Christodoulopou-los, Tanmoy Chakraborty, Carolyn Rose, and Violet Peng, editors, Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing , pages 8680–8696, Suzhou, China, November 2025. Association for Computational Linguistics. ISBN 979-8-89176-332-6. doi: 10.18653/v1/2025.emnlp-main.438. URL https://aclanthology.org/2025.emnlp-main. 438/ .Sewon Min, Kalpesh Krishna, Xinxi Lyu, Mike Lewis, Wen-tau Yih, Pang Koh, Mohit Iyyer, Luke Zettlemoyer, and Hannaneh Hajishirzi. FActScore: Fine-grained atomic evaluation of factual precision in long form text generation. In Houda Bouamor, Juan Pino, and Kalika Bali, editors, 
+
+Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing ,pages 12076–12100, Singapore, December 2023. Association for Computational Linguistics. doi: 10.18653/v1/2023.emnlp-main.741. URL https://aclanthology.org/2023.emnlp-main. 741/ .9Alexandru Niculescu-Mizil and Rich Caruana. Obtaining calibrated probabilities from boosting. In 
+
+Proceedings of the Twenty-First Conference on Uncertainty in Artificial Intelligence , UAI’05, page 413–420, Arlington, Virginia, USA, 2005. AUAI Press. ISBN 0974903914. John C. Platt. Probabilistic outputs for support vector machines and comparisons to regularized likelihood methods. In Advances in Large Margin Classifiers , pages 61–74. MIT Press, 1999. Carl Edward Rasmussen and Christopher K. I. Williams. Gaussian Processes for Machine Learning .The MIT Press, 11 2005. ISBN 9780262256834. doi: 10.7551/mitpress/3206.001.0001. URL 
+
+https://doi.org/10.7551/mitpress/3206.001.0001 .Glenn Shafer and Vladimir Vovk. A tutorial on conformal prediction. Journal of Machine Learning Research , 9:371–421, March 2008. ISSN 1532-4435. Miles Turpin, Julian Michael, Ethan Perez, and Samuel Bowman. Language models don't al-ways say what they think: Unfaithful explanations in chain-of-thought prompting. In A. Oh, T. Naumann, A. Globerson, K. Saenko, M. Hardt, and S. Levine, editors, Advances in Neu-ral Information Processing Systems , volume 36, pages 74952–74965. Curran Associates, Inc., 2023. doi: 10.52202/075280-3275. URL https://proceedings.neurips.cc/paper_files/ paper/2023/file/ed3fea9033a80fea1376299fa7863f4a-Paper-Conference.pdf .Wang Xu, Shan Zhao, Haolan Chen, Tianwei Yan, Chengyu Wang, Shizhao Chen, and Qian Wan. Beyond drift: Stabilizing subjective LLM evaluation with information-theoretic rubrics. In Forty-third International Conference on Machine Learning , 2026. URL https://openreview.net/ forum?id=9DfcvXahRb .
+
+A Additional Experiment Details 
+
+A.1 Baseline Prompts 
+
+We use the G-Eval [Liu et al., 2023] prompts without the autogenerated chain-of-thoughts evaluation steps as the baseline prompts in our experiment. 
+
+> Coherence
+> You will be given one summary written for a news article. Your task is to rate the summary on one metric. Please make sure you read and understand these instructions carefully. Please keep this document open while reviewing, and refer to it as needed. Evaluation Criteria: Coherence (1-5) - the collective quality of all sentences. We align this dimension with the DUC quality question of structure and coherence whereby "the summary should be well-structured and well-organized. The summary should not just be a heap of related information, but should build from sentence to a coherent body of information about a topic." Source Text: {{Document}} Summary: {{Summary}} Evaluation Form (scores ONLY): - Coherence:
+
+10 Consistency 
+
+You will be given a news article. You will then be given one summary written for this article. Your task is to rate the summary on one metric. Please make sure you read and understand these instructions carefully. Please keep this document open while reviewing, and refer to it as needed. Evaluation Criteria: Consistency (1-5) - the factual alignment between the summary and the summarized source. A factually consistent summary contains only statements that are entailed by the source document. Annotators were also asked to penalize summaries that contained hallucinated facts. Source Text: {{Document}} Summary: {{Summary}} Evaluation Form (scores ONLY): - Consistency: 
+
+Fluency 
+
+You will be given one summary written for a news article. Your task is to rate the summary on one metric. Please make sure you read and understand these instructions carefully. Please keep this document open while reviewing, and refer to it as needed. Evaluation Criteria: Fluency (1-5): the quality of individual sentences. Drawing again from the DUC quality guidelines, sentences in the summary "should have no formatting problems, capitalization errors or obviously ungrammatical sentences (e.g., fragments, missing components) that make the text difficult to read." Example: Source Text: {{Document}} Summary: {{Summary}} Evaluation Form (scores ONLY): - Fluency: 
+
+11 Relevance 
+
+> You will be given one summary written for a news article. Your task is to rate the summary on one metric. Please make sure you read and understand these instructions carefully. Please keep this document open while reviewing, and refer to it as needed. Evaluation Criteria: Relevance (1-5) - selection of important content from the source. The summary should include only important information from the source document. Annotators were instructed to penalize summaries which contained redundancies and excess information. Example: Source Text: {{Document}} Summary: {{Summary}} Evaluation Form (scores ONLY): - Relevance:
+
+A.2 Generated Checklists Dimension # Sub-dimensions # Seed Questions # Final Questions 
+
+Coherence 3 3 20 Consistency 3 3 16 Fluency 4 4 24 Relevance 5 5 21 Table 2: Checklist size per SummEval dimension. The sub-dimensions and seed questions were taken from CheckEval [Lee et al., 2025]. We used Opus 4.8 to generate the final questions. 
+
+A.3 GBDT Hyperparameters 
+
+The GBDT in §4 was learned using cross-validation of hyperparameters from the following search space: 
+
+"n_estimators": [20, 50, 100, 200] "learning_rate": [0.001, 0.01, 0.1, 1.0] "max_depth": [3, 5, 10] "min_child_samples": [5, 10, 20, 40] "reg_lambda": [0.0, 1.0, 5.0] 
+
+A.4 Additional Conformal Prediction Results 
+
+Continuing from §7, we present the plots for all evals in Figure 6. 12 −1 0 1 2 3 4 5
+
+90% interval width 
+
+0.0 0.2 0.4 0.6 0.8 1.0 1.2 1.4 
+
+> density
+
+CheckEval-ML (consistency): residual-normalised interval widths vs bit-flip extent 
+
+inliers (94% cov.) 20% bits flipped 40% bits flipped 60% bits flipped (a) consistency eval 0 1 2 3 4
+
+90% interval width 
+
+0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 
+
+> density
+
+CheckEval-ML (coherence): residual-normalised interval widths vs bit-flip extent 
+
+inliers (90% cov.) 20% bits flipped 40% bits flipped 60% bits flipped (b) coherence eval −1 0 1 2 3 4 5
+
+90% interval width 
+
+0.0 0.2 0.4 0.6 0.8 1.0 1.2 
+
+> density
+
+CheckEval-ML (fluency): residual-normalised interval widths vs bit-flip extent 
+
+inliers (89% cov.) 20% bits flipped 40% bits flipped 60% bits flipped 
+
+(c) fluency eval 0 1 2 3 4
+
+90% interval width 
+
+0.0 0.1 0.2 0.3 0.4 0.5 0.6 
+
+> density
+
+CheckEval-ML (relevance): residual-normalised interval widths vs bit-flip extent 
+
+inliers (86% cov.) 20% bits flipped 40% bits flipped 60% bits flipped (d) relevance eval 
+
+Figure 6: Distribution of interval widths for points in the data or “inliers” and synthetic noisy data, which is constructed by flipping bit for different fractions of bits b ∈ { 0.2, 0.4, 0.6}. The empirical coverage of the inliers is shown in the legend, which may be observed to be quite close to intended coverage of 90% .13
