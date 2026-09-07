@@ -1,0 +1,327 @@
+Title: RefactorPlatform: An Open-Source Harness for Controlled Evaluation of Repository-Scale Refactoring Agents
+
+URL Source: https://arxiv.org/pdf/2609.04898v1
+
+Published Time: Mon, 07 Sep 2026 00:43:22 GMT
+
+Number of Pages: 9
+
+Markdown Content:
+# RefactorPlatform: An Open-Source Harness for Controlled Evaluation of Repository-Scale Refactoring Agents 
+
+Aziz Ben Amor 1,* , Drish Mali 1,* , Mann Acharya 1,* ,Vijayasri Iyer 1,† , Sébastien Bratières 1, 2 
+
+> 1
+
+Pi School, 2Translated 
+
+Abstract 
+
+Repository-scale refactoring requires coding agents to propagate a single change across many interdependent files without altering pro-gram behavior, yet to our knowledge no exist-ing harness isolates the design choices that de-termine agent success on this task. We present 
+
+RefactorPlatform , an open-source evaluation harness that holds the environment fixed and varies each design axis explicitly: model back-bone (via OpenRouter and GitHub Copilot CLI), execution regime (baseline, retrieval-augmented, and multi-agent), and prompt specificity. Each run executes in an isolated workspace with live terminal streaming, per-task logging of tokens, diffs, and transcripts, AST-based verification, and exportable teleme-try for audit and reproduction. Demonstrating the platform on 100 multi-file RefactorBench tasks across four model families, we illustrate the analyses it supports: AST-aware chunk-ing outperforms naive token-window chunk-ing by 25–30 percentage points (pp) across prompt modes, whereas naive retrieval falls be-low the retrieval-free baseline; a lean retrieval-augmented single agent (86%) beats multi-agent execution (66%) on matched tasks, with no task passing under delegation that fails under retrieval; and retrieval’s accuracy gains absorb its token overhead, leaving cost per success-ful refactoring unchanged. RefactorPlatform is open-sourced to make refactoring-agent evalu-ation reproducible and auditable. 
+
+1 Introduction 
+
+Refactoring, “improving the internal structure of software without altering its external behavior” (Fowler et al., 1999), has shifted from localized IDE transformations to repository-scale campaigns    
+
+> *Equal contribution.
+> †Corresponding author: vijayasri.iyer@picampus-school.com
+> ‡§github.com/PiSchool/refactor-platform
+
+that propagate a single change across many inter-dependent files, where manual propagation is error-prone and a persistent source of technical debt (Fer-nandes et al., 2020). Function-level benchmarks reveal little about this regime (Liu et al., 2023), and while repository-scale suites like SWE-bench bet-ter reflect production engineering (Jimenez et al., 2023), refactoring imposes a stricter requirement: edits must be behavior-preserving while still prop-agating across files. RefactorBench targets ex-actly this setting with AST-verified multi-file tasks (Gautam et al., 2025), and SWE-Refactor (Xu et al., 2026) verifies developer-written refactorings through compilation, tests, and RefactoringMiner (Tsantalis et al., 2022). Current agents remain inadequate at this scale (Siddeeq et al., 2025; Guan et al., 2025). A single agent perceives only a small slice of the repository at any moment, and most Retrieval-Augmented Generation (RAG) pipelines are example-based , re-trieving historical snippets rather than performing structural discovery over the live code a refactor-ing must touch (Xu et al., 2026), despite evidence that AST-aware chunking retrieves more coherent units (Zhang et al., 2025). The result is structural blindness : systems propose a change but miss sites where it must be applied. A common response is adding more agents in specialized roles (He et al., 2024; Qian et al., 2023; Phan et al., 2024; Dong et al., 2025), yet the evidence is mixed: multi-agent systems lose to single agents on executability and consistency while adding handoffs, tokens, and drift (Yin et al., 2025; Guo et al., 2025). Evidence on repository-scale refactoring specifically remains fragmented. Mature harnesses exist for issue reso-lution: SWE-agent defines agent–computer inter-faces (Yang et al., 2024), OpenHands provides an open platform with a pluggable evaluation harness (Wang et al., 2025b), and Agentless (Xia et al., 2025) shows that lean pipelines can rival agentic scaffolds. To our knowledge, however, no compa-arXiv:2609.04898v1 [cs.CL] 4 Sep 2026 rable infrastructure isolates retrieval, prompting, or-chestration, and model routing for repository-scale refactoring under controlled, auditable logging. We close this gap with RefactorPlatform , an open-source evaluation harness that holds the envi-ronment fixed and varies each design axis explic-itly, across three cumulative regimes (Section 2.2): a baseline terminal assistant ( S1), a retrieval-augmented configuration ( S2), and an orchestrated multi-agent workflow ( S3). The platform targets researchers benchmarking coding agents and prac-titioners auditing agent configurations before de-ployment. Figure 1 shows the dashboard view of a completed 100-task campaign. The platform lets an operator answer questions like Q1: how much does AST-aware chunking improve pass rates over baseline execution and token-window chunking? 
+
+Q2: does multi-agent execution recover what it costs, relative to lean single-agent retrieval? Q3: 
+
+how far does structural retrieval compensate for under-specified prompts? Our contributions are: (i) RefactorPlatform 
+
+isolates per-task workspaces, four independently configurable design axes, live terminal stream-ing, and exportable per-task telemetry; (ii) an AST verification pipeline , AST-based unit tests for Python and extraction–compilation–test– RefactoringMiner gates for Java, so that reported pass rates reflect behavior-preserving change rather than plausible-looking diffs; and (iii) a 100-task demonstration campaign across four model fami-lies illustrating the analyses the platform enables: a prompt-sensitivity map, a context-layer compari-son in which AST-aware retrieval dominates LSP diagnostics, and a best-case pass rate of 86% at $0.13 per success. 
+
+2 RefactorPlatform Architecture and Workflow 
+
+RefactorPlatform serves as an evaluation harness designed specifically to benchmark and audit large language model coding agents executing repository-scale refactoring tasks. The platform addresses the lack of standardized, isolated test-ing infrastructure required for multi-file source code modifications. Each task runs in an isolated workspace to prevent state leakage between runs. During each turn of an agent session, the harness captures all generated file diffs, full terminal execu-tion logs, precise input and output token consump-tion, and complete interaction transcripts streaming through persistent Tmux sessions. Operators configure and execute evaluations via the platform’s web interface across four explicit design variables: • Model Selection: Supports any model avail-able through OpenRouter (BYOK) or the GitHub Copilot CLI (GitHub). • Execution Regimes: three cumulative regimes including an S1 baseline terminal as-sistant, an S2 task-scoped structural retrieval stack utilizing the Model Context Protocol (MCP), and an S3 regime that enables the agent’s native sub-agent agents. • Prompt Modes: The architecture sweeps across Descriptive, Base, and Lazy specificity levels to systematically map how agents adapt to under-specified or ambiguous human re-quests. • Target Dataset Tasks: Evaluation targets are drawn from integrated benchmark suites. 
+
+2.1 Natural Language Prompt Modes 
+
+To measure agent resilience to varying degrees of instruction clarity, each task is evaluated under one of three prompt configurations, following the speci-ficity levels defined by RefactorBench (Gautam et al., 2025). Descriptive mode supplies full guid-ance on what to change, where to locate the relevant elements, and how to perform the refactoring (What + Where + How). Base mode provides minimal in-structions specifying only the structural refactoring type and the target entity (What + Where). Lazy 
+
+mode simulates highly ambiguous real-world us-age, supplying only a vague refactoring type with no positional or implementation detail (What only). 
+
+2.2 Execution Regimes 
+
+We implement three execution regimes to sepa-rate the contribution of terminal tooling, retrieval, and sub-agent delegation, along with the cost each carries. This helps us to isolate whether perfor-mance gains stem from the raw capabilities of the model backbone, codebase indexing extensions, or complex multi-agent layouts, along with the cost trade-offs associated with each. 
+
+Regime S1 (Baseline Assistant): The single agent operates within a standalone terminal CLI session. It has native access to fundamental lo-calized workspace utilities, including filesystem Figure 1: The RefactorPlatform web interface monitoring a completed 100-task run. The dashboard unifies real-time job scheduling, token-consumption analytics, and live terminal streams in a single view. 
+
+parsing, directory listing, regex tools, and direct ex-ecution shells ( grep , view , edit , bash ), but lacks external context access. 
+
+Regime S2 (Retrieval-Augmented Assistant): 
+
+This regime extends the S1 framework by integrat-ing a persistent, task-scoped codebase search en-gine via MCP. Prior to execution, repositories are chunked by CocoIndex (CocoIndex) and converted into vector embeddings using nomic-embed-code 
+
+encoder (GGUF Q4_K_M optimization). The S2 agent has codebase discovery capabilities, including search_codebase ,
+
+list_indexed_files , and read_indexed_file .Queries are resolved using a hybrid vector similarity (cosine metric) and lexical keyword matching architecture (BM25) (Robertson and Zaragoza, 2009), with results fused via Reciprocal Rank Fusion (RRF) (Cormack et al., 2009). 
+
+Regime S3 (Sub-Agent Delegation): S3 gives the agent its native sub-agent capability and a prompt block describing when to delegate. We impose no topology. The agent decides whether to decompose the task and how, which means the regime is only exercised when it chooses to use it. So the harness proves delegation from the agent’s own event stream and marks each run conformant 
+
+or setup_not_exercised regardless of whether the task passed. A correct edit made without dele-gating is not evidence about delegation. The plat-form also supports an external orchestrator, the CLI Agent Orchestrator (Amazon Web Services Labs, 2026), with fixed supervisor, analyst, modifier, and validator roles. That is a separate configuration and not the system in Table 1. 
+
+2.3 Benchmarks 
+
+We evaluate our platform using RefactorBench , a Python benchmark designed to measure complex navigational reasoning across real-world codebases. This benchmark consists of 100 multi-file tasks across nine repositories (e.g., Flask, FastAPI). It requires agents to modify between 2 and 31 files per task, moving beyond simple code generation to "stateful reasoning." Success is verified through AST-based unit tests that ensure structural correct-ness (Gautam et al., 2025). The platform addi-tionally integrates the Java-centric SWE-Refactor 
+
+suite (Xu et al., 2026). Preliminary results on it are reported in Appendix A. 
+
+2.4 User Interface and Dashboard Workflow 
+
+An evaluation run is configured and monitored through the RefactorPlatform web interface, which provides a centralized dashboard for real-time mon-itoring of long-horizon tasks (Figure 1). The inter-face is structured into three primary columns: • Task Queue (Left): Tracks real-time execu-tion status, runtimes, and success badges for all benchmark jobs, featuring one-click execu-tion triggers for isolated retries. • Workspace & Execution Traces (Center): 
+
+Aggregates live performance metrics such as token consumption, API request counts, and line diffs, alongside tabbed views for persis-tent tmux terminal streams, repository file trees, prompt mode configs, and verbose test outputs. • Environment Control Panel (Right): Dis-plays host container resource allocations (e.g., memory limits) and tracks cumulative success metrics as tasks complete. To launch an evaluation, the operator selects a target benchmark: either the Python navigation tasks in RefactorBench or the Java compilation tasks in SWE-Refactor with the defined config-uration parameters across the four design axes. Asynchronous workers then deploy the designated agents into isolated workspace checkouts subject to operational timeouts, streaming telemetry directly back to the dashboard. 
+
+2.5 AST Verification Pipeline 
+
+Once a run finishes, every generated patch has to clear a conjunctive verification gate before it counts as correct. For Python, that means passing all as-sociated AST-based unit tests. Java is held to a higher bar: code extraction, successful compila-tion, and a full test pass, all at once, plus a struc-tural check via RefactoringMiner to weed out lazy, non-functional stubs that technically compile but don’t actually refactor anything. CodeBLEU (Ren et al., 2020) scores are also logged, though only as a background diagnostic - they don’t factor into pass/fail. When a run is done, the operator can review it live and export the full telemetry, diagnos-tics, and transcripts as a ZIP or CSV archive. 
+
+2.6 Performance Metrics 
+
+We evaluate our experimental setups using two pri-mary criteria: • Task Pass Rate ( PR task ): The mean success rate across N tasks, where a task is successful (Ij = 1 ) only if it passes all Kj associated AST unit tests (ASTTest j,k ∈ { 0, 1}), allow-ing no partial credit: 
+
+PR task = 1
+
+N
+
+> N
+
+X
+
+> j=1
+
+Ij , Ij =
+
+> Kj
+
+^
+
+> k=1
+
+ASTTest j,k 
+
+(1) • Cost-efficiency ( CE ): The average financial token cost ( Cj ) incurred per successful task, penalizing inefficient token consumption: 
+
+CE =
+
+> N
+
+X
+
+> j=1
+
+Cj /
+
+> N
+
+X
+
+> j=1
+
+Ij . (2) 
+
+3 Results and Empirical Analysis 
+
+We evaluate on the 100 multi-file Python tasks in RefactorBench. Because full factorial sweeps across frontier models are cost-prohibitive, we run a two-stage demonstration campaign un-der single-run budgets: a full ablation on 
+
+qwen3.6-flash (Table 1), then cross-backbone S1
+
+vs. full S2 pipeline comparisons (Table 2). These outcomes illustrate the analyses operators can ob-tain from the harness at modest cost; the same con-figuration surface supports larger campaigns when additional compute is available. 
+
+3.1 Result Analysis Our standalone baseline ( S1) results establish that prompt quality is the single largest indica-tor of standalone agent capabilities. Deactivating retrieval tools and shifting from full natural lan-guage instructions (Descriptive mode) to basic op-erational declarations (Base mode) incurs a sharp -9pp reduction in accuracy. Stripping the prompt down to vague, localized declarations (Lazy mode) degrades baseline success further by an additional -16pp. 
+
+Local workspace environmental feedback via Language Server Protocol (LSP) diagnostics of-fers negligible compounded mitigation. Enforc-ing LSP rules yields a marginal average delta of just +3.7pp across all configurations and helps least where natural language prompt context is adequate, providing a mere +2pp gain in Descriptive mode. This suggests that automated linting feedback does not substitute for the semantic clarity provided by detailed task descriptions. 
+
+Structural retrieval is the primary reason S2
+
+outperforms S1, and AST-aware chunking is what makes that retrieval effective. As shown in Table 1 and Figure 2, AST-driven indexing out-performs naive token-window chunking by at least 25pp across every prompt mode. The mechanism is structural: naive methods split code without re-gard to syntactic boundaries, producing fragments that lack logical scope, whereas AST chunking pre-serves those boundaries, yielding self-contained functional units that retain the full scope of the retrieved code. This same structural gap drives Table 1: Ablation on the qwen3.6-flash : prompt specificity, LSP feedback, and chunking strategy. 
+
+Model Regime Prompt Mode Augmentation Pass Rate 
+
+qwen3.6-flash S1 Baseline Descriptive +LSP Enforcement 73% 
+
+qwen3.6-flash S1 Baseline Descriptive -LSP Enforcement 71% 
+
+qwen3.6-flash S1 Baseline Base +LSP Enforcement 64% 
+
+qwen3.6-flash S1 Baseline Base -LSP Enforcement 59% 
+
+qwen3.6-flash S1 Baseline Lazy +LSP Enforcement 48% 
+
+qwen3.6-flash S1 Baseline Lazy -LSP Enforcement 44% 
+
+qwen3.6-flash S2 Retrieval Descriptive AST Chunking 86% 
+
+qwen3.6-flash S2 Retrieval Base AST Chunking 74% 
+
+qwen3.6-flash S2 Retrieval Lazy AST Chunking 56% 
+
+qwen3.6-flash S2 Retrieval Descriptive Naive Chunking 57% 
+
+qwen3.6-flash S2 Retrieval Base Naive Chunking 44% 
+
+qwen3.6-flash S2 Retrieval Lazy Naive Chunking 31% 
+
+qwen3.6-flash S3 Orchestrated Descriptive Copilot Sub-Agents 66% 
+
+Table 2: Cross-model results evaluating structural retrieval impact across four distinct model architectures comparing 
+
+S1 Baseline vs S2 AST Chunking based Retrieval with descriptive prompts 
+
+Model Regime Prompt Mode Augmentation Pass Rate 
+
+qwen3.6-flash S1 Baseline Descriptive - 73% 
+
+qwen3.6-flash S2 Retrieval Descriptive AST Chunking 86% 
+
+minimax-m3 S1 Baseline Descriptive - 75% 
+
+minimax-m3 S2 Retrieval Descriptive AST Chunking 81% 
+
+kimi-k2.6 S1 Baseline Descriptive - 71% 
+
+kimi-k2.6 S2 Retrieval Descriptive AST Chunking 78% 
+
+deepseek-v4-pro S1 Baseline Descriptive - 77% 
+
+deepseek-v4-pro S2 Retrieval Descriptive AST Chunking 89% 
+
+the broader S1-to-S2 improvement (Table 2): S1’s 
+
+grep /bash tooling supports local file navigation but not cross-file reasoning, while S2’s structural context yields an average 9.5pp gain across four model families, confirming that structural aware-ness, not raw model capability, separates the two regimes.   
+
+> Descriptive Base Lazy
+> 020 40 60 80 100 86 %
+> 74 %
+> 56 %57 %
+> 44 %
+> 31 %
+
+Prompt Mode Pass Rate (%)  
+
+> AST Chunking Naive Chunking
+
+Figure 2: Performance comparison between AST Chunking and Naive Chunking across Descriptive, Base, and Lazy prompt modes. 
+
+Sub-agent delegation ( S3) loses to lean re-trieval and does not beat the baseline. On the same 100 tasks under Descriptive prompting, S2
+
+scores 86% against 66% for S3. The comparison is completely discordant: 20 tasks pass under re-trieval but fail under delegation, with no tasks ex-hibiting the reverse outcome. Against S1 the dif-ference is small ( 73% vs. 66% ). Delegation only triggered on 81 of 100 tasks, where the pass rate was 70.4%; on the other 19 the sub-agent layer never started and the task ran as a single agent (47.4%). We therefore report both figures: 66% reflects the overall pass rate when delegation is re-quested, while 70.4% reflects performance on tasks where delegation was actually used. A communi-cation tax (Wang et al., 2025a) would explain the discordant pattern, but our telemetry does not sepa-rate it from alternatives such as premature scoping by the parent agent. 
+
+Retrieval’s accuracy gains offset its token overhead, leaving cost per success effectively unchanged. Structural retrieval increases the raw cost per attempted task (e.g., $1.07 → $1.23 for deepseek-v4-pro ), reflecting the additional tokens consumed during indexing and querying. However, Table 3 shows this overhead is offset by a reduction in wasted attempts: cost per success-ful refactoring shifts by no more than $0.01 across all four models evaluated. Structural retrieval’s accuracy gains thus come at negligible net cost. 
+
+Table 3: Cost-efficiency at best configuration (Descrip-tive Mode).                                    
+
+> Configuration Pass $/Task $/Pass
+> qwen3.6-flash (S1)73% $0.096 $0.13
+> qwen3.6-flash (S2)86% $0.113 $0.13
+> minimax-m3 (S1)75% $0.490 $0.65
+> minimax-m3 (S2)81% $0.538 $0.66
+> kimi-k2.6 (S1)71% $0.444 $0.63
+> kimi-k2.6 (S2)78% $0.489 $0.63
+> deepseek-v4-pro (S1)77% $1.072 $1.39
+> deepseek-v4-pro (S2)89% $1.234 $1.39
+
+4 Conclusion 
+
+We presented RefactorPlatform , an open-source evaluation harness for repository-scale refactoring agents, providing isolated workspaces, MCP-based retrieval, and auditable per-task logging across model, retrieval, prompting, and orchestration axes. Our demonstration campaign illustrates the plat-form’s core utility: operators can plug in new har-nesses and observe their effect on pass rate and cost under controlled conditions. RefactorPlatform is designed to extend to additional benchmarks, verification gates, and orchestration regimes. 
+
+Limitations 
+
+Our current evaluation has three main boundaries driven by practical trade-offs between budget con-straints and programming language ecosystems: 
+
+Model Scale and Cost To keep token expenses manageable, we focused on mid-tier models like 
+
+qwen3.6-flash , minimax-m3 , and kimi-k2.6 .Full-scale codebase refactoring consumes tokens rapidly, making frontier-scale models costly for large evaluation runs. However, omitting these ultra-large models means we cannot verify if sheer scale naturally fixes the structural blindness or multi-agent penalties we observed. Testing frontier architectures remains an important next step. 
+
+Language and Benchmark Scope Our experi-ments focus primarily on Python via the Refactor-Bench dataset. Dynamic languages handle depen-dencies, imports, and references quite differently than compiled, strongly-typed ecosystems like Java or C++. While we conducted initial trials on the Java-centric SWE-Refactor dataset (preliminary re-sults of which are in the appendix A) drawing definitive conclusions requires a more dedicated deep dive. Fully mapping our architecture across these distinct language paradigms remains a key focus for our next study. 
+
+Campaign scale Reported results are single-run campaigns under fixed per-task budgets, so we re-port pass rates without uncertainty estimates and describe differences as observed rather than tested. The same harness supports repeated-trial studies through configuration and compute alone, without rebuilding isolation, verification, or telemetry. 
+
+References 
+
+Amazon Web Services Labs. 2026. CLI Agent Or-chestrator (CAO). https://github.com/awslabs/ cli-agent-orchestrator . Apache-2.0 license. Version 2.2.0. Accessed: 2026-07-11. CocoIndex. CocoIndex: Data transformation framework for AI. https://github.com/ cocoindex-io/cocoindex . Accessed 2026-08-31. Gordon V. Cormack, Charles L. A. Clarke, and Stefan Büttcher. 2009. Reciprocal rank fusion outperforms Condorcet and individual rank learning methods. In 
+
+Proceedings of SIGIR .Yihong Dong, Xue Jiang, Jiaru Qian, Tian Wang, Kechi Zhang, Zhi Jin, and Ge Li. 2025. A survey on code generation with llm-based agents. arXiv.org .Eduardo Fernandes, Alexander Chávez, Alessandro Gar-cia, Isabella Ferreira, Diego Cedrim, Leonardo Sousa, and Willian Oizumi. 2020. Refactoring effect on internal quality attributes: What haven’t they told you yet? Information and Software Technology ,126:106347. Martin Fowler, Kent Beck, John Brant, William Opdyke, and Don Roberts. 1999. Refactoring: Improving the Design of Existing Code . Addison-Wesley Profes-sional, Reading, MA. Dhruv Gautam, Spandan Garg, Jinu Jang, Neel Sundare-san, and Roshanak Zilouchian Moghaddam. 2025. RefactorBench: Evaluating stateful reasoning in lan-guage agents through code. In International Confer-ence on Learning Representations (ICLR) .GitHub. GitHub Copilot CLI. https://github.com/ github/copilot-cli . Version 1.0.80. Ziqi Guan, Xin Yin, Zhiyuan Peng, and Chao Ni. 2025. Repotransagent: Multi-agent llm framework for repository-aware code translation. Preprint ,arXiv:2508.17720. Jiale Guo, Suizhi Huang, Mei Li, Dong Huang, Xing-sheng Chen, Regina Zhang, Zhijiang Guo, Han Yu, S. Yiu, Chris Jensen, P. Lio, and Kwok-Yan Lam. 2025. A comprehensive survey on benchmarks and solutions in software engineering of llm-empowered agentic system. arXiv.org .Junda He, Christoph Treude, and David Lo. 2024. Llm-based multi-agent systems for software engineering: Literature review, vision, and the road ahead. ACM Transactions on Software Engineering and Method-ology .Carlos E. Jimenez, John Yang, Alexander Wettig, Shunyu Yao, Kexin Pei, Ofir Press, and Karthik Narasimhan. 2023. Swe-bench: Can language mod-els resolve real-world github issues? International Conference on Learning Representations .Jiawei Liu, Chun Xia, Yuyao Wang, and Lingming Zhang. 2023. Is your code generated by chatgpt really correct? rigorous evaluation of large language models for code generation. Neural Information Pro-cessing Systems .H. N. Phan, Phong Nguyen, and Nghi D. Q. Bui. 2024. Hyperagent: Generalist software engineering agents to solve coding tasks at scale. arXiv.org .Cheng Qian, Wei Liu, Hongzhang Liu, Nuo Chen, Yufan Dang, Jiahao Li, Cheng Yang, Weize Chen, Yusheng Su, X. Cong, Juyuan Xu, Dahai Li, Zhiyuan Liu, and Maosong Sun. 2023. Chatdev: Communicative agents for software development. Annual Meeting of the Association for Computational Linguistics .Shuo Ren, Daya Guo, Shuai Lu, Long Zhou, Shujie Liu, Duyu Tang, M. Zhou, Ambrosio Blanco, and Shuai Ma. 2020. Codebleu: a method for automatic evaluation of code synthesis. ArXiv , abs/2009.10297. Stephen Robertson and Hugo Zaragoza. 2009. The probabilistic relevance framework: BM25 and be-yond. Foundations and Trends in Information Re-trieval , 3(4). Shahbaz Siddeeq, Muhammad Waseem, Zeeshan Rasheed, Md Mahade Hasan, Jussi Rasku, Mika Saari, Henri Terho, Kalle Mäkelä, Kai-Kristian Kemell, and Pekka Abrahamsson. 2025. Llm-based multi-agent system for intelligent refactor-ing of haskell code. In International Conference on Product-Focused Software Process Improvement ,pages 408–418. Springer. Nikolaos Tsantalis, Ameya Ketkar, and Danny Dig. 2022. RefactoringMiner 2.0. IEEE Transactions on Software Engineering , 48(3):930–950. Qian Wang, Zhenheng Tang, ZICHEN JIANG, Nuo Chen, Tianyu Wang, and Bingsheng He. 2025a. Agenttaxo: Dissecting and benchmarking token dis-tribution of LLM multi-agent systems. In ICLR 2025 Workshop on Foundation Models in the Wild .Xingyao Wang and 1 others. 2025b. OpenHands: An open platform for AI software developers as general-ist agents. In International Conference on Learning Representations .Chunqiu Steven Xia, Yinlin Deng, Soren Dunn, and Lingming Zhang. 2025. Agentless: Demystifying LLM-based software engineering agents. In Proceed-ings of the ACM on Software Engineering , volume 2, pages 801–824. Yisen Xu, Jinqiu Yang, and Tse-Hsun Chen. 2026. Swe-refactor: A repository-level benchmark for real-world llm-based code refactoring. Preprint ,arXiv:2602.03712. John Yang, Carlos E. Jimenez, Alexander Wettig, Kilian Lieret, Shunyu Yao, Karthik Narasimhan, and Ofir Press. 2024. SWE-agent: Agent-computer interfaces enable automated software engineering. In Advances in Neural Information Processing Systems .Zhuowen Yin, Cuifeng Gao, C. Fan, Wenzhang Yang, Yinxing Xue, and Lijun Zhang. 2025. A compre-hensive empirical evaluation of agent frameworks on code-centric software engineering tasks. arXiv.org .Yilin Zhang, Xinran Zhao, Zora Zhiruo Wang, Chenyang Yang, Jiayi Wei, and Tongshuang Wu. 2025. cAST: Enhancing code retrieval-augmented generation with structural chunking via abstract syn-tax tree. In Findings of the Association for Computa-tional Linguistics: EMNLP 2025 , pages 8106–8116, Suzhou, China. Association for Computational Lin-guistics. A SWE-Refactor: Triple-Verification Pipeline 
+
+This experiment evaluates product integrity across 1,099 Java refactoring tasks using a stringent multi-gate pipeline that tracks code extraction, compila-tion success, and structural alignment via Refactor-ingMiner . To clear the triple-verification pipeline (S), a patch must simultaneously extract cleanly, compile, and satisfy RefactoringMiner across the evaluation subset (Table 5). The results expose a stark gap between syntax and execution. While single-pass assistants ( S1) write highly plausible code: minimax-m3 achieves a 97% extraction rate but the compilation success drops to 34%, yielding a final task pass rate of just 29% (51/177 tasks). The core bottleneck is clearly not code generation, but reference propagation across distributed pack-age scopes. Introducing an execution feedback loop ( S1-eval) resolves this drift. By feeding compiler di-agnostics back to the model, gpt-5-mini ’s com-pilation rate jumps from 12% to 88%, lifting the final pass rate from a 20% baseline to 85% (28/33 tasks). In this setting, a compiler-feedback loop out-performed both richer prompting and single-pass generation. 
+
+B Universal Failure Analysis 
+
+A 5% subset of tasks fails in all evaluated configura-tions regardless of model size, prompt engineering, or retrieval architecture. As detailed in Table 4, these persistent failures are not a byproduct of poor context retrieval or weak prompt alignment, but instead point to limitations in multi-file and diff-generation heuristics. For instance, tasks requiring downstream test module updates ( django ) or deep cross-module parameterization ( scrapy ) failed uni-formly. This indicates that just providing a model the correct code context is insufficient when the underlying change requires complex, multi-step structural edits. Overcoming this 5% baseline ceil-ing will require moving past passive retrieval and toward active, execution-guided validation environ-ments. 
+
+C Detailed Failure Taxonomy 
+
+To identify why automated refactoring degrades at repository scale, we audited 414 failed execution histories across Python and Java testbeds, revealing key model failure boundaries. The distributions            
+
+> Table 4: Universal failure cases.
+> Task Target Project Primary Failure Mode
+> debug helpers to helpers flask Diff heuristic fails to match changes
+> new path traversal django Import propagation to test module fails
+> new utils from basic ansible Incorrect log sanitiza-tion relocation
+> option parser print tornado Outright failure across all 6 variants
+> parameterize gunzip scrapy Incomplete spider pa-rameterization
+
+detailed in Table 6 confirm that incomplete ref-erence propagation is the primary bottleneck for repository-scale refactoring. On RefactorBench (Panel A), combining the partial completion and 
+
+missing import metrics reveals that 50.9% of fail-ures occur when models apply localized modifi-cations correctly but fail to update dependent call sites. This limitation is more pronounced in SWE-Refactor’s compiled Java environment (Panel B), where unresolved package symbols and global im-port mismatches drive 73.5% of system failures. 
+
+D Granular Deep-Dives & Trace Case Studies 
+
+To anchor our failure taxonomy in concrete real-world contexts, we examine two specific automated execution histories that illustrate the primary break-down modes observed across our experimental eval-uations. As detailed in Table 7, these case studies highlight how localized technical successes can ultimately mask systemic architectural blind spots. Table 5: Multi-model empirical evaluation outcomes executed on the SWE-Refactor Java benchmark repository matrix. Due to API rate limits, gpt-5-mini configurations were evaluated on smaller representative subsets ( n = 75 
+
+for single-pass baseline; n = 33 for the feedback loop) compared to the full compound subset ( n = 177 ). 
+
+Model Family Configuration Setup Regime Code Extracted Compiled AST Verified Pass Rate 
+
+qwen3.6-flash S1 Baseline Default 90% 28% 59% 24% (43/177) 
+
+minimax-m3 S1 Baseline Default 97% 34% 55% 29% (51/177) 
+
+gpt-5-mini S1 Baseline Default 82% 12% 44% 20% (15/75) 
+
+gpt-5-mini S1-eval (Feedback Loop) 94% 88% 85% 85% (28/33) GPT-4o-mini (Xu et al., 2026) Simple Prompting Reference - - - 19% (34/177) GPT-4o-mini (Xu et al., 2026) + RAG Few-Shot Baseline - - - 20% (36/177) GPT-4o-mini (Xu et al., 2026) Multi-Agent Framework - - - 66% (116/177) 
+
+Table 6: Granular failure taxonomy across datasets, detailing the primary breakdown categories on RefactorBench (Panel A) and the compilation pipeline execution failures on SWE-Refactor (Panel B). 
+
+Failure Category / Pipeline Stage Observed Failures % of Total Failures Panel A: RefactorBench (Python Dataset, 300 exploratory agent runs) 
+
+Partial completion (some subtests pass, missed 1–2 trailing files) 31 27.7% Assertion / functional logic error (incorrect refactored behavior) 30 26.8% Missing import statement / broken variable reference post-move 26 23.2% All subtests fail (complete task miss) 13 11.6% Harness execution timeout (agent caught in tool-invocation loops) 10 8.9% No structural repository edits produced 2 1.8% 
+
+RefactorBench Total 112 100.0% Panel B: SWE-Refactor (Java Dataset Pipeline Stages) 
+
+Compilation failed (missing package symbols/unresolved class paths) 222 73.5% AST verification failed (structural transformation layout type mismatch) 80 26.5% 
+
+SWE-Refactor Total 302 100.0% 
+
+Table 7: Case Studies of Agent Architectural Failures 
+
+Repository Objective & Success Blind Spot & Breaking Point Architectural Diagnosis Ansible Obj: Extract core util-ity functions to a new 
+
+utils.py .
+
+Succ: Successfully refac-tored 9 production import sites. Treated production and test suites as isolated; failed to audit test files for stale assignments. 
+
+Fail: 2/12 tests failed (AssertionError in test suite). 
+
+Partial Completion. Handles imme-diate local edits successfully, but lacks the repo-wide scope to synchronize downstream testing environments. 
+
+Django Obj: Add optional 
+
+log=True flag to 
+
+get_resolver() and propagate. 
+
+Succ: Core definition block modified accu-rately. Assumed strictly localized scope; skipped repo-wide search, missing 2 critical caller nodes. 
+
+Fail: 2/3 tests failed (AssertionError : flag unexpectedly 
+
+None ). 
+
+Reference Blindness. Local technical edits succeed, but failure to perform codebase-wide discovery leaves exter-nal dependencies broken.

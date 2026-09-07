@@ -48,7 +48,7 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-06</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-07</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
     <strong class="dpr-home-dashboard-count">共 17 篇</strong>
@@ -58,7 +58,7 @@
     <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-06 21:22:31 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-07 22:17:27 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日精读6篇、速读11篇，核心聚焦LLM代码理解与测试生成；最值得关注的是从代码提交中提取架构设计决策的探索，以及两阶段强化学习用于对抗性测试生成；若想快速跟进，可从“代码智能+强化学习”这条主线切入，兼顾长上下文压缩与低资源语言推理的最新尝试。</p>
+<p>今日精读17篇，重点聚焦LLM动态上下文生成与仓库级重构Agent评测两篇高分论文；速读中代码检索与扩散语言模型生成值得一并关注。建议优先精读两篇9.0分论文，快速扫读速读清单内容即可。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -81,7 +81,7 @@
     <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Can LLMs Extract Architectural Design Decisions from Source Code Commits? - A Preliminary Exploratory Study">Can LLMs Extract Architectural Design Decisions from Source Code Commits? - A Preliminary Exploratory Study</span></li><li><span class="dpr-home-dashboard-paper-title" title="Two-Stage Reinforcement Learning for Sound and Adversarial Test Generation in Code LLMs">Two-Stage Reinforcement Learning for Sound and Adversarial Test Generation in Code LLMs</span></li><li><span class="dpr-home-dashboard-paper-title" title="EvoGenUI-Bench: Evaluating LLMs as Multi-Turn Generative UI Assistants">EvoGenUI-Bench: Evaluating LLMs as Multi-Turn Generative UI Assistants</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Dynamic Adaptation of the LLM Context for Generating Routines with Coupled Semantics">Dynamic Adaptation of the LLM Context for Generating Routines with Coupled Semantics</span></li><li><span class="dpr-home-dashboard-paper-title" title="RefactorPlatform: An Open-Source Harness for Controlled Evaluation of Repository-Scale Refactoring Agents">RefactorPlatform: An Open-Source Harness for Controlled Evaluation of Repository-Scale Refactoring Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Substrate-Aware AI Agents: Execution Context as a First-Class Input">Substrate-Aware AI Agents: Execution Context as a First-Class Input</span></li></ul>
   </div>
   <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>6</strong></span></div>
 </section>
@@ -94,7 +94,7 @@
     <strong class="dpr-home-dashboard-count">11 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Enhancing Low-Resource Language Reasoning via High-Resource Language Feature Transfer">Enhancing Low-Resource Language Reasoning via High-Resource Language Feature Transfer</span></li><li><span class="dpr-home-dashboard-paper-title" title="TopoCompress: Long Context Compression via Graph-Wired Semantic Trajectories">TopoCompress: Long Context Compression via Graph-Wired Semantic Trajectories</span></li><li><span class="dpr-home-dashboard-paper-title" title="CordisBench: Can Language Models Reason About Component Lifecycles in Dynamic Agent Harnesses?">CordisBench: Can Language Models Reason About Component Lifecycles in Dynamic Agent Harnesses?</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="ExecRetrieval: Measuring the Functional-Correctness Gap in Code-Embedding Retrieval">ExecRetrieval: Measuring the Functional-Correctness Gap in Code-Embedding Retrieval</span></li><li><span class="dpr-home-dashboard-paper-title" title="Unifying Conformal Language Tasks with In-Context Ensembles">Unifying Conformal Language Tasks with In-Context Ensembles</span></li><li><span class="dpr-home-dashboard-paper-title" title="Distilled Continuous Diffusion Language Models Can Write Code in Few Steps---or One">Distilled Continuous Diffusion Language Models Can Write Code in Few Steps---or One</span></li></ul>
   </div>
   <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>11</strong></span></div>
 </section>
