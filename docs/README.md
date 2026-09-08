@@ -4,6 +4,13 @@
     <a class="dpr-home-notice-tutorial" href="#/tutorial/README">使用教程 <span aria-hidden="true">›</span></a>
   </div>
   <div class="dpr-home-notice-entry">
+    <time class="dpr-home-notice-date" datetime="2026-09-05">09.05</time>
+    <div>
+      <strong class="dpr-home-notice-entry-title">CVPR 2026 已更新</strong>
+      <span class="dpr-home-notice-entry-summary">已收录 CVPR 2026 官方 Open Access 论文 4,042 篇，可在会议检索中查看。EMNLP 2026 预计于 10 月中下旬更新，具体以官方论文集开放时间为准。</span>
+    </div>
+  </div>
+  <div class="dpr-home-notice-entry">
     <time class="dpr-home-notice-date" datetime="2026-08-28">08.28</time>
     <div>
       <strong class="dpr-home-notice-entry-title">区间日报可正常点开</strong>
@@ -15,13 +22,6 @@
     <div>
       <strong class="dpr-home-notice-entry-title">反馈功能上线</strong>
       <span class="dpr-home-notice-entry-summary">新增反馈功能，欢迎大家踊跃反馈各种建议，我们会第一时间查看并协调处理。</span>
-    </div>
-  </div>
-  <div class="dpr-home-notice-entry">
-    <time class="dpr-home-notice-date" datetime="2026-07-19">07.19</time>
-    <div>
-      <strong class="dpr-home-notice-entry-title">首页新增社区统计</strong>
-      <span class="dpr-home-notice-entry-summary">现在可以看到今天看论文的人数和项目加入人数。</span>
     </div>
   </div>
   <div class="dpr-home-site-stats" data-dpr-site-stats hidden aria-live="polite">
@@ -48,7 +48,7 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-07</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-08</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
     <strong class="dpr-home-dashboard-count">共 17 篇</strong>
@@ -58,7 +58,7 @@
     <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-07 22:17:27 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-08 22:52:45 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日精读17篇，重点聚焦LLM动态上下文生成与仓库级重构Agent评测两篇高分论文；速读中代码检索与扩散语言模型生成值得一并关注。建议优先精读两篇9.0分论文，快速扫读速读清单内容即可。</p>
+<p>今日共读17篇论文，其中6篇精读、11篇速读，聚焦代码修改与LLM工程应用。最值得看的是两篇9.0分精读：最小代码编辑保真度（过度修改问题）与工业级崩溃报告驱动的缺陷定位修复。建议优先精读这两篇，关注LLM编辑的可靠性与落地修复策略。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -81,7 +81,7 @@
     <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Dynamic Adaptation of the LLM Context for Generating Routines with Coupled Semantics">Dynamic Adaptation of the LLM Context for Generating Routines with Coupled Semantics</span></li><li><span class="dpr-home-dashboard-paper-title" title="RefactorPlatform: An Open-Source Harness for Controlled Evaluation of Repository-Scale Refactoring Agents">RefactorPlatform: An Open-Source Harness for Controlled Evaluation of Repository-Scale Refactoring Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Substrate-Aware AI Agents: Execution Context as a First-Class Input">Substrate-Aware AI Agents: Execution Context as a First-Class Input</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="When Models Edit Too Much: On the Fidelity of Minimal Code Edits">When Models Edit Too Much: On the Fidelity of Minimal Code Edits</span></li><li><span class="dpr-home-dashboard-paper-title" title="Integrating Crash Report Mining and LLMs for Bug Localization and Repair: An Industrial Report">Integrating Crash Report Mining and LLMs for Bug Localization and Repair: An Industrial Report</span></li><li><span class="dpr-home-dashboard-paper-title" title="Practical Implementation Report on Introducing Spec-Driven Development Using AI Agents in Software Development PBL">Practical Implementation Report on Introducing Spec-Driven Development Using AI Agents in Software Development PBL</span></li></ul>
   </div>
   <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>6</strong></span></div>
 </section>
@@ -94,7 +94,7 @@
     <strong class="dpr-home-dashboard-count">11 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="ExecRetrieval: Measuring the Functional-Correctness Gap in Code-Embedding Retrieval">ExecRetrieval: Measuring the Functional-Correctness Gap in Code-Embedding Retrieval</span></li><li><span class="dpr-home-dashboard-paper-title" title="Unifying Conformal Language Tasks with In-Context Ensembles">Unifying Conformal Language Tasks with In-Context Ensembles</span></li><li><span class="dpr-home-dashboard-paper-title" title="Distilled Continuous Diffusion Language Models Can Write Code in Few Steps---or One">Distilled Continuous Diffusion Language Models Can Write Code in Few Steps---or One</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="LentEx: Generalizable Latent Entity Extraction via Synthetic Data and Instruction-Tuned LLMs">LentEx: Generalizable Latent Entity Extraction via Synthetic Data and Instruction-Tuned LLMs</span></li><li><span class="dpr-home-dashboard-paper-title" title="Beyond Code Generation: Reliability, Verification, and Cost Economics in the Agentic Software Development Lifecycle">Beyond Code Generation: Reliability, Verification, and Cost Economics in the Agentic Software Development Lifecycle</span></li><li><span class="dpr-home-dashboard-paper-title" title="PLUME: Parameter-Efficient Personalization of Large Language Models via Low-Rank User Modulation in Shared Subspaces">PLUME: Parameter-Efficient Personalization of Large Language Models via Low-Rank User Modulation in Shared Subspaces</span></li></ul>
   </div>
   <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>11</strong></span></div>
 </section>

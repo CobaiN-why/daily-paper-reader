@@ -1,0 +1,827 @@
+Title: Improving Language Identification for Code-Switched Utterances with Integer Linear Programming
+
+URL Source: https://arxiv.org/pdf/2609.05099v1
+
+Published Time: Mon, 07 Sep 2026 00:56:51 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# Improving Language Identification for Code-Switched Utterances with Integer Linear Programming 
+
+Joanna Radoła 1,2 Josep Maria Crego 2 François Yvon 1
+
+> 1
+
+Sorbonne Université, CNRS, ISIR, Paris, France 
+
+> 2
+
+SYSTRAN by ChapsVision, Paris, France  
+
+> Correspondence: radola@isir.upmc.fr
+
+Abstract 
+
+Automatic identification of code-switched (CS) utterances remains a challenge for language identification (LID) systems, causing such texts to be underrepresented in the training data of Large Language Models. In this paper, we re-visit MaskLID, a state-of-the art approach for CS identification, which requires no training and detects arbitrary language combinations. We make three main contributions: (a) we re-veal, and address, a major issue of MaskLID: its overreliance on word-level language associ-ation scores; (b) we reformulate the underlying optimization algorithm as an Integer Linear Pro-gram, enabling us to experiment with a large set of clear and interpretable constraints; (c) each of these improvements vastly improves the baseline system, as we illustrate in exper-iments involving 10 diverse languages, where we observe a strong boost in performance on CS benchmarks. We release our code and data for reproducibility. 
+
+ github.com/jradola/ILP4LID 
+
+1 Introduction 
+
+The development of multilingual language tech-nologies (LTs), illustrated by the rise of multilin-gual models trained on webscale corpora (Imani et al., 2023; Kudugunta et al., 2023; Üstün et al., 2024), requires effective multilingual natural lan-guage processing (NLP) tools, capable to handle as many languages as possible. Among these, lan-guage identification (LID) tools stand out as they are usually used in early stages of the data collec-tion and filtering (Abadji et al., 2021; Kargaran et al., 2024a; Penedo et al., 2025): high-precision LIDs are especially critical for low-resource lan-guages, which can easily get mixed with dominant languages, thereby compromising the quality of the resulting LTs (Kreutzer et al., 2022). In its basic form, Language Identification (LID) is framed as a supervised text classification task, where the language code of the text is the target label to be predicted. Modern LIDs detect sev-eral hundreds languages, with recent work claim-ing to cover over a thousand (Brown, 2014; Dunn, 2020; NLLB Team et al., 2024; Adebara et al., 2022; Jauhiainen et al., 2022; Burchell et al., 2023; Kargaran et al., 2023, 2024a). Many of these rest on a FastText backbone (Bojanowski et al., 2017), which provides an efficient implementation for text classification at scale and also ships with a pre-trained LID model recognizing 176 languages. 1
+
+Challenges of contemporary LIDs are reviewed in e.g., (Jauhiainen et al., 2019; Caswell et al., 2020; Burchell et al., 2024; Goot, 2025). They include the discrimination of typologically related languages and the computation of well-calibrated posterior probabilities. LIDs also often struggle with short texts, especially when written in a non-standard orthographies, as social media posts. A last challenge, that we address in this work, is their inability to handle intra-sentential code-switching 
+
+(CS), where several languages simultaneously oc-cur in the same sentence. This phenomenon is par-ticularly widespread in informal communication contexts (Do˘ gruöz et al., 2021). Our starting point is MaskLID (Kargaran et al., 2024b), which turns generic LIDs into CS LIDs thanks to a simple post-processing layer. This ap-proach is conceptually simple, requires no training and enables to recognize arbitrary language combi-nations . It thus provides us with a strong baseline, with many desirable properties. We make three main contributions: (a) we reveal a major issue of MaskLID: its over-reliance on inac-curate word-level language association scores that we address using an improved underlying LID; (b) we reformulate the language assignment algorithm as an Integer Linear Program, enabling us to ex-
+
+> 1https://fasttext.cc/docs/en/ language-identification.html arXiv:2609.05099v1 [cs.CL] 4 Sep 2026
+
+periment with a large set of clear and interpretable constraints on CS utterances; (c) we observe, in experiments involving 10 languages, both low and high resource, that each of these improvements vastly improve the baseline system, with boosts in accuracy up to +100% on several CS benchmarks. 
+
+2 Background 
+
+2.1 FastText-based LIDs 
+
+Following (Kargaran et al., 2024b), we rely on LIDs based on the FastText (Bojanowski et al., 2017) architecture. FastText is an open-source text-classification framework that can be deployed at scale at a reasonable computational cost. It still constitutes the backbone of several state-of-the-art LIDs (Ortiz Suarez et al., 2026). A FastText model is a multinomial logistic classifier that represents its input text as set of word embeddings 2 (vectors in 
+
+Rd) extracted from the text. The embedding e(w)
+
+of word w is a summation of the embeddings g(u)
+
+of n-grams u occurring in w.3 Sufficiently frequent words also have a dedicated embedding f (w). For those words, e(w) = f (w) + P 
+
+> g∈w
+
+g(g).LID systems relying on FastText compute the posterior probability of a language l ∈ [1 : L] by applying the softmax function to sentence-level representations e(w) = 1
+
+> T
+
+PTt=1 e(wt):
+
+P (l|w = w1 . . . w T ) = exp( bl · e(w)) 
+
+PLl′=1 exp( bl′ · e(w)) ,
+
+where bl is the embedding of language l. Logits can also be computed separately for each word, as they simply add up in the sentence representation. We thus assume a base LID computing a L × T
+
+tensor C(w) for each input w, where cell Cl,t (w)
+
+stores the logits for language l and word-level fea-ture e(wt) computed as the dot product: 
+
+Cl,t (w) = bl · e(wt). (1) 
+
+2.2 MaskLID: Iterative Masking 
+
+MaskLID (Kargaran et al., 2024b) rests on a sim-ple assumption: in a CS sentence containing two languages, L1 (dominant) and L2 (embedded), the corresponding fragments in L1 and L2 should be mapped to their respective language by any LID system. This idea is implemented in the following procedure for a text w = w1 . . . w T :   
+
+> 2We define words as tokens computed by the FastText tokenizer, which considers whitespaces as token boundaries.
+> 3Up to a maximum value of n, set to 6by default.
+
+1. predict language l∗ for w using any LID 2. for each word wt, t = 1 . . . T :(a) run LID on wt, compute the set of M
+
+most likely languages LM (t)
+
+(b) if l∗ ∈ L M (t), assign wt to l∗ and re-move wt4 from w
+
+3. if length( w) ≥ τ goto 1, else terminate The key insight of MaskLID is step (2.b), which assigns wt to l∗ whenever l∗ is one of the M most likely language for wt. This ensures that these words will not be available in later iterations, where they could cause the prediction of languages closely resembling l∗. Assume, for instance, that some words in a monolingual German sentence would have Dutch, a related language, as their most likely language, while German is only ranked second or third. Step (2.b) assigns these words to German, preventing their assignment to Dutch in a subse-quent round. The algorithm stops in (3) when the remaining part of w is too short to be reliably clas-sified, as controlled by the length parameter τ -potentially leaving some words unassigned. The procedure returns the set of languages iteratively identified in step (1). This procedure is illustrated in the following execution trace borrowed from (Kargaran et al., 2024b). In the first pass, l∗ is predicted to be Turk-ish, causing all underlined words to be removed from further analysis, leaving the fragments “dead-line crash walking I heard it at study" for the second iteration. As this text is sufficiently long, English is identified as the second language. Once these words are removed, the algorithm terminates and returns {tur, eng }.ya deadline gelmi¸ sti çok büyük bir crash olmu¸ s arkada¸ slarla walking yaparken I heard it at bo˘ gaziçi sesli study Compared to most alternatives reviewed in §6, the main benefits of MaskLID are (a) CS LID can be performed for any language combination that is recognized by the LID: using large coverage mod-els, such as GlotLID (FastText-based), recognizing 2000+ languages, MaskLID readily identifies more than 4M combinations of languages; (b) MaskLID can work with any LID, as long as it outputs pos-terior language probabilities given an input text (a   
+
+> 4The exact implementation is slightly more complex, as
+> Mmay vary depending on the total predicted probability of
+> l∗. See pseudo-code and discussion in Appendix A.
+
+sentence or a word). In the experiments of (Kar-garan et al., 2024b), 2 backbone LIDs and 4 lan-guage pairs are considered, and MaskLID is found to vastly outperform the approach of (Burchell et al., 2024) on the code-switched subset of the test data. 
+
+2.3 MaskLID: a reanalysis 
+
+As illustrated above, MaskLID computes sentence-level probabilities and assignments ; internally, however, it mostly relies on word-level associa-tions (step 2.a), which identify words to be itera-tively masked. Such associations, when computed by a classifier to perform sentence-level LID, are not reliable. We start in §3 by documenting and addressing this shortcoming with the development of an improved backbone LID model. Sentence-level assignments do not just depend on word-level scores, they also take into account global scores (step 1), as well as length constraints. MaskLID can thus be understood as computing maximally likely word associations, subject to global constraints. It solves this problem in a greedy fashion, iteratively computing optimal map-pings for diminishing input spans. We instead for-malize in §4 this combinatorial problem as an Inte-ger Linear Program (ILP), hoping to reach better global solutions . By further extending the basic model with additional constraints, we create a ver-satile tool for code-switched language detection. 
+
+3 Improving MaskLID assignments with better word-level scores 
+
+In this section, we report preliminary experiments highlighting a mismatch between MaskLID, which heavily relies on word-level language scores, and standard LIDs, which are typically trained at the sentence level, and deliver poor word-level pre-dictions. We then document our improved LID, which can both reliably identify languages at the sentence level, and serve as an effective word-level language predictor for MaskLID. We begin with a presentation of the datasets and metrics. 
+
+3.1 Datasets and evaluation metrics Code-switched datasets We use the following CS corpora from the literature: Turkish-English (Yirmibe¸ so˘ glu and Eryi˘ git, 2018), Turkish-German (Çetino˘ glu, 2016), Basque-Spanish (Aguirre et al., 2022; Heredia et al., 2025), Hindi-, Nepali-5,
+
+> 5Hindi and Nepali texts are romanized in this corpus, sourced from social media.
+
+Spanish-English (Aguilar et al., 2020), Indonesian-English (Barik et al., 2019) and Wolof-French (Gauthier et al., 2024). As these datasets were independently sourced from social media or from transcripts of conversational corpora, we had to reconcile heterogeneous annotation schemes. For instance, some datasets distinguish between Named Entities, or label some tokens as language-agnostic, see discussion in (Sterner, 2024). For corpora tagged at the word level, we only keep examples that include words tagged as L1 or L2. 6 Emo-jis, URLs, @usernames, quotation marks, tokens starting with "%" which indicate filler words (e.g. “%hmm”) and language tags have been removed. We filter out examples that are shorter than 20 and longer than 200 characters excluding whitespaces. Detailed statistics regarding the data are in Table 1, which highlights the heterogeneity of these bench-marks, e.g., regarding the length of L2 spans. To create the devset, we randomly select 100 sentences from five CS corpora and also include 500 monolingual sentences in these same lan-guages. 7 The remaining data is reserved for testing. 
+
+Monolingual evaluations A good CS LID should also reliably detect non-CS cases. Our eval-uation data thus balances monolingual and code-switched examples. Some CS datasets, e.g. those included in LinCE (Aguilar et al., 2020), include a monolingual subset. To balance out those that do not, we include monolingual sentences sourced from Flores+ (NLLB Team et al., 2024) in the dataset. We take 500 shortest sentences from every language out of the 10 appearing in our CS pairs. Note that these examples are considerably cleaner than the other monolingual data. Hindi and Nepali pose specific problems, as they are written in Latin scripts in the CS corpora, but use Devanagari in Flores+. We automatically ro-manize the Flores texts for these two languages using the uroman Python module 8 and include ro-manized monolingual sentences in the test set. 
+
+3.2 Metrics 
+
+Our framing of CS LID associates each input se-quence with a set of languages. Like (Kargaran et al., 2024b), our primary metric is the exact match (EM), which computes the proportion of    
+
+> 6For example, we exclude sentences including only Turk-ish and Mixed labels; or only Indonesian and Unknown .
+> 7eus, tur, spa: 72 sentences / lang., hin, npi, eng, deu: 71.
+> 8https://github.com/isi-nlp/uroman
+
+tur-eng eus-spa hin-eng npi-eng tur-deu spa-eng ind-eng fra-wol # sent in dev / test 100 / 256 100 / 965 100 / 1928 100 / 6959 100 / 1143 0 / 8269 0 / 627 0 / 4386 mean # char/sent 84 79 72 56 75 57 103 73 mean len L1 57.7 [±29.4] - 47.0 [±32.0] 36.4 [±18.4] 50.6 [±27.9] 41.1 [±20.7] 64.7 [±36.4] -mean len L2 19.0 [±11.9] - 13.1 [±11.4] 12.4 [±8.6] 21.4 [±14.3] 11.2 [±8.3] 24.0 [±17.0] -mean # switches 2.8 - 2.9 2.8 1.9 2.9 2.8 -type sm conv+sm sm sm conv sm sm conv 
+
+Table 1: Statistics of the CS datasets used the experiments. The uncertainties reported are standard deviations. The eus-spa and fra-wol datasets do not contain the word-level labels necessary to compute relevant CS-specific statistics. sm=social media corpus, conv=conversational corpus. 
+
+samples for which the output set of languages ex-actly matches the reference. As we predict sets, we also compute precision, recall, and F1, and average those per language over input samples. Aggregated results are always macro-averages across languages or language pairs. 
+
+3.3 GlotLID scores cannot always be trusted 
+
+In our early experiments, we ran MaskLID com-bined with GlotLID and observed that GlotLID was sometimes predicting unexpected labels for short segments. For instance, “ i the same lady how u do-ing ” was labeled as Norwegian (nno), which was also the most likely language for same and lady .To visualize the general brittleness of word-level predictions, we plot on Figure 1 the distribution of posterior probability of the reference language at the sentence (left) and word-levels (right). While almost all sentence-level scores are close to 1.0, we see that at the level of words, a vast majority of gold labels have a near 0 probability. This highlights the fact that one key assumption of MaskLID, i.e that the underlying word-level LID scores can be trusted to select masked words, does not hold. 0.0 0.2 0.4 0.6 0.8 1.0 0.0 0.2 0.4 0.6 0.8 1.0 0.0 0.2 0.4 0.6 0.8 1.0 0.0 0.2 0.4 0.6 0.8 1.0 0.0 0.2 0.4 0.6 0.8 1.0 0.0 0.2 0.4 0.6 0.8 1.0 0.0 0.2 0.4 0.6 0.8 1.0 0.0 0.2 0.4 0.6 0.8 1.0 
+
+Figure 1: Top: GlotLID distribution of probabilities assigned to the gold label on a subset of FLORES sen-tences (left) and words (right). Mean score for a sen-tence: 0.98. Mean score for a word: 0.31. Bottom: Same figure for LiteLID-v2. Mean score for a sentence: 0.96. Mean score for a word: 0.50. 
+
+3.4 LiteLID: Enriching GlotLID with word-level training examples 
+
+To precisely measure the impact of this issue on MaskLID’s performance, we trained several new FastText-based LIDs on a set of 125 labels, corre-sponding to the languages written in Latin script in FastText-LID. 9 These models are denoted as LiteLID. Our baseline model (LiteLID-v0) repro-duces the training settings of GlotLID, using the Glot-C corpus of (Kargaran et al., 2024a); we then consider multiple variants where the training data comprises a mixture of complete sentences, short segments and isolated words. Details on the experi-ments with data augmentation schemes are in D. In the remainder, we select to work with LiteLID-v2, which displays good performance at the sentence and word levels. This model was trained on full sentences and single-word training instances, ob-tained from splitting full sentences. The difference between this model and GlotLID is visible in Figure 1, where in the bottom we see a clear improvement of average word-level scores, and a sharp decrease of the proportion of cases where the correct label has a near-zero probability. As a sanity check, we also evaluated these mod-els as pure LIDs, and observed that including iso-lated words in the training data was an effective way to improve the prediction for short segments, with no impact on longer ones. This is illustrated in Figure 2: GlotLID and LiteLID-v0, which is identical to GlotLID trained with only 125 labels, are almost indistinguishable. LiteLID-v1, trained only on words, is also outperformed by LiteLID-v2, trained on sentences and words. LiteLID-v2 outperforms GlotLID on small segments, e.g., by 0.14 absolute points on sequences of length 6-10. 
+
+> 9
+
+This reduced label set is also adopted by (Kargaran et al., 2024b). 6-10 11-15 16-20 21-25 26-30 31+ 0.6 0.7 0.8 0.9 1.0 GlotLID LiteLID-v0 LiteLID-v1 LiteLID-v2 Figure 2: F1 as a function of the input length (in chars). 
+
+3.5 Improved MaskLID results 
+
+Equipped with this better backbone model, we ran experiments on our development data to compare their impact on MaskLID. Results are in Table 2. In the top part, we report baseline strategies for pro-cessing mixed-language data with a conventional LID: output the most likely language (k=1), the two most likely (k=2), or all languages whose prob-ability exceeds a threshold (p>0.1). In all cases, we observe that LiteLID outperforms GlotLID, by a wide margin. When combined with MaskLID, we also observe performance increases across the board when using an LID trained on the augmented dataset (compare G with L in Table 2). These im-proved word-level probabilities yield clear improve-ments both for the code-switched and the monolin-gual test sets, for all values of the length parameter. CS mono all                                                                                                                  
+
+> Model config EM F1 EM F1 EM F1 GlotLID k=1 0.0 0.55 0.98 0.98 0.49 0.76 GlotLID k=2 0.22 0.56 0.0 0.66 0.11 0.61 GlotLID p>0.1 0.09 0.61 0.94 0.97 0.51 0.79 LiteLID-v2 k=1 0.0 0.63 0.99 0.99 0.5 0.81 LiteLID-v2 k=2 0.39 0.68 0.0 0.67 0.19 0.67 LiteLID-v2 p>0.1 0.18 0.71 0.98 0.99 0.58 0.85 G+MaskLID τ=5 0.31 0.66 0.69 0.90 0.50 0.78 G+MaskLID τ=10 0.29 0.66 0.74 0.92 0.51 0.79 G+MaskLID τ=15 0.26 0.66 0.80 0.93 0.53 0.79 G+MaskLID τ=20 0.23 0.65 0.83 0.94 0.53 0.79 L-v2+MaskLID τ=5 (*) 0.39 0.77 0.96 0.98 0.68 0.88
+> L-v2+MaskLID τ=10 0.35 0.76 0.98 0.99 0.67 0.87 L-v2+MaskLID τ=15 0.30 0.74 0.99 0.99 0.65 0.87 L-v2+MaskLID τ=20 0.25 0.73 0.99 0.99 0.62 0.86
+
+Table 2: Exact match and F1 on the development data. (*) marks the best configuration. 
+
+For the next rounds of experiments, we use LiteLID-v2 as the backbone model, and set the length parameter τ to 5, as this is our best MaskLID configuration on the development set. 
+
+4 Computing better assignments with ILP 
+
+As discussed in §2.2, MaskLID greedily assigns languages based on a global association score, com-puted as a sum of local scores, subject to several constraints. We propose to reformulate this prob-lem in the ILP framework, enabling us to make the optimization objective explicit, to compute better solutions and to introduce additional constraints. 
+
+4.1 ILP4LID: The Core Program 
+
+Given a sequence w of T words, and a set of L
+
+languages, we formalize CS LID as an optimal assignment problem, which maximizes under con-straints a sum of word-language association scores, finally returning all languages assigned at least once. As an intermediate step, word-level labels are computed, which we model with a binary variable 
+
+yl,t = 1 if and only if wt is assigned to language 
+
+l, 0 otherwise. We start with the following core program: 1. Input: • w = w1 . . . w T a sequence of words; • C(w) = {cl,t , l ∈ [1 : L], t ∈ [1 : T ]}10 
+
+the L × T matrix storing word-level lan-guage scores. 11 
+
+2. Objective function, to be maximized w.r.t vari-ables Y = {yl,t , l ∈ [1: L], t ∈ [1: T ]}:
+
+O(Y) = 
+
+> L
+
+X
+
+> l=1
+> T
+
+X
+
+> t=1
+
+cl,t yl,t . (2) 3. Fundamental constraints: • C1: at most 1 language per word 
+
+∀t, 
+
+> L
+
+X
+
+> l=1
+
+yl,t ≤ 1 (3) • C2: at most K languages per sentence 
+
+> L
+
+X
+
+> l=1
+
+ul ≤ K. (4) 4. Output: • Binary assignments for variables in Y,with yl,t = 1 denoting the assignment of word wt to language l;
+
+> 10
+
+In the remainder, we drop the dependency on w.
+
+> 11
+
+With FastText, these scores are logits computed in Eq. (1). • Binary assignments for variables in U =
+
+{ul, l ∈ [1 : L]}, with ul = 1 if at least one word is assigned to language l.
+
+U and Y are linked through the following set of constraints (C0): 
+
+∀l ∈ [1: L] : T × ul ≥
+
+> T
+
+X
+
+> t=1
+
+yl,t ≥ ul. (5) Unconstrained optimization of objective (2) yields a trivial solution where each word is as-signed to all languages with a positive score: 
+
+yl,t = I[cl,t > 0] .12 Restricting words to be as-signed to just one language (Eq. (3)) fixes this is-sue, but yields another degenerate solution, where each word is mapped its most likely language: 
+
+yl,t = I[cl,t = arg max l′ cl′,t ∧ cl,t > 0] .
+
+4.2 Improving ILP4LID 
+
+We thus extend the core model in several ways to obtain more satisfactory solutions: 1. we explicitly rank assigned languages based on their global score. 13 For this, we intro-duce a second index for variables in U, with 
+
+ul,k = 1 when l has the kth largest global score. This implies to also introduce a third index to variables in Y, yielding a generalized version of Eq. (5). 2. we modify the objective function: • by introducing a penalty P for every pre-dicted language; • by introducing weights α which con-strain the ranking of language to reflect their respective global score; The updated objective function thus becomes: 
+
+O+(Y) = 1
+
+T (
+
+> K
+
+X
+
+> k=1
+
+αk(
+
+> L
+
+X
+
+> l=1
+> T
+
+X
+
+> t=1
+
+cl,t yk,l,t )) 
+
+− P
+
+> K
+
+X
+
+> k=1
+> L
+
+X
+
+> l=1
+
+uk,l .
+
+3. we finally consider supplementary constraints, each with its own meta-parameter:         
+
+> 12 I[p]is the indicator function whose value is 1when predi-cate pis True ,0otherwise.
+> 13 This simulates the succession of language assignments performed in MaskLID.
+
+• C3: sets a minimal length τ (in characters) required to identify a lan-guage, simulating the length constraint of MaskLID. • C4: a word wt can only be assigned to l
+
+if l is one of its M most likely languages. • C5: a word wt must be assigned to l at rank 1 if l is one of its M most likely languages. • C6: the total number of language changes must be at most S.C4 and C5 are variants of the top-M constraint of MaskLID, while C6 is new and illustrates the flex-ibility of our framework. A detailed formulation of the variables and constraints in ILP4LID are in Appendix E. 
+
+4.3 ILP4LID’s best configurations 
+
+We perform a search for the best settings for ILP4LID and identify three configurations that re-spectively maximize the EM on code-switched data (CS), on monolingual data (MONO), and on the average of the two (AVG). These reference config-urations are as follows: • CS: optimizes the core objective under con-straints C1 and C2. • MONO: optimizes the extended objective (with α1 = 1 , α 2 = 0 .7, P = 20 ), subject to C1, C2, C3 ( τ = 10 ), C5 ( M = 10 ). • AVG: optimizes the extended objective (with 
+
+α1 = 1 , α 2 = 0 .75 , P = 15 ), subject to C1, C2, C3 ( τ = 5 ), C5 ( M = 10 ). Performances on the development set using these configurations are in Table 3, where AVG increases the MaskLID baseline by 0.08 absolute points in EM (from 0.68 to 0.76). CS mono all                                             
+
+> Model config EM F1 EM F1 EM F1 L-v2 + MaskLID τ=5 0.39 0.77 0.96 0.98 0.68 0.88 L-v2 + MaskLID τ=10 0.35 0.76 0.98 0.99 0.67 0.87 L-v2 + ILP4LID AVG 0.60 0.83 0.91 0.97 0.76 0.90 L-v2 + ILP4LID CS 0.68 0.83 0.06 0.69 0.37 0.76 L-v2 + ILP4LID MONO 0.47 0.81 0.98 0.99 0.73 0.90
+
+Table 3: Exact Match and F1 on the development data for various ILP configurations, compared to the MaskLID baseline of Section 3. 5 Experiments on the testset 
+
+5.1 Detecting language mixtures 
+
+Using the models and parameter values identified on the development set, we finally process the test data and obtain the results in Table 4. They confirm, on a larger and more diverse set of languages, results observed on the development set: (a) as a bare model, LiteLID-v2 does better than GlotLID on all accounts, with very large gains on CS data; (b) changing the latter for the former when using MaskLID also has large impacts, illustrated by a +0.13 absolute increase in EM; (c) changing the greedy optimizer for the ILP model yields ad-ditional gains, that are very significant for the CS subset. They amount, for instance, to a +0.17 ab-solute increase in EM for the AVG configuration, which also surpasses MaskLID globally, albeit by a smaller margin (+0.04). Overall, the combination of our two improvements raises the average EM from 0.54 to 0.71 (AVG configuration). McNemar’s test confirms that the three ILP4LID configurations obtain significantly better EM scores than MaskLID on the test set: for α = 0 .05 the 
+
+p-values are respectively equal to 1.3e-302 (AVG), 
+
+1.3e-18 (MONO), and 0.0498 (CS). The latter dif-ference is borderline significant, which is hardly surprising as monolingual predictions for this con-figuration are quite inaccurate. Results broken down by language are in Ta-ble 10. They show improvements in the detec-tion of CS text for all languages, with increases in EM up to +0.44 for Turkish-English or +0.35 for Nepali-English. These increases are partly due to the change of the backbone model, but also re-sult from the improved optimizer (e.g., in Turkish-English and Turkish-German). Monolingual results are mostly affected by the change in the backbone LID, sharply improving the results of MaskLID; ILP4LID does here slightly worse than MaskLID, trading-off a small loss on monolingual data for large gains in CS test sets. 
+
+5.2 Error analysis Comparing ILP4LID configurations The CS configuration has a recall of 0.99 on monolingual data, but a very small Exact Match of 0.04. This is because using only C1 and C2 leads to predict-ing two languages in almost all cases, as explained in §4.1. For example, monolingual English sen-tences in this configuration are most often labeled with pairs involving a close language such as {eng, nld } or {eng, fra }; likewise, monolingual Spanish is often labeled as {spa, por }, etc. As for the MONO configuration, the most fre-quent mistake corresponds to only identifying one of the two correct languages in code-switched test sets: while the precision for this configuration is always high, with an average of 0.96, the recall for the CS data remains unsatisfactory (0.69). The AVG configuration is less prone to either kind of mistakes and represents our best trade-off between good CS detection abilities, and with very high scores in monolingual identification. 
+
+Comparing ILP4LID with MaskLID We fo-cus now on the differences between MaskLID and ILP4LID, when running with the same backbone model (LiteLID-v2). For this, we study the propor-tion of words that remain non assigned at the end of the process: in theory, assigning more words should lead to better global solutions. 14 On the full test data, MaskLID leaves 23% of words without any language assignment - a sign that the greedy procedure makes early decisions that assign too many words to the first languages, leaving frag-ments that are too small to be assigned in a second round, thereby missing occurrences of CS text. By contrast, ILP4LID (AVG) is able to provide assign-ments for 97% of the test words, yielding a clear increase of the recall for the CS test set (+0.1). This error pattern is illustrated on following ex-ample of CS between French and Wolof: parce que yooyu yépp ngir vraiment wàññi préssion picc yooyu ci ci ci toolu ceeb yi égalment ak ci tool dugub yi MaskLID here correctly identifies all Wolof words, but also erroneously tags as Wolof “vraiment” and “préssion", which are French words. It then fails to detect the presence of any French in the short remaining segment, leaving 14% of words in the sentence unassigned. ILP4LID (AVG), by contrast, is here able to correctly identify both languages. 
+
+Word-level assignments Even though this is not their primary goal, both MaskLID and ILP4LID internally assign words to languages. Compar-ing how they perform this assignment also allows us to highlight the difference between them. Ta-ble 5 reports word-level performances on the code-switched test subsets containing reference word                                                                                                                                                                                             
+
+> 14 Our objective functions can only increase when more words are assigned. CS mono all Model config EM F1 Pr Re EM F1 Pr Re EM F1 Pr Re GlotLID k=1 0.0 0.58 0.87 0.44 0.97 0.97 0.97 0.97 0.49 0.78 0.92 0.71 GlotLID k=2 0.20 0.56 0.56 0.56 0.0 0.66 0.49 0.98 0.10 0.61 0.53 0.77 GlotLID p>0.1 0.06 0.62 0.85 0.49 0.95 0.97 0.97 0.98 0.5 0.8 0.91 0.74 LiteLID-v2 k=1 0.0 0.63 0.95 0.47 0.99 0.99 0.99 0.99 0.50 0.81 0.97 0.73 LiteLID-v2 k=2 0.36 0.67 0.67 0.67 0.0 0.67 0.50 1.0 0.18 0.67 0.58 0.83 LiteLID-v2 p>0.1 0.15 0.69 0.91 0.56 0.94 0.98 0.97 1.0 0.54 0.84 0.94 0.78 G+MaskLID τ=5 0.30 0.68 0.79 0.60 0.76 0.92 0.87 0.98 0.53 0.80 0.83 0.79 G+MaskLID τ=10 0.29 0.68 0.82 0.59 0.80 0.93 0.89 0.98 0.54 0.81 0.85 0.79 L-v2+MaskLID τ=5 0.39 0.78 0.92 0.67 0.94 0.98 0.97 0.99 0.67 0.88 0.95 0.83 L-v2+MaskLID τ=10 0.37 0.77 0.94 0.66 0.97 0.98 0.98 0.99 0.67 0.88 0.96 0.83 L-v2+ILP4LID CS 0.67 0.82 0.83 0.82 0.04 0.68 0.52 1.00 0.36 0.75 0.68 0.91 L-v2+ILP4LID MONO 0.42 0.79 0.93 0.69 0.96 0.98 0.98 0.99 0.69 0.89 0.96 0.84 L-v2+ILP4LID AVG 0.54 0.81 0.88 0.76 0.88 0.96 0.94 0.99 0.71 0.89 0.91 0.88
+
+Table 4: Results on the monolingual and CS test sets. k=1,2 when the LID always predicts k languages; p>0.1 when it predicts any language having a probability >0.1. The three highest Exact Match values per column are in bold.                                                                   
+
+> ILP4LID (CS) MaskLID ( τ=5 )pair Pr Re F1 Un Pr Re F1 Un HIN-ENG 0.87 0.77 0.80 1.3 0.90 0.68 0.77 21.5 IND-ENG 0.94 0.90 0.92 0.4 0.92 0.82 0.87 8.3 NPI-ENG 0.88 0.70 0.77 3.3 0.94 0.57 0.71 32.5 SPA-ENG 0.93 0.83 0.88 0.9 0.95 0.75 0.84 15.7 TUR-DEU 0.98 0.95 0.96 0.5 0.99 0.84 0.91 13.5 TUR-ENG 0.92 0.91 0.91 0.3 0.94 0.71 0.80 18.6
+> macro avg 0.92 0.84 0.88 1.1 0.94 0.73 0.82 18.3
+
+Table 5: Word-level evaluation results on code-switched test data. "Un" is the percentage of Unassigned words. 
+
+assignments: MaskLID ( wordlid_v2 , τ =5 ) vs. ILP4LID in the CS configuration, macro-averaged over each pair’s two languages, alongside the share of L1/L2 tokens each system leaves unassigned. Only tokens gold-labeled as L1/L2 are scored; an unassigned token is a false negative (lowering re-call) but never a false positive. MaskLID’s absten-tion maximizes its precision, having a clear overall negative effect on recall and F1. In comparison, ILP4LID has a slightly lower precision, but a much better recall. 
+
+Remaining challenges Very short, noisy, am-biguous social media sequences remain the biggest challenge. Even with our preliminary filtering, ex-amples such as "auuuuuuuuush jajaja asi se habla lmao" can be found in the LinCE benchmark la-beled as Spanish-English. Our general recommen-dation is to use the AVG config, and CS/MONO if the number of languages in the data is known beforehand. 
+
+6 Related work 
+
+One way to detect CS is to develop word-level 
+
+LIDs. This problem is difficult, due to (a) ex-tralexical terms (numbers or proper names), (b) lexical overlap (due to typological proximity or historical influences) between languages, (c) occur-rences of intra-word CS. This makes word-level LID intractable but for a very small number of languages. The bulk of studies along these lines have thus focused on simplifying settings where two predefined languages are identified. Super-vised word-level LID is studied e.g. in (Nguyen and Do˘ gruöz, 2013; King and Abney, 2013; El-fardy et al., 2013; Das and Gambäck, 2014; Al-Badrashiny and Diab, 2016; Shehadi and Wintner, 2022), where a rich mix of linguistic and ortho-graphic features are used to detect code-switching points. Sterner (2024) considers more than two pos-sible word classes (punctuations, named entities, mixed words) and detects CS between English and non-English using Roberta-based (Conneau et al., 2020) classifiers. This system generalizes to (non-English) languages unseen in training. Zhang et al. (2018) use a feed-forward network with global con-tstraints, identifying a fixed set about 100 language combinations selected for their relevance; most in-cluding English as one of the two languages. As far as we know, this tool has never been released. A first alternative framing considers infra-word LID , predicting languages for characters (Kocmi and Bojar, 2017) or subwords (Mager et al., 2019), enabling the splitting of mixed-language words 15 
+
+> 15 Such cases appear for instance when a loan word in L2 needs to be inflected to match syntactic constraints in L1 -
+
+and tagging each part with a distinct language. However, training subword models requires anno-tated data, which are not available on a large scale. Another approach studies unsupervised settings ,where the list of possible languages is not prede-fined. Rijhwani et al. (2017) study unsupervised word-level LID to evaluate the amount of CS text on Twitter. Kevers (2022) identify CS in multilin-gual documents, using a sliding window approach and relying on lists of language-specific words. A third alternative framing gives up on the prediction of word-level tags, generating a list of languages for each segment (Stensby et al., 2010; Lavergne et al., 2014). Kargaran et al. (2024b) adopt this view and predict sentence-level labels, obtained by combining word-level scores computed by LIDs. 
+
+7 Conclusion and Outlook 
+
+In this work, we have proposed a reanalysis of the MaskLID algorithm for CS LID. In early experi-ments, we identified a main issue with its strong reliance on word-level scores and mitigated it with a better backbone LID model, already outperform-ing the baseline system by a large margin. We then focused on the underlying optimization algorithm and developed an alternative version relying on the ILP framework, which offers a more flexible way to express constraints, and is also able to find better global solutions. This second change enabled us to further increase CS identification rates, yielding very large gains for some language pairs. These improvements constitute an important step towards a better processing of informal language styles, es-pecially when they involve code-switching and/or minority languages. In future work, we will continue exploring the tradeoffs between word-level and sentence-level predictions, training LIDs with better calibrated posterior probabilities that both MaskLID and ILP4LID require, and also reporting confidence scores of our models. Another way to extend this work is the inclusion of more languages, especially languages usually written in non-Latin scripts but which can be transliterated in social media. Finally, optimizing the model to speed-up CS LID with the ILP model remains an important goal.  
+
+> as in “il a switché” - (“ he switched ”) where “switch”, an English borrowing, is conjugated in the past participle tense as a regular first group verb in French.
+
+Limitations 
+
+Problem Framing We frame the problem of CS LID as the identification of words associated to two distinct languages. We recognize that doing this is a double simplification. First, there are cases where more than two languages can occur in the same ut-terance as in the French-German-Luxemburgish dataset of Lavergne et al. (2014). Second, there are many cases where word-to-language assign-ments are ambiguous or ill-defined (punctuations, numbers, proper nouns, loan words), yielding un-certainty in the actual number of languages present in a sentence. As we use strict length limits for inserted L2 spans, our approach is bound to fail for very short segments, that are often difficult to un-ambiguously assign to just one language. For such highly ambiguous segments, a multi-label approach (Chifu et al., 2024; Fedorova et al., 2025) might be preferred. Finally, we note that our framing of CS LID also disregards intra-word code-switching, where a borrowed base form in L2 is combined with a regular L1 inflection mark. 
+
+Language Coverage Our experiments so far have only considered a handful of language pairs written in Latin script; they mostly cover informal speeches collected from social media or transcribed conversations. While our test is more diverse than previous work – notably including several minority languages, we recognize that it could be augmented with more language pairs and/or domains. While mixing languages that use different scripts should pose no major issue, it would still be interesting to include more data resulting from a romanization process. Our work with Hindi and Nepali is a first step in that direction, but is somewhat facilitated by the use of a regular romanisation process. In-cluding CS data containing less standard forms of romanization, such as Arabizi for Arabic-French or Arabic-English (Seddah et al., 2020; Shehadi and Wintner, 2022) would certainly prove to be more challenging, as high-quality LIDs for those types of mixed-language texts are difficult to find. 
+
+Computational Efficiency The focus in this work has been primarily to better understand and diagnose the computations performed by MaskLID, arguably the best available CS-LID model to date. For this, we have resorted to an ILP formulation, which can be seen as costly to run on personal com-puters. For instance, on a personal desktop (Intel Core i5 with 40GB RAM), our CS LID detector 20 40 60 80 100 120 246810 12 14      
+
+> 25 50 75 100 20 40 60 80 100 120 510 15 20 25 30
+> 25 50 75 100
+
+Figure 3: Runtime analysis showing a linear depen-dency between the number of language labels and the execution time on a desktop machine for 80 examples (in seconds). CS configuration (left) - AVG configura-tion (right). Curves correspond to buckets of different average lengths, ranging from ~25 to ~100 characters. 
+
+takes about 13 s (for CS config) and 25 s (for AVG and MONO) to process 80 sentences of around 80 characters. This represents approximately x10 in-crease with respect to MaskLID for short segments (<50), and a x20 increase of longer segments. It should however be noted that our detector does not require any GPU and is distributable on multi-ple CPU cores. A straightforward way to improve this runtime would be to preselect the list of pos-sible languages so as to reduce L, which directly defines the dimensions of the ILP program (see Appendix E, Tables 7 and 8). This dependency is also illustrated on Figure 3, which displays the variations of the ILP solver runtime with respect to 
+
+L, for various typical sentence lengths. For efficiency reasons, we have performed our experiments with Gurobi 16 version 13, a commer-cial solver, with free academic licences; our code can also be ran with any open-source tool supported by the Pyomo framework, e.g. HiGHS. 17 
+
+Acknowledgments 
+
+We thank Dwi Prima Handayani Putri for her con-tribution to early implementations of the ILP solver. We also thank Maxime Bouthors and Amir Hos-sein Kargaran for their inputs and feedback. We finally thank ARR reviewers and meta-reviewers for their constuctive comments. This work was per-formed using HPC resources from GENCI–IDRIS (Grant 2025-AD011017321). François Yvon has been partly funded by the French National Fund-ing Agency (ANR) under the France 2030 program (ref. ANR-23-IACL-0007). 
+
+> 16 https://www.gurobi.com/
+> 17 https://highs.dev/
+
+References 
+
+Julien Abadji, Pedro Javier Ortiz Suárez, Laurent Ro-mary, and Benoît Sagot. 2021. Ungoliant: An opti-mized pipeline for the generation of a very large-scale multilingual web corpus. Proceedings of the work-shop on challenges in the management of large cor-pora (CMLC-9) 2021. Limerick, 12 july 2021 (online-event), pages 1 – 9, Mannheim. Leibniz-Institut für Deutsche Sprache. Ife Adebara, AbdelRahim Elmadany, Muhammad Abdul-Mageed, and Alcides Inciarte. 2022. AfroLID: A neural language identification tool for African lan-guages. In Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing ,pages 1958–1981, Abu Dhabi, United Arab Emirates. Association for Computational Linguistics. Gustavo Aguilar, Sudipta Kar, and Thamar Solorio. 2020. LinCE: A centralized benchmark for linguis-tic code-switching evaluation. In Proceedings of the Twelfth Language Resources and Evaluation Confer-ence , pages 1803–1813, Marseille, France. European Language Resources Association. Maia Aguirre, Laura García-Sardiña, Manex Serras, Ar-iane Méndez, and Jacobo López. 2022. BaSCo: An annotated Basque-Spanish code-switching corpus for natural language understanding. In Proceedings of the Thirteenth Language Resources and Evaluation Conference , pages 3158–3163, Marseille, France. Eu-ropean Language Resources Association. Mohamed Al-Badrashiny and Mona Diab. 2016. LILI: A simple language independent approach for lan-guage identification. In Proceedings of COLING 2016, the 26th International Conference on Compu-tational Linguistics: Technical Papers , pages 1211– 1219, Osaka, Japan. The COLING 2016 Organizing Committee. Anab Maulana Barik, Rahmad Mahendra, and Mirna Adriani. 2019. Normalization of Indonesian-English code-mixed Twitter data. In Proceedings of the 5th Workshop on Noisy User-generated Text (W-NUT 2019) , pages 417–424, Hong Kong, China. Asso-ciation for Computational Linguistics. Piotr Bojanowski, Edouard Grave, Armand Joulin, and Tomas Mikolov. 2017. Enriching word vectors with subword information. Transactions of the Associa-tion for Computational Linguistics , 5:135–146. Ralf Brown. 2014. Non-linear mapping for improved identification of 1300+ languages. In Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP) , pages 627– 632, Doha, Qatar. Association for Computational Linguistics. Laurie Burchell, Alexandra Birch, Nikolay Bogoychev, and Kenneth Heafield. 2023. An open dataset and model for language identification. In Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers) ,pages 865–879, Toronto, Canada. Association for Computational Linguistics. Laurie Burchell, Alexandra Birch, Robert Thompson, and Kenneth Heafield. 2024. Code-switched lan-guage identification is harder than you think. In 
+
+Proceedings of the 18th Conference of the European Chapter of the Association for Computational Lin-guistics (Volume 1: Long Papers) , pages 646–658, St. Julian’s, Malta. Association for Computational Linguistics. Isaac Caswell, Theresa Breiner, Daan van Esch, and Ankur Bapna. 2020. Language ID in the wild: Unex-pected challenges on the path to a thousand-language web text corpus. In Proceedings of the 28th Inter-national Conference on Computational Linguistics ,pages 6588–6608, Barcelona, Spain (Online). Inter-national Committee on Computational Linguistics. Özlem Çetino˘ glu. 2016. A Turkish-German code-switching corpus. In Proceedings of the Tenth In-ternational Conference on Language Resources and Evaluation (LREC’16) , pages 4215–4220, Portorož, Slovenia. European Language Resources Association (ELRA). Adrian-Gabriel Chifu, Goran Glavaš, Radu Tudor Ionescu, Nikola Ljubeši´ c, Aleksandra Mileti´ c, Filip Mileti´ c, Yves Scherrer, and Ivan Vuli´ c. 2024. Var-Dial evaluation campaign 2024: Commonsense rea-soning in dialects and multi-label similar language identification. In Proceedings of the Eleventh Work-shop on NLP for Similar Languages, Varieties, and Dialects (VarDial 2024) , pages 1–15, Mexico City, Mexico. Association for Computational Linguistics. Alexis Conneau, Kartikay Khandelwal, Naman Goyal, Vishrav Chaudhary, Guillaume Wenzek, Francisco Guzmán, Edouard Grave, Myle Ott, Luke Zettle-moyer, and Veselin Stoyanov. 2020. Unsupervised cross-lingual representation learning at scale. In Pro-ceedings of the 58th Annual Meeting of the Asso-ciation for Computational Linguistics , pages 8440– 8451, Online. Association for Computational Lin-guistics. Amitava Das and Björn Gambäck. 2014. Identifying languages at the word level in code-mixed Indian social media text. In Proceedings of the 11th Interna-tional Conference on Natural Language Processing ,pages 378–387, Goa, India. NLP Association of In-dia. A. Seza Do˘ gruöz, Sunayana Sitaram, Barbara E. Bul-lock, and Almeida Jacqueline Toribio. 2021. A sur-vey of code-switching: Linguistic and social per-spectives for language technologies. In Proceedings of the 59th Annual Meeting of the Association for Computational Linguistics and the 11th International Joint Conference on Natural Language Processing (Volume 1: Long Papers) , pages 1654–1666, Online. Association for Computational Linguistics. Jonathan Dunn. 2020. Mapping languages: The corpus of global language use. Language Resources and Evaluation , 54:999–1018. Heba Elfardy, Mohamed Al-Badrashiny, and Mona Diab. 2013. Code switch point detection in arabic. In Nat-ural Language Processing and Information Systems ,pages 412–416, Berlin, Heidelberg. Springer Berlin Heidelberg. Mariia Fedorova, Jonas Sebulon Frydenberg, Vic-toria Handford, Victoria Ovedie Chruickshank Langø, Solveig Helene Willoch, Marthe Løken Midtgaard, Yves Scherrer, Petter Mæhlum, and David Samuel. 2025. Multi-label Scandinavian lan-guage identification (SLIDE). In Proceedings of the Third Workshop on Resources and Representa-tions for Under-Resourced Languages and Domains (RESOURCEFUL-2025) , pages 179–189, Tallinn, Es-tonia. University of Tartu Library, Estonia. Elodie Gauthier, Aminata Ndiaye, and Abdoulaye Guissé. 2024. Kallaama: A transcribed speech dataset about agriculture in the three most widely spoken languages in Senegal. In Proceedings of the Fifth Workshop on Resources for African Indigenous Languages @ LREC-COLING 2024 , pages 10–19, Torino, Italia. ELRA and ICCL. Rob Van Der Goot. 2025. Identifying open challenges in language identification. In Proceedings of the 63rd Annual Meeting of the Association for Compu-tational Linguistics (Volume 1: Long Papers) , pages 18207–18227, Vienna, Austria. Association for Com-putational Linguistics. Maite Heredia, Jeremy Barnes, and Aitor Soroa. 2025. EuskañolDS: A naturally sourced corpus for Basque-Spanish code-switching. In Proceedings of the 7th Workshop on Computational Approaches to Linguis-tic Code-Switching , pages 1–5, Albuquerque, New Mexico, USA. Association for Computational Lin-guistics. Ayyoob Imani, Peiqin Lin, Amir Hossein Kargaran, Silvia Severini, Masoud Jalili Sabet, Nora Kass-ner, Chunlan Ma, Helmut Schmid, André Martins, François Yvon, and Hinrich Schütze. 2023. Glot500: Scaling multilingual corpora and language models to 500 languages. In Proceedings of the 61st Annual Meeting of the Association for Computational Lin-guistics (Volume 1: Long Papers) , pages 1082–1117, Toronto, Canada. Association for Computational Lin-guistics. Tommi Jauhiainen, Heidi Jauhiainen, and Krister Lindén. 2022. HeLI-OTS, off-the-shelf language identifier for text. In Proceedings of the Thirteenth Language Resources and Evaluation Conference ,pages 3912–3922, Marseille, France. European Lan-guage Resources Association. Tommi Jauhiainen, Marco Lui, Marcos Zampieri, Timo-thy Baldwin, and Krister Lindén. 2019. Automatic language identification in texts: a survey. Journal of Artificial Intelligence Research , 65(1):675–682. Amir H. Kargaran, François Yvon, and Hinrich Schütze. 2024a. GlotCC: An Open Broad-Coverage Common-Crawl Corpus and Pipeline for Minority Languages. 
+
+Advances in Neural Information Processing Systems ,37:16983–17005. Amir Hossein Kargaran, Ayyoob Imani, François Yvon, and Hinrich Schuetze. 2023. GlotLID: Language identification for low-resource languages. In Find-ings of the Association for Computational Linguis-tics: EMNLP 2023 , pages 6155–6218, Singapore. Association for Computational Linguistics. Amir Hossein Kargaran, François Yvon, and Hinrich Schuetze. 2024b. MaskLID: Code-switching lan-guage identification through iterative masking. In 
+
+Proceedings of the 62nd Annual Meeting of the As-sociation for Computational Linguistics (Volume 2: Short Papers) , pages 459–469, Bangkok, Thailand. Association for Computational Linguistics. Amir Hossein Kargaran, François Yvon, and Hinrich Schütze. 2024c. GlotScript: A resource and tool for low resource writing system identification. In Pro-ceedings of the 2024 Joint International Conference on Computational Linguistics, Language Resources and Evaluation (LREC-COLING 2024) , pages 7774– 7784, Torino, Italia. ELRA and ICCL. Laurent Kevers. 2022. CoSwID, a code switching iden-tification method suitable for under-resourced lan-guages. In Proceedings of the 1st Annual Meeting of the ELRA/ISCA Special Interest Group on Under-Resourced Languages , pages 112–121, Marseille, France. European Language Resources Association. Ben King and Steven Abney. 2013. Labeling the lan-guages of words in mixed-language documents us-ing weakly supervised methods. In Proceedings of the 2013 Conference of the North American Chap-ter of the Association for Computational Linguistics: Human Language Technologies , pages 1110–1119, Atlanta, Georgia. Association for Computational Lin-guistics. Tom Kocmi and Ondˇ rej Bojar. 2017. LanideNN: Multi-lingual language identification on character window. In Proceedings of the 15th Conference of the Euro-pean Chapter of the Association for Computational Linguistics: Volume 1, Long Papers , pages 927–936, Valencia, Spain. Association for Computational Lin-guistics. Julia Kreutzer, Isaac Caswell, Lisa Wang, Ahsan Wahab, Daan van Esch, Nasanbayar Ulzii-Orshikh, Allah-sera Tapo, Nishant Subramani, Artem Sokolov, Clay-tone Sikasote, Monang Setyawan, Supheakmungkol Sarin, Sokhar Samb, Benoît Sagot, Clara Rivera, Annette Rios, Isabel Papadimitriou, Salomey Osei, Pedro Ortiz Suarez, and 33 others. 2022. Quality at a glance: An audit of web-crawled multilingual datasets. Transactions of the Association for Compu-tational Linguistics , 10:50–72. Sneha Kudugunta, Isaac Caswell, Biao Zhang, Xavier Garcia, Derrick Xin, Aditya Kusupati, Romi Stella, Ankur Bapna, and Orhan Firat. 2023. MADLAD-400: A multilingual and document-level large audited dataset. In Proceedings of the 37th International Conference on Neural Information Processing Sys-tems , Nips ’23, Red Hook, NY, USA. Curran Asso-ciates Inc. Thomas Lavergne, Gilles Adda, Martine Adda-Decker, and Lori Lamel. 2014. Automatic language identity tagging on word and sentence-level in multilingual text sources: a case-study on Luxembourgish. In 
+
+Proceedings of the Ninth International Conference on Language Resources and Evaluation (LREC’14) ,pages 3300–3304, Reykjavik, Iceland. European Lan-guage Resources Association (ELRA). Manuel Mager, Özlem Çetino˘ glu, and Katharina Kann. 2019. Subword-level language identification for intra-word code-switching. In Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Hu-man Language Technologies, Volume 1 (Long and Short Papers) , pages 2005–2011, Minneapolis, Min-nesota. Association for Computational Linguistics. Dong Nguyen and A. Seza Do˘ gruöz. 2013. Word level language identification in online multilingual commu-nication. In Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing ,pages 857–862, Seattle, Washington, USA. Associa-tion for Computational Linguistics. NLLB Team, Marta R. Costa-jussà, James Cross, Onur Çelebi, Maha Elbayad, Kenneth Heafield, Kevin Hef-fernan, Elahe Kalbassi, Janice Lam, Daniel Licht, Jean Maillard, Anna Sun, Skyler Wang, Guillaume Wenzek, Al Youngblood, Bapi Akula, Loic Barrault, Gabriel Mejia Gonzalez, Prangthip Hansanti, and 20 others. 2024. Scaling neural machine translation to 200 languages. Nature , 630(8018):841–846. Pedro Ortiz Suarez, Laurie Burchell, Catherine Arnett, Rafael Mosquera-Gómez, Sara Hincapie-Monsalve, Thom Vaughan, Damian Stewart, Malte Osten-dorff, Idris Abdulmumin, Vukosi Marivate, Shamsud-deen Hassan Muhammad, Atnafu Lambebo Tonja, Hend Al-Khalifa, Nadia Ghezaiel Hammouda, Ver-rah Otiende, Tack Hwa Wong, Jakhongir Saydaliev, Melika Nobakhtian, Muhammad Ravi Shulthan Habibi, and 78 others. 2026. CommonLID: Re-evaluating state-of-the-art language identification per-formance on web data. Preprint , arXiv:2601.18026. Guilherme Penedo, Hynek Kydlíˇ cek, Vinko Sabolˇ cec, Bettina Messmer, Negar Foroutan, Amir Hossein Kargaran, Colin Raffel, Martin Jaggi, Leandro Von Werra, and Thomas Wolf. 2025. FineWeb2: One Pipeline to Scale Them All — Adapting Pre-Training Data Processing to Every Language. In Second Con-ference on Language Modeling .Shruti Rijhwani, Royal Sequiera, Monojit Choudhury, Kalika Bali, and Chandra Shekhar Maddila. 2017. Estimating code-switching on Twitter with a novel generalized word-level language detection technique. In Proceedings of the 55th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 1971–1982, Vancouver, Canada. Association for Computational Linguistics. Djamé Seddah, Farah Essaidi, Amal Fethi, Matthieu Futeral, Benjamin Muller, Pedro Javier Ortiz Suárez, Benoît Sagot, and Abhishek Srivastava. 2020. Build-ing a user-generated content North-African Arabizi treebank: Tackling hell. In Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics , pages 1139–1150, Online. Association for Computational Linguistics. Safaa Shehadi and Shuly Wintner. 2022. Identifying code-switching in Arabizi. In Proceedings of the Sev-enth Arabic Natural Language Processing Workshop (WANLP) , pages 194–204, Abu Dhabi, United Arab Emirates (Hybrid). Association for Computational Linguistics. Vivek Srikumar and Dan Roth. 2023. The Integer Lin-ear Programming Inference Cookbook. Preprint ,arXiv:2307.00171. Aleksander Stensby, B. John Oommen, and Ole-Christoffer Granmo. 2010. Language detection and tracking in multilingual documents using weak esti-mators. In Structural, syntactic, and statistical pat-tern recognition, joint IAPR international workshop, SSPR&SPR 2010, cesme, izmir, turkey, august 18-20, 2010. Proceedings , volume 6218 of Lecture notes in computer science , pages 600–609. Springer. Igor Sterner. 2024. Multilingual identification of En-glish code-switching. In Proceedings of the Eleventh Workshop on NLP for Similar Languages, Varieties, and Dialects (VarDial 2024) , pages 163–173, Mex-ico City, Mexico. Association for Computational Lin-guistics. Ahmet Üstün, Viraat Aryabumi, Zheng Yong, Wei-Yin Ko, Daniel D’souza, Gbemileke Onilude, Neel Bhan-dari, Shivalika Singh, Hui-Lee Ooi, Amr Kayid, Fred-die Vargus, Phil Blunsom, Shayne Longpre, Niklas Muennighoff, Marzieh Fadaee, Julia Kreutzer, and Sara Hooker. 2024. Aya model: An instruction fine-tuned open-access multilingual language model. In 
+
+Proceedings of the 62nd Annual Meeting of the As-sociation for Computational Linguistics (Volume 1: Long Papers) , pages 15894–15939, Bangkok, Thai-land. Association for Computational Linguistics. Zeynep Yirmibe¸ so˘ glu and Gül¸ sen Eryi˘ git. 2018. De-tecting code-switching between Turkish-English lan-guage pair. In Proceedings of the 2018 EMNLP Workshop W-NUT: The 4th Workshop on Noisy User-generated Text , pages 110–115, Brussels, Belgium. Association for Computational Linguistics. Yuan Zhang, Jason Riesa, Daniel Gillick, Anton Bakalov, Jason Baldridge, and David Weiss. 2018. A fast, compact, accurate model for language iden-tification of codemixed text. In Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing , pages 328–337, Brussels, Bel-gium. Association for Computational Linguistics. 
+
+A MaskLID: a Formal Account 
+
+A formal presentation of MaskLID is in algo-rithm 1. It is based on (Kargaran et al., 2024b, Section B) and an analysis of the accompanying Python source code. 18 The main difference with our informal presentation of §2.2 is the second con-straint that regulates the masking procedure. This constraint is controlled by three new parameters 
+
+Minc , G ini , G inc .After computing the most likely language (line 4), two lists are computed, storing respec-tively the words with a strong (MaskLst) and weak (GangLst) association with l∗: they respectively contain all words having l∗ in their top-M (respec-tively. top-G) most likely languages. Before mask-ing the words in MaskLst (line 17), an additional constraint checks that based on the words in the GangLst , l∗ reaches a predefined probability thresh-old (line 16). 19 If this is not the case, the condition for inclusion in GangLst is weakened, yielding to the recruitment of more words in support of l∗.Critically, this also implies a weakening of the in-clusion in the MaskLst, causing more words to be masked before searching for a possible second language. This means that MaskLID incorporates a flexible mechanism to adapt the masking con-straints depending on the global support of the op-timal language for the current input segment. This mechanism, we contend, is key for the very good monolingual performance of MaskLID. This highlights an important difference with the way we implement the masking mechanism, as we rely on one single parameter, which remains con-stant accross sentences, input types, and languages. In MaskLID, parameters Minc and Ginc are set to 5 and Pmin = 0 .9. The recommended values for the other parameters are Mini = 3 , Gini = 15 ,
+
+K = 2 , τ = 20 (Kargaran et al., 2024b, Sec-tion C.2). Except for the length parameter, that we also vary, these parameters are reused in all our experiments. 
+
+B Top-M lists are unreliable 
+
+We argued in § 3.3 that GlotLID word-level scores were unreliable. We expand this analysis by look-ing at top-M lists. Figure 4 reports the distribution      
+
+> 18 https://github.com/cisnlp/MaskLID
+> 19 Precisely that P(l∗|words( GangList )) ≥Pmin .
+
+Algorithm 1 MaskLID: Iterative Masking 
+
+K: Maximum number of iterations / languages 
+
+Mini , M inc : Initial and increment values for Mask 
+
+Gini , G inc : Initial and increment values for Gang 
+
+τ : Minimum fragment length 
+
+Pmin : Probability threshold 
+
+w = w1 . . . w T 
+
+> 1:
+
+k ← 1 
+
+> 2:
+
+LangLst ← {}  
+
+> 3:
+
+while (len (w) > τ ∧ k ≤ K) do  
+
+> 4:
+
+l∗ ← arg max l P (l|w) 
+
+> 5:
+
+M ← Mini , G ← Gini  
+
+> 6:
+
+repeat  
+
+> 7:
+
+MaskLst ← {} , GangLst ← {}  
+
+> 8:
+
+for t = 1 ∈ [1 : T ] do  
+
+> 9:
+
+if l∗ ∈ TopLang( wt, M ) then  
+
+> 10:
+
+MaskLst . insert( wt) 
+
+> 11:
+
+if l∗ ∈ TopLang( wt, G ) then  
+
+> 12:
+
+GangLst . insert( wt) 
+
+> 13:
+
+M ← M + Minc  
+
+> 14:
+
+G ← G + Ginc  
+
+> 15:
+
+P ← max l P (l| GangLst)  
+
+> 16:
+
+until (P ≥ Pmin ) 
+
+> 17:
+
+w ← w. remove(MaskLst)  
+
+> 18:
+
+LangLst . insert( l∗) 
+
+> 19:
+
+k ← k + 1  
+
+> 20:
+
+return LangLst 
+
+of languages appearing in the top-10 languages for English and Hindi words in the correspond-ing monolingual development corpus. We observe the frequent occurrence of languages unrelated to English in the corresponding top-10 list (Kabuver-dianu (kea), Wolof (wol), Nyanja (nya), Swahili (swh), Filipino (fil), etc). The same issue is visible for the list of Hindi words, with African languages such as Fulfude (fuv), Wolof (wol), Dinka (dik) well represented in the top-M list. Compared with our model, for both languages, the proportion of cases where the correct label is included increases (from 78 to 94 percent in English and from 65 to 96% in Hindi). Additionally, languages typolog-ically related to English (French, Dutch) start to appear. 
+
+C Languages 
+
+For this study, we focus on a restricted set of 125 languages written in Latin script, selected from the languages included in FLORES 200. 20 The list of labels is the following: (ISO 639-3 codes with Latin script): ace, afr, als, ast, ayr, azj, bam, ban, bem, bjn, bug, cat, ceb, ces, cjk, crh, cym, dan, deu, dik, dyu, ekk, eng, epo, eus, ewe, fao, fij, fil, fin, fon, fra, fur, fuv, gaz, gla, gle, glg, gug, hat, hau, hin, hun, ibo, ilo, ind, isl, ita, jav, kab, kac, kam, kbp, kea, kik, kin, kmb, kmr, knc, kng, lij, lim, lin, lit, lmo, ltg, ltz, lua, lug, luo, lus, lvs, min, mlt, mos, mri, nld, nno, nob, npi, nso, nus, nya, oci, pag, pap, plt, pol, por, quy, ron, run, sag, scn, slk, slv, smo, sna, som, sot, spa, srd, ssw, sun, swe, swh, szl, taq, tpi, tsn, tso, tuk, tum, tur, twi, umb, uzn, vec, vie, war, wol, xho, yor, zsm, zul. This list covers a large variety of languages, cov-ering multiple language families – with the notable exception of languages not using the Latin script. For those languages, CS LID is a simple matter of script identification, which can be performed very reliably, e.g., using GlotScript (Kargaran et al., 2024c). 
+
+D Training a Word-Level LID 
+
+For training an alternative LID with more reliable word-level performances (LiteLID), our starting point (v0) are: the GlotLID-C corpus truncated to the 125 labels of interest, and the hyperparam-eters used for training GlotLID (v3). We use FastText’s Python API with lr = 0 .8, epochs = 1 ,
+
+dim = 256 . We experiment with varying the hashmap size ( 2e6 seems fitting for our 125 labels; we suspect that collisions in the hashmap - 1e6 for over 2000 labels - may explain some of GlotLID’s erroneous predictions) and the n-gram range. The crucial part is simple data augmentation. We split sentences into unigrams to create an aug-mented dataset, on the grounds that training on sentences and words will make word-level scores more reliable. We source (up to) one million run-ning words for each label. 21 We tokenize by split-ting on whitespaces. To mitigate the effect of the power-law distribution of words, we sub-sample words that occur more than 1000 times for each language, rejecting them with a 50% chance. Fur-thermore, we transliterate the Hindi and Nepali data that was in Devanagari in GlotLID-C, to im-prove recognition of these labels in Latin script. We also experiment with enriching the training dataset 
+
+> 20 https://huggingface.co/datasets/ openlanguagedata/flores_plus
+> 21 For some languages in the corpus, the actual number of available words is less than 1M. eng kea nya vie swh wol fil sot xho knc 0.0 0.2 0.4 0.6 0.8 1.0 eng hin ita fra nld nso glg ind por afr 0.0 0.2 0.4 0.6 0.8 1.0 hin npi fuv gaz som dik wol lmo mos zsm 0.0 0.2 0.4 0.6 0.8 1.0 hin npi som wol gaz fuv dik por eng slv 0.0 0.2 0.4 0.6 0.8 1.0
+
+Figure 4: Percentage of cases when a given language label appears in top-10 languages for GlotLID (left) and LiteLID (right) in the monolingual development set. First row is English, second is Hindi. 
+
+with trigrams, but there were no clear benefits. In the main paper, we use a version trained on all sentences and up to 1 million words per label (v2). Finally note that training a model only takes around 8 hours on a single CPU. 
+
+v buckets n-gram data v0 1e6 2-5 sents: GlotLID on 125 labels v0.1 2e6 2-5 sents v0.2 1e6 3-6 sents v0.3 2e6 3-6 sents 
+
+v1 2e6 3-6 words v1.1 1e6 2-5 sents+words v1.2 2e6 2-5 sents+words v1.3 2e6 3-6 sents+words v1.4 2e6 2-5 sents+words+trigrams v1.5 2e6 3-6 sents+words+trigrams v1.6 2e6 2-5 sents+words+romanized sents+trigrams 
+
+v2 2e6 2-5 sents+words+romanized sents 
+
+Table 6: FastText training configurations explored in training LiteLID. 
+
+E ILP4LID: a Full Account 
+
+Integer Linear Programs are defined by a linear objective function of integer variables, and linear constraints (equalities or inequalities) involving the same set of variables. A recent introduction to ILP for NLP tasks is in (Srikumar and Roth, 2023). 
+
+E.1 The core ILP model 
+
+Our ILP programs are defined by the following inputs: • L predicted languages l ∈ [1 : L]
+
+• w = w1 . . . w T a sequence of words; • m1 . . . m T their respective lengths (in chars); • C = {cl,t , l ∈ [1 : L], t ∈ [1 : T ]} the matrix storing associations scores (in Rd) between words and languages; • A = {al,t , l ∈ [1 : L], t ∈ [1 : T ]}: al,t = 1 
+
+if l ∈ L M (t), 0 otherwise, where LM (t) is the set of top-M languages for wt.The core model is defined over two sets of binary variables, storing respectively the word level and sentence-level language assignments: • Y = {yl,t , l ∈ [1 : L], t ∈ [1 : T ]}, with 
+
+yl,t = 1 denoting the assignment of word wt
+
+to language l;• U = {ul, l ∈ [1 : L]}, with ul = 1 denoting Inputs 
+
+cl,t T × L (costs) 
+
+al,t T × L (top-M languages) 
+
+Variables 
+
+yl,t T × L (word assignments) 
+
+ul L (sentence assignments) All (T + 1) × L
+
+Constraints 
+
+Eq. (7) 2L (C0: count languages in w)Eq. (8) T (C1: max. one language per word) Eq. (9) 1 (C2: at most K languages) All 2L + T + 1 
+
+> Table 7: Counts of variables and constraints in the core model.
+
+that language l globally assigned. The objective function to be maximized is: 
+
+O(Y) = 
+
+> L
+
+X
+
+> l=1
+> T
+
+X
+
+> t=1
+
+cl,t yl,t . (6) We also enforce the following sets of constraints: • C0: dependency between Y and U, imposing that l is globally assigned ( ul = 1 ) if at least one word is assigned to l:
+
+∀l, T × ul ≥
+
+> T
+
+X
+
+> t=1
+
+yl,t ≥ ul. (7) • C1: at most one language per word: 
+
+∀t, 
+
+> L
+
+X
+
+> l=1
+
+yl,t ≤ 1 (8) • C2: at most K languages per sentence: 
+
+> L
+
+X
+
+> l=1
+
+ul ≤ K. (9) Figure 5 illustrates these notations. Table 7 summarizes the variables and constraints in the core formulation. The number of variables grows with T × L, while the number of constraints only grows in T + L; if T , the input length, cannot be changed, the number of languages in the under-lying LID, could be easily adjusted on a per input basis, by only considering in the ILP languages that are sufficiently likely for at least one word. 
+
+E.2 The Extended Model 
+
+The core model differs from MaskLID in one key aspect: it does not distinguish between dominant (L1) and embedded (L2) languages, which can cause the overprediction of CS texts. A typical er-ror is when the ideal (monolingual) solution leaves some words unassigned; it may however happen that flipping some L1 words for L2 will increase the global objective (by assigning more words) and erroneously cause to predict two languages. In the following example, a Portuguese-based creole (Papiamento) is spuriously predicted in addition to English: 
+
+ref : “ i think i shoud stop going for swimming now” (eng) 
+
+pred : “ i think i shoud stop going for swim-ming now”. The underlined span is assigned to pap (Papiamento). The extended ILP model explicitly enforces a hierarchy between languages, at the cost of an in-crease in the number of variables. Array Y is aug-mented with a third dimension which stores the rank of each language: rank 1 for the most likely language, rank K for the least likely. The updated set of binary variables is: • Y = {yk,l,t , k ∈ [1 : K]; l ∈ [1 : L], t ∈ [1 : 
+
+T ]} : yk,l,t = 1 if and only if wt is associated with l, which has rank k.• U = {uk,l , k ∈ [1 : K], l ∈ [1 : L]} with 
+
+uk,l = 1 if l is the K th language. The extended objective function is defined as: 
+
+O+(Y) = 1
+
+T (
+
+> K
+
+X
+
+> k=1
+
+αk(
+
+> L
+
+X
+
+> l=1
+> T
+
+X
+
+> t=1
+
+cl,t yk,l,t )) 
+
+− P
+
+> K
+
+X
+
+> k=1
+> L
+
+X
+
+> l=1
+
+uk,l , (10) and differs from objective in Eq. (6) in two ways. It first contains parameters 1 ≥ α1 > · · · > α K > 0,which ensure that the language with the largest global score will be at rank 1, as assigning it any other rank would decrease the objective value. In our implementation, we use α1 = 1 and α2 ∈
+
+[0 .25 , 0.99] . Second, we introduce a second term as a fixed penalty P for each new language. Tuning 
+
+P enables us to better control the trade-off between monolingual and bilingual assignments. With these new variables, the fundamental con-straints (C0-C2) take the following form: • C0: dependency between U and Y, imposing that l is globally assigned at rank k (uk,l = 1 )w = Identifying eng plusieurs f ra langues f ra 
+
+C(w) =   
+
+> w1w2w3
+
+
+
+c11 c12 c13 
+
+c21 c22 c23 
+
+c31 c32 c33 
+
+A =  
+
+> w1w2w3
+
+
+
+1 0 01 1 10 1 1
+
+ Y =  
+
+> w1w2w3
+
+
+
+1 0 00 1 10 0 0
+
+ U =
+
+
+
+110
+
+
+
+> l1(eng )
+> l2(fra )
+> l3(spa )
+
+O(Y∗) = c11 + c22 + c23 
+
+Figure 5: Code-switching LID as an ILP problem. The inputs are C(w), the cost matrix, and A, which contains information about the presence of each language l in the top-M list of each word. Y is a feasible solution, with U
+
+the associated language vector. Y satisfies the constraints: at most one language for each word, no more than two languages ( P 
+
+> l
+
+ul = 2 ), a minimal length of 10 chars for each span. O(Y∗) is the value of the objective function computed for this assignment. 
+
+if at least one word is assigned to l at rank k:
+
+∀l, k : T × uk,l ≥
+
+> T
+
+X
+
+> t=1
+
+yk,l,t ≥ uk,l . (11) • C1: at most one language per word: 
+
+∀t, 
+
+> K
+
+X
+
+> k=1
+> L
+
+X
+
+> l=1
+
+yl,t ≤ 1 (12) • C2: at most K languages per sentence, at most one per rank 
+
+∀k, 
+
+> L
+
+X
+
+> l=1
+
+uk,l ≤ 1 (13) 
+
+> k
+
+X
+
+> l=1
+> L
+
+X
+
+> l=1
+
+uk,l ≤ K (14) We also consider additional constraints, each governed by its own meta-parameter: • C3: sets a minimal length τ (in characters) required to identify a language, simulating the length constraint of MaskLID; for this we introduce auxiliary variables in Z = {zl,t , l ∈
+
+[1: L], t ∈ [1: T ]}:
+
+zl,t − X
+
+> k
+
+yk,l,t = 0 
+
+∀l, X
+
+> t
+
+mtzl,t ≥ τ × (X
+
+> k
+
+uk,l ) (15) • C4: wt can only be assigned to l if l is one of its M most likely languages. 
+
+∀l, t, z l,t + (1 − al,t ) ≤ 1 (16) • C5: wt must be assigned to l at rank 1 if l is one of its M most likely languages. 
+
+∀l, t, u 1,l + al,t + (1 − y1,l,t ) < 3 (17) • C6: the total number of language switches must be at most S:
+
+X
+
+> l
+
+X
+
+> t> 1
+
+sl,t ≤S (18) 
+
+∀l, t, s l,t ≥zl,t − zl,t −1
+
+∀l, t, s l,t ≤zl,t − zl,t −1, + (1 − rl,t )
+
+∀l, t, s l,t ≤rl,t 
+
+In this formulation, we introduce auxiliary variables S and R to keep track of language changes. C3, C4 and C5 attempt to replicate constraints already existing in MaskLID, with their correspond-ing meta-parameters. C6 is novel, and illustrates the flexibility of the ILP formalization. In practice, we found that relaxing C6 with a fixed penalty per language, as introduced in Eq. (10), yields better results, and is also more efficient. The variables and constraints in the extended model are in Table 8. Here, the number of vari-ables grows with K × T × L, which, given the typ-ical values of K (2 or 3), remains manageable and, compared to the core formulation, approximatly doubles the number of variables. The number of constraints grows linearly with T , L, and K, with the largest increase being caused by the use of C6. Finally, note that C4 and C5 can not be used simul-taneously, so we use either one of the constraints or neither. 
+
+F Ablation of ILP4LID configurations 
+
+The impact of constraint selection, values of lan-guage weights and penalties, as well as constraint-Inputs 
+
+cl,t T × L (costs) 
+
+al,t T × L (top-M languages) 
+
+Variables 
+
+yk,l,t K × T × L (word-level language and rank assignments) 
+
+uk,l K ×L (sentence-level language and rank assignments) 
+
+zl,t T × L (word-level language assign-ment) 
+
+sl,t T × L (for Eq (18)) 
+
+rl,t T × L (for Eq (18)) All K × T × L + 3( T × L) + ( K × L)
+
+Constraints 
+
+Eq. (11) 2( K × L) ( one lang. / per rank and word) Eq. (12) T ( one lang. / rank per word) Eq. (13) K ( one lang. per rank) Eq. (14) 1 (at most K languages) Eq. (15) L (min length / span) Eq. (16) T × L (masking) Eq. (17) T × L (masking, alt. take) Eq. (18) 1 + 3( T × L) (switch. points) 
+
+All 2( K × L) + 4( T × L)+ 
+
+K + T + L + 1 
+
+Table 8: Counts of variables and constraints in the ex-tended model. 
+
+specific hyperparameters M, τ, S is presented in Table 9. Several points are worth pointing out. First, with a high enough language penalty, we can reliably reach a monolingual Exact Match that matches the recall of 0.99. The monolingual predic-tion errors stem mostly from wrongly identifying an additional language. However, this comes at the expense of identifying significantly fewer code-switching cases, which led us to choose a MONO configuration that had a monolingual EM of 0.98 instead of 0.99, as we deemed code-switching per-formance to be our principal goal. Second, adding constraints C3 and C5 together with a handpicked penalty leads to a drastic in-crease in monolingual performance, at the expense of small drop in code-switched EM. Third, the model proves to be very sensitive to the value of language weights and penalty in the objective. We observe that the impact of the maximal number of switches constraint (C6) is limited. We have found that restricting number of switches has a minimally detrimental effect on CS EM, while having the dis-CS mono all config EM F1 EM F1 EM F1                                                                                                                                                                                                    
+
+> 0: CS 0.68 0.83 0.06 0.69 0.37 0.76
+> 1: 0+ αk= [1 ,0.95] 0.68 0.83 0.09 0.70 0.39 0.77 1+ P= 10 0.67 0.84 0.59 0.88 0.63 0.86 1+ P= 25 0.57 0.83 0.88 0.96 0.73 0.90 1+ P= 50 0.33 0.76 0.99 0.99 0.66 0.88 0+ α= [1 ,0.25] 0.59 0.80 0.68 0.91 0.64 0.86 0+ α= [1 ,0.50] 0.65 0.82 0.47 0.84 0.56 0.83 0+ α= [1 ,0.75] 0.66 0.82 0.26 0.77 0.46 0.80 0+ α= [1 ,0.99] 0.68 0.83 0.06 0.69 0.37 0.76 1+C3 τ= 5 0.68 0.83 0.17 0.73 0.43 0.78 1+C3 τ= 10 0.65 0.82 0.36 0.80 0.51 0.81 1+C3 τ= 15 0.61 0.82 0.49 0.84 0.55 0.83 1+C5 M= 10 0.66 0.82 0.46 0.84 0.56 0.83 1+C5 M= 20 0.63 0.81 0.57 0.87 0.60 0.84 1+C5 M= 30 0.62 0.81 0.65 0.90 0.64 0.86 0+ α== [1 ,0.95] +C3,C5,P 0.65 0.82 0.49 0.84 0.57 0.83 0+ α== [1 ,0.75] +C3,C5,P 0.64 0.83 0.82 0.95 0.73 0.89 0+ α== [1 ,0.50] +C3,C5,P 0.57 0.83 0.93 0.98 0.75 0.91 AVG + α= [1 ,0.50] 0.46 0.80 0.97 0.99 0.72 0.90 MONO+ α= [1 ,0.50] 0.51 0.82 0.97 0.99 0.74 0.91 MONO+ α= [1 ,0.75] 0.35 0.77 0.99 0.99 0.67 0.88 1+C6 S= 3 0.67 0.83 0.09 0.70 0.38 0.77 1+C6 S= 5 0.67 0.83 0.09 0.70 0.38 0.77
+> 2: AVG 0.60 0.83 0.91 0.97 0.76 0.90
+> 3: MONO 0.47 0.81 0.98 0.99 0.73 0.90
+
+Table 9: Exact match and F1 on the development data with various ILP configurations. "C3,C5,P" stands for C3 τ = 5 , C5 M = 10 , P = 10 .
+
+advantage of doubling the runtime. C4 was also found to bring no significant im-provement. 
+
+G Detailed Results per Language 
+
+Table 10 reports per language performance when using GlotLID and LiteLID-v2 as the base LIDs. G + MaskLID L-v2 + MaskLID L-v2+ILP4LID AVG 
+
+(baseline) (first improvement) (second improvement) EM F1 Pr Re EM F1 Pr Re EM F1 Pr Re eus-spa 0.59 0.86 0.94 0.79 0.55 0.87 0.99 0.77 0.73 0.9 0.95 0.86 hin-eng 0.1 0.56 0.7 0.47 0.17 0.68 0.9 0.55 0.34 0.73 0.82 0.65 ind-eng 0.38 0.74 0.83 0.67 0.47 0.83 0.95 0.73 0.52 0.81 0.87 0.76 npi-eng 0.03 0.32 0.39 0.27 0.16 0.6 0.78 0.49 0.38 0.68 0.71 0.65 spa-eng 0.1 0.63 0.83 0.51 0.18 0.68 0.88 0.55 0.36 0.74 0.84 0.66 tur-deu 0.61 0.87 0.95 0.8 0.68 0.91 0.99 0.84 0.81 0.93 0.96 0.9 tur-eng 0.34 0.76 0.9 0.66 0.36 0.81 1.0 0.68 0.78 0.92 0.96 0.89 wol-fra 0.16 0.71 0.93 0.58 0.35 0.8 0.99 0.67 0.37 0.8 0.96 0.69 Basque (eus) 0.93 0.98 0.96 1.0 0.99 0.99 0.99 1.0 0.93 0.98 0.96 1.0 English (eng) 0.92 0.97 0.95 0.99 0.99 0.99 0.99 1.0 0.95 0.99 0.98 1.0 French (fra) 0.92 0.98 0.96 1.0 0.96 0.99 0.98 1.0 0.95 0.98 0.97 1.0 German (deu) 0.84 0.96 0.92 1.0 0.97 0.99 0.99 1.0 0.91 0.97 0.95 1.0 Hindi (hin) 0.37 0.78 0.66 0.96 0.99 0.99 0.99 0.99 0.92 0.97 0.96 0.99 Indonesian (ind) 0.89 0.97 0.94 1.0 0.96 0.97 0.97 0.98 0.88 0.96 0.93 0.99 Nepali (npi) 0.46 0.76 0.67 0.88 0.93 0.96 0.95 0.97 0.8 0.93 0.89 0.98 Spanish (spa) 0.94 0.97 0.96 0.99 0.97 0.98 0.98 0.99 0.87 0.96 0.93 0.99 Turkish (tur) 0.87 0.97 0.94 1.0 0.98 0.99 0.99 1.0 0.87 0.97 0.94 1.0 Wolof (wol) 0.82 0.95 0.91 1.0 0.94 0.98 0.97 1.0 0.77 0.94 0.88 1.0
