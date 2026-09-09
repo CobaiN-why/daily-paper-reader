@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-08</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-09</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 17 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 20 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>9</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-08 22:52:45 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-09 22:11:03 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日共读17篇论文，其中6篇精读、11篇速读，聚焦代码修改与LLM工程应用。最值得看的是两篇9.0分精读：最小代码编辑保真度（过度修改问题）与工业级崩溃报告驱动的缺陷定位修复。建议优先精读这两篇，关注LLM编辑的可靠性与落地修复策略。</p>
+<p>今日精读20篇论文，聚焦多日自主软件开发与代码生成强化学习两大方向，均获9.0高分。最值得看的是《Harness-of-Harness》展现持续改进的智能体框架，以及《SpecCoder》提出规范感知的代码生成新方法。建议普通读者优先关注这两个高效率研究方向，并留意个性化评测与缺陷检测等速读补充主题。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -78,12 +78,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">6 篇</strong>
+    <strong class="dpr-home-dashboard-count">9 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="When Models Edit Too Much: On the Fidelity of Minimal Code Edits">When Models Edit Too Much: On the Fidelity of Minimal Code Edits</span></li><li><span class="dpr-home-dashboard-paper-title" title="Integrating Crash Report Mining and LLMs for Bug Localization and Repair: An Industrial Report">Integrating Crash Report Mining and LLMs for Bug Localization and Repair: An Industrial Report</span></li><li><span class="dpr-home-dashboard-paper-title" title="Practical Implementation Report on Introducing Spec-Driven Development Using AI Agents in Software Development PBL">Practical Implementation Report on Introducing Spec-Driven Development Using AI Agents in Software Development PBL</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Harness-of-Harness: Multi-Day Autonomous Software Development with Continual Improvement">Harness-of-Harness: Multi-Day Autonomous Software Development with Continual Improvement</span></li><li><span class="dpr-home-dashboard-paper-title" title="SpecCoder: Specification-Aware Code Generation with Curriculum Dual-Task Reinforcement Learning">SpecCoder: Specification-Aware Code Generation with Curriculum Dual-Task Reinforcement Learning</span></li><li><span class="dpr-home-dashboard-paper-title" title="SWE-Test: Benchmarking LLM Vulnerability Discovery via Input Prediction">SWE-Test: Benchmarking LLM Vulnerability Discovery via Input Prediction</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>6</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>9</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -94,7 +94,7 @@
     <strong class="dpr-home-dashboard-count">11 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="LentEx: Generalizable Latent Entity Extraction via Synthetic Data and Instruction-Tuned LLMs">LentEx: Generalizable Latent Entity Extraction via Synthetic Data and Instruction-Tuned LLMs</span></li><li><span class="dpr-home-dashboard-paper-title" title="Beyond Code Generation: Reliability, Verification, and Cost Economics in the Agentic Software Development Lifecycle">Beyond Code Generation: Reliability, Verification, and Cost Economics in the Agentic Software Development Lifecycle</span></li><li><span class="dpr-home-dashboard-paper-title" title="PLUME: Parameter-Efficient Personalization of Large Language Models via Low-Rank User Modulation in Shared Subspaces">PLUME: Parameter-Efficient Personalization of Large Language Models via Low-Rank User Modulation in Shared Subspaces</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="VIBE-Bench: Evaluating Personalized Large Language Models When Profiles Don&#x27;t Mean Preferences">VIBE-Bench: Evaluating Personalized Large Language Models When Profiles Don&#x27;t Mean Preferences</span></li><li><span class="dpr-home-dashboard-paper-title" title="When Agents Implement Systems: A Case Study in Defects, Detection, and Evaluation Rigor">When Agents Implement Systems: A Case Study in Defects, Detection, and Evaluation Rigor</span></li><li><span class="dpr-home-dashboard-paper-title" title="NE-R1: Enhancing Named Entity Recognition Model via Reinforcement Learning">NE-R1: Enhancing Named Entity Recognition Model via Reinforcement Learning</span></li></ul>
   </div>
   <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>11</strong></span></div>
 </section>

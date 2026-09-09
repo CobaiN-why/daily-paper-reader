@@ -1,0 +1,617 @@
+Title: ShikumiMiner: Mining Recurring Implementation Patterns in AI Codebases
+
+URL Source: https://arxiv.org/pdf/2609.02789v1
+
+Published Time: Thu, 03 Sep 2026 01:23:23 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# ShikumiMiner: Mining Recurring Implementation Patterns in AI Codebases 
+
+Afsana Tasnim 
+
+University of Texas at Arlington 
+
+Arlington, TX, USA axt0868@mavs.uta.edu 
+
+Sheikh Motahar Naim 
+
+Microsoft 
+
+Seattle, WA, USA snaim@microsoft.com 
+
+Abstract —Large language models are paving the way to-wards innovation by understanding, analyzing, summarizing and generating content in the modern world. Currently there are thousands of LLM projects developed by engineers in open-source repositories. However, whether these LLM projects have underlying patterns or not remains a question. Exploring these underlying patterns will give new dimensions to the developers who aim to develop these LLM projects. In this paper, we propose ShikumiMiner, a static-analysis framework that com-bines Abstract Syntax Tree (AST) and Control Flow Graph (CFG) features to detect and compare recurring implementation patterns in C++ local LLM codebases. We analyze ten GitHub open-source repositories and classify functions into seven study-specific categories using a multi-label Random Forest model. Studying these patterns can provide useful insights for developers aiming to design LLM applications. 
+
+Index Terms —Large Language Models, Pattern Detection, Source Code Analysis 
+
+I. Introduction 
+
+Large Language Models (LLMs) are a widespread phe-nomenon in today’s world. Even though these AI-powered innovations have exceptional capabilities like summarization, content generation, complex query answering, code analysis, etc, there are significant concerns regarding the source code used to develop some of the LLM projects. Whether these LLM projects follow any structural or execution pattern or not remains a question that needs to be solved if we want to understand LLM projects better. Code analysis is an option for detecting such patterns in LLM projects. Although prior work has studied ASTs, CFGs, data-flow graphs, and other program representations for code analysis, [1], [2], [3], [4], [5], [6], limited work has examined how these techniques can be used to characterize recurring implementation patterns in C++ local LLM codebases. This gap motivates our work on ShikumiMiner, which analyzes local LLM implementations by extracting function-level syntactic and control-flow evidence from source code. Previous studies have shown a systematic empirical analysis of the extent to which large language models can perform fundamental code analysis tasks in a zero-shot setting [1]. While conducting the study, authors have considered three core dimensions of program comprehension namely syntax parsing, static semantic inference, and dynamic reasoning. The authors examine nine representative tasks, including AST generation, expression matching, CFG construction, call graph generation, data dependency analysis, taint analysis, pointer analysis, equivalent mutant detection, and flaky test reasoning in order to evaluate these dimensions. GraphCodeBERT, a pre-trained model for programming languages, considers the inherent structure of code [7]. By using data flow in the pre-training stage, the authors learn code representation from source code and code structure. Their analysis shows that code structure and newly introduced pre-training tasks can improve GraphCodeBERT [7]. However, the study [1] also identifies several limitations: when tasks require deeper semantic or runtime reasoning, LLM performance degrades substantially. Their outputs de-pend largely on prompt design and representation format. It is also challenging to evaluate the generated ASTs, CFGs, and semantic graphs because multiple structurally different outputs may still be partially correct. Overall, the paper concludes that LLMs have promising potential for assisting code analysis. However, their reliability limitations require validation mech-anisms and hybrid integration with deterministic analyzers. The paper’s [7] limitations include its reliance on accurate data-flow extraction, which may be difficult for incomplete, dynamically typed, or complex real-world code; its focus on data flow while excluding richer structures such as control flow or full AST semantics; and evaluation mainly on benchmark datasets, so its robustness in large, noisy, industrial codebases remains less certain. In this work, we aim to address these limitations by devel-oping an approach named ShikumiMiner. Rather than relying solely on syntactic structure or control-flow information [8], [9], [10], [11], [12], our approach seeks to combine both perspectives in order to capture richer program characteristics, including code organization, execution paths, and structural dependencies. In this paper, we make the following contributions:  
+
+> •
+
+We propose ShikumiMiner, an AST-CFG-based static-analysis framework for extracting function-level structural and control-flow features from C++ local LLM codebases.  
+
+> •
+
+We formalize recurring implementation structures in local LLM codebases as detectable pattern categories using combined syntactic and control-flow evidence. arXiv:2609.02789v1 [cs.SE] 2 Sep 2026 • We evaluate ShikumiMiner on ten open-source C++ local LLM repositories and report function-level and project-level pattern distributions.  
+
+> •
+
+We analyze project-level similarities and feature-pattern relationships to show how local LLM imple-mentations differ in their structural and execution characteristics. 
+
+Prior work has extensively studied ASTs, CFGs, data-flow graphs, and program-dependence graphs for code representa-tion, vulnerability detection, clone detection, defect prediction, and pretrained code-model analysis. However, these studies mainly focus on general software-engineering tasks, neural code representation, or the internal capabilities of pretrained code models. In contrast, ShikumiMiner focuses on real C++ local LLM implementations and uses combined AST and CFG analysis to identify recurring structural and execution patterns. Therefore, ShikumiMiner does not claim to invent AST or CFG analysis; rather, its contribution lies in applying and integrating these representations for domain-specific pattern tracing in local LLM systems. 
+
+II. Background and Motivation: 
+
+A. Why Abstract Syntax Tree: 
+
+An Abstract Syntax Tree (AST) is a hierarchical tree data structure that represents the logical syntactic structure of the source code [13], [14]. Previous works have analyzed Abstract Syntax Trees to derive meaningful information from source code [15], [16], [17], [18], [19], [20]. There are numerous works on using AST for code analysis [21], [22], [23], [24], [25], [26], [27], [17], [28], [29]. Bug patterns were also detected by studying the abstract syntax tree of source code [30], [31], and by using AST-parsed code expressions together with contextualized source-code embeddings [32]. Combining source-code context and AST structure improves performance compared with using either technique alone [33]. Previously, thorough structural analysis has been conducted in order to provide an interpretation of pre-trained language models for source code [34]. Code analysis was done using CodeBERT [35] and GraphCodeBERT [7] as the source code. Their findings suggest that it may be helpful to incorporate the syntax structure of code into the process of pre-training for better code representation [36]. Authors have proposed CodeT5, a unified pre-trained encoder-decoder Transformer model for both code understand-ing and code generation tasks [37]. Specifically, they convert the PL segment into an Abstract Syntax Tree (AST) and extract the node types for each code token. Their unified model can support both code understanding and generation tasks and allow for multi-task learning. Investigation has been done on what kinds of code knowledge are captured inside pretrained code models such as CodeBERT, GraphCodeBERT, PLBART, CodeT5, and CodeGPT2 [38]. Instead of only evaluating these models on downstream tasks, the paper uses probing tasks to test whether their hidden representations contain information about code syntax, namespaces, data flow, variable naming, variable misuse, semantic equivalence, and readability. 
+
+B. Why Control Flow Graph: 
+
+A Control Flow Graph (CFG) is a visual or mathemati-cal representation of all possible execution paths through a program. Analyzing the Control Flow Graph (CFG) lets us understand both what the code is built from and how it behaves when it runs. Control Flow Graphs (CFGs) have been used for source-code analysis and code-quality assessment [39], [40], [41], [42]. CFG-based graph representations have also been used for vulnerability detection, where vulnerability-related structural features are extracted and compared to iden-tify potentially vulnerable code [43]. Function similarity was computed based on the CFGs [44]. A combination of control flow and data flow was also used as the basis of similarity metrics to find functional similarity on code [40]. Many existing deep learning vulnerability detectors rely heavily on token-based transformer models, which can be computationally expensive and can suffer from limited gen-eralization or fail to capture deeper program semantics [45]. In order to address this, DeepDFA converts source code into a control flow graph (CFG) and represents each CFG node using an abstract dataflow embedding based on vulnerability-relevant properties such as API calls, data types, constants, and operators [46]. The paper reports that DeepDFA trains much faster than transformer based models, works well with smaller training datasets, and can improve performance when combined with large language models [46]. 
+
+C. Analyzing AST and CFG: 
+
+There have been many works comprising of both AST and CFG [39], [47], [48], [49], [50] for code analysis. Previous studies have revealed that analyzing both AST and CFG can reveal important information about source code [51]. Graph-Code2Vec, a generic code embedding approach combines lexical or syntactic information with program dependence information. The main problem it addresses is that many existing code embedding methods mainly rely on syntax, such as tokens or AST paths, while ignoring deeper semantic information such as control flow, data flow, and method-call dependencies [52]. To address this limitation, GraphCode2Vec converts Java programs into the Jimple intermediate represen-tation, extracts lexical information through tokenization and BiLSTM-based instruction embedding, and captures semantic information by constructing program dependence graphs using static analysis with Soot. However, the approach also has some challenges. Since it relies on Soot and Jimple, it is mainly designed for Java and is not suitable for other programming languages. Its effectiveness also depends on the accuracy of the extracted program dependence graphs; if the static analysis misses or misrepresents dependencies, the learned embedding may be affected. Tree-Transformer is a neural model for learning program representations directly from syntax trees such as ASTs or CSTs [53]. The paper argues that existing tree-based and TABLE I: Study-specific implementation-pattern taxonomy used by ShikumiMiner. 
+
+Pattern Definition Typical Evidence 
+
+Training Pipeline Functions performing training- or optimization-related operations. Optimizer steps, backward-propagation logic, gradient-related calls, and loss computation. Interactive Inference Functions supporting prompt processing, decoding, and token-generation workflows. Generation calls, decoding logic, prompt handling, and iterative token production. Advanced Sampling Functions implementing token-selection and sampling strategies. Top-k, top-p, temperature, repeat-penalty, and related sampling operations. Model Loading and Validation Functions responsible for loading model data and validating model-related state or inputs. Model/file loading calls, validation checks, initialization branches, and failure-handling paths. Memory Management Functions performing memory allocation, deallocation, buffer handling, or cache-related memory operations. Allocation/deallocation calls, buffer operations, memory initialization, and cache-memory handling. Context Management Functions maintaining or updating model, session, decoding, or execution context. Context initialization, state updates, cache/context traversal, and repeated state handling. Quantization Workflow Functions handling quantized representations or quantization-related operations. Quantization calls, quantized data types, conversion logic, and quantized model processing. 
+
+graph-based models have several weaknesses: many GNNs capture only local neighborhood information, many tree mod-els propagate information only bottom-up, and several ap-proaches either ignore sibling order or require changing the original tree structure. To address these issues, Tree-Transformer uses a tree-structured multi-head attention mech-anism to model both parent-child and sibling relationships. A key limitation of this paper is that this approach preserves AST structure well, but it does not explicitly incorporate CFG-level execution semantics. The main challenges and limitations of the paper [38] are that probing only shows whether information is extractable from model representations, not whether the model actually uses that information in real software engineering tasks. The experiments are mainly limited to Java and Python, leaving languages such as C++ less explored. The main challenges and limitations are that the paper [34] focuses mostly on syntax, not deeper program semantics such as control flow, data flow or semantic equivalence. Also, its analysis is based on correla-tions between attention, embeddings, and AST structures; this shows that syntax information is present or recoverable, but it does not prove that the model uses this information when solving real software engineering tasks. The main challenges and limitations are that CodeT5 [37] still mainly represents code as a token sequence, even though it uses AST-derived identifier labels during pre-training. This means it does not fully model deeper program structures such as CFGs, data-flow graphs, control dependencies, or runtime behavior. 
+
+III. Proposed Methodology: 
+
+In this study, an implementation pattern refers to a recurring code-level structure associated with a specific implementation behavior in C++ local LLM systems. ShikumiMiner character-izes these patterns using AST-derived syntactic evidence and CFG-derived control-flow evidence. We use a study-specific taxonomy comprising seven categories: Training Pipeline, In-teractive Inference, Advanced Sampling, Model Loading and Validation, Memory Management, Context Management, and Quantization Workflow. These categories are not proposed as new software design patterns; rather, they provide a domain-specific framework for organizing and comparing recurring implementation patterns in local LLM codebases. Source preprocessing excludes files unrelated to the core implementation so that the subsequent analysis focuses on code associated with model loading, training, inference, sam-pling, memory handling, context management, quantization, and deployment-related behavior. Figure 1 summarizes the overall ShikumiMiner workflow. INPUT  ANALYSIS ENGINE  OUTPUT 
+
+> 1. C++
+> Local LLM
+> Projects
+> 2. Source
+> Preprocessing
+> file collection,
+> filtering,
+> include-path
+> setup, C++ file
+> separation
+> ShikumiMiner
+> Results
+> 1. Detected Code
+> Patterns
+> 2. AST/CFG
+> Complexity
+> Summaries
+> 3. Project-level
+> Comparison
+> 4. Interpretable
+> Analysis for
+> Local LLM
+> systems
+> 4. AST
+> Analysis
+> functions, loops,
+> branches, calls,
+> nesting,
+> memory
+> operations
+> 7. AST-
+> CFG
+> Feature
+> Fusion
+> unified
+> structural
+> +
+> execution
+> feature
+> vectors
+> 8. Pattern
+> Identi
+> fication
+> training,
+> inference,
+> sampling,
+> model
+> loading,
+> memory,
+> context,
+> quantization
+> 9. ML-
+> based
+> Pattern
+> Detection
+> weak
+> labeling +
+> multi-label
+> random
+> forest
+> 10. Project
+> Comparison
+> pattern
+> distribution,
+> similarity
+> analysis,
+> Jaccard
+> index
+> 3. AST
+> Generation
+> function-level
+> abstract
+> syntax trees
+> 6. CFG
+> Analysis
+> nodes, edges,
+> branches,
+> loops, exits,
+> cyclomatic
+> complexity
+> 5. CFG
+> Generation
+> function-
+> level control
+> flow graphs
+
+Fig. 1: A general framework of ShikumiMiner Approach 
+
+A. Abstract Syntax Tree (AST) Generation: 
+
+After source preprocessing, ShikumiMiner parses each re-tained C++ source file using Clang LibTooling to construct an Abstract Syntax Tree. The AST provides a function-level representation of the program’s syntactic structure, includ-ing declarations, control statements, function calls, memory-related operations, and domain-specific calls associated with model loading, sampling, training, and quantization. Shiku-miMiner traverses these ASTs to extract structural features such as function-call count, loop count, branch count, vari-able declarations, memory operations, and AST depth. These features provide the syntactic evidence used in subsequent implementation-pattern analysis. 
+
+B. Control Flow Graph (CFG) Generation: 
+
+For each extracted function, ShikumiMiner constructs a Control Flow Graph using Clang’s CFG analysis. While the AST represents syntactic structure, the CFG captures the possible execution flow within a function, including branches, loops, back edges, exits, and error-handling paths. Shiku-miMiner extracts control-flow features such as the number of CFG nodes, edges, branch nodes, loop nodes, exit nodes, back edges, cyclomatic complexity, loop depth, and validation paths. These features provide execution-oriented evidence for characterizing branching, iteration, and control-flow complex-ity in subsequent implementation-pattern analysis. 
+
+C. Feature Fusion and Pattern Detection: 
+
+After AST and CFG extraction, ShikumiMiner combines the function-level syntactic and control-flow features described in Sections III-A and III-B into a unified feature vector. Let f
+
+denote a function, Af its AST-based feature vector, and Cf its CFG-based feature vector. The fused representation is defined as 
+
+Xf = [ Af ∥ Cf ] (1) where ∥ denotes vector concatenation. The fused represen-tation enables ShikumiMiner to jointly examine syntactic and control-flow characteristics and to evaluate whether these two sources of evidence provide complementary information for implementation-pattern detection. 
+
+1) Weak-Label Generation : ShikumiMiner formulates implementation-pattern detection as a multi-label problem because a single function may express more than one im-plementation pattern. For example, a function may simul-taneously contain model-loading and memory-management behavior. For large-scale classifier training, ShikumiMiner generates weak labels using domain-specific rules over the extracted AST and CFG features. These rules correspond to the seven implementation-pattern categories defined in Table I. For example, optimizer or backward-propagation evidence may indicate Training Pipeline, prompt-processing and token-generation evidence may indicate Interactive Inference, and top-k, top-p, temperature, or repeat-penalty operations may indicate Advanced Sampling. Similarly, model-loading and validation evidence is used for Model Loading and Valida-tion, while quantization-related operations provide evidence for Quantization Workflow. Let ywf,k denote the weak label assigned to function f for pattern category k:
+
+ywf,k =
+
+(
+
+1, if the rule for pattern k is satisfied ,
+
+0, otherwise . (2) These weak labels provide scalable supervision for the corpus-wide classification experiments. In addition, manually assigned source-level labels are used as independent reference labels for the manual-validation experiment reported in Ta-ble V. 
+
+2) Multi-Label Pattern Classification : The fused feature vectors and weak labels are used to train a multi-label Random Forest classifier. ShikumiMiner trains one binary classifier for each implementation-pattern category so that multiple patterns can be assigned to the same function. For a pattern category 
+
+k, the prediction for function f is defined as 
+
+ˆyf,k = I 1
+
+T
+
+> T
+
+X
+
+> t=1
+
+ht,k (Xf ) ≥ τk
+
+!
+
+, (3) where T is the number of trees, ht,k (Xf ) denotes the prediction produced by tree t for pattern k, τk is the decision threshold for that pattern, and I is an indicator function. The complete multi-label prediction for function f is represented as 
+
+ˆYf = [ˆ yf, 1, ˆyf, 2, . . . , ˆyf,K ], (4) where K denotes the total number of implementation-pattern categories. Algorithm 2 summarizes weak-label gener-ation and multi-label classifier training. 
+
+3) Project-Level Pattern Profiling : After function-level prediction, ShikumiMiner aggregates the detected labels by repository to construct project-level implementation-pattern profiles. These profiles summarize the occurrence of the seven implementation patterns within each analyzed repository and support comparison across local LLM systems. Algorithm 1 summarizes the complete ShikumiMiner pipeline, including source collection, AST and CFG construction, feature extrac-tion, feature fusion, weak-label generation, classifier training, function-level prediction, and project-level aggregation. The resulting profiles are subsequently used to analyze pattern distributions and similarities among the analyzed local LLM repositories. The challenges we try to solve in this paper are:  
+
+> •
+
+How can syntactic information extracted from ASTs and behavioral information derived from CFGs be effectively integrated into a unified representation that captures both implementation structure and execution behavior without losing important contextual infor-mation?  
+
+> •
+
+How can graph-based and syntactic features be trans-formed into meaningful machine-learning represen-tations that effectively capture similarities and dif-ferences in implementation and memory-management structures across independently developed LLM sys-tems?  
+
+> •
+
+How can LLM C++ projects with varying archi-tectures, code sizes, implementation styles, and de-pendency structures be compared fairly to identify common implementation practices and distinguish project-specific design choices from broadly adopted engineering strategies? IV. Evaluation: 
+
+In this section, we present the experimental setup and evaluate ShikumiMiner in terms of implementation-pattern detection, feature representation, cross-project generalization, and simi-larities among local LLM repositories. 
+
+A. Experimental Setup: 
+
+We evaluate ShikumiMiner on ten open-source C++ lo-cal LLM repositories: llama.cpp , gemma.cpp , ONNX Runtime GenAI, OpenVINO GenAI, LMDeploy, gpt2.cpp ,
+
+minchatgpt.cpp , InferLLM, SGLang, and DeepSpeed-FastGen. The repositories cover a range of implementation TABLE II: Summary of the ten analyzed repositories.                                                                              
+
+> Repository Language Source Files Parsed Files Functions CFGs Parse Rate Main Purpose
+> llama.cpp C++ 330 325 4846 4823 98.5% Local LLM inference and quantization gemma.cpp C++ 38 33 373 373 86.8% Lightweight Gemma inference engine ONNX Runtime GenAI C++ 145 128 1717 1700 88.3% ONNX-based generative AI inference OpenVINO GenAI C++ 281 252 2272 2249 89.7% OpenVINO-based GenAI inference LMDeploy C++ 78 77 835 829 98.7% LLM deployment and serving gpt2.cpp C++ 1154100% GPT-2 training or inference logic minchatgpt.cpp C++ 3337 37 100% Minimal GPT-style inference InferLLM C++ 22 22 306 306 100% CPU-based local LLM inference SGLang C++ 52 51 425 254 98.1% High-performance LLM serving DeepSpeed-FastGen C++ 70 67 441 380 95.7% High-throughput text generation
+
+goals, from lightweight inference to production-oriented serv-ing and deployment. Documentation, tests, build scripts, and third-party dependencies are excluded so that the analysis focuses on core source files. Table II summarizes the analyzed files, functions, CFGs, and parsing coverage. Each retained source file is parsed using Clang LibTooling. ShikumiMiner extracts the AST- and CFG-derived features described in Section III for each function and combines them into the fused representation defined in Eq. (1). Across the ten repositories, 11,257 function records are extracted. Removing 148 duplicate records leaves 11,109 distinct functions, of which 10,807 have valid CFGs. Functions without usable AST or CFG evidence are excluded from evaluation. For the ablation study, identical fused feature vectors are further collapsed, leaving 7,945 distinct vectors. The multi-label classification stage uses scikit-learn’s RandomForestClassifier with 800 trees, 
+
+min_samples_leaf =5, Gini impurity, bootstrap sampling, 
+
+√p features per split, balanced_subsample class weighting, and random seed 42. One binary classifier is trained per pattern category. For each pattern, the decision threshold is selected within the training split from 
+
+{0.02 , 0.04 , . . . , 0.80 } by maximizing F1 on out-of-bag predictions. Duplicate vectors are removed to prevent train–test leakage, and features directly defining a pattern’s weak-labeling rule are withheld from that pattern’s classifier. We use three evaluation protocols. First, an ablation study compares AST-only, CFG-only, and fused AST+CFG representations using 5-fold stratified cross-validation over the 7,945 distinct vectors. Second, Leave-One-Project-Out (LOPO) evaluation trains on nine repositories and tests on the remaining repository. Third, because these evaluations use weak-supervision targets, we also conduct manual validation using source-derived reference labels on a random sample of 250 functions and a disjoint sample of 80 functions. Performance is reported using per-pattern precision, recall, and F1-score, together with macro and micro averages and bootstrap confidence intervals for the manual validation re-sults. The static-analysis pipeline is implemented in C++ using Clang/LLVM 22.1.8, while classification and statistical evaluation use Python 3.12, scikit-learn 1.9.0, NumPy 2.5.2, and pandas 3.0.5. 
+
+B. Research Questions: 
+
+To guide this evaluation, we organize the experiments around the following research questions. 
+
+-RQ1: How does combining syntactic and control-flow evidence affect the detection of recurring implementation patterns in local LLM systems? 
+
+To answer RQ1, we compare AST-only, CFG-only, and fused AST+CFG representations through an ablation study. 
+
+-RQ2: What recurring implementation patterns appear in C++ local LLM systems? 
+
+We answer RQ2 by analyzing the function-level pattern labels produced by ShikumiMiner and examining which of the seven implementation-pattern categories recur across the analyzed repositories. 
+
+-RQ3: How are detected code patterns distributed across different local LLM repositories? 
+
+We answer RQ3 by aggregating function-level pattern labels at the repository level. 
+
+RQ4: To what extent does ShikumiMiner generalize across previously unseen local LLM repositories? 
+
+To answer RQ4, we use Leave-One-Project-Out (LOPO) evaluation. 
+
+-RQ5: How similar are local LLM projects based on their detected implementation-pattern profiles? 
+
+We answer RQ5 by converting each repository into aproject-level implementation-pattern profile and comparing these profiles using Jaccard similarity. 
+
+V. Results 
+
+The experimental results show that ShikumiMiner identifies distinct implementation-pattern profiles across the ten ana-lyzed C++ local LLM repositories, but the distribution of those patterns varies substantially by project. As shown in Table III, Interactive Inference is the dominant category for most repositories, including llama.cpp, gemma.cpp, ONNX Runtime GenAI, OpenVINO GenAI, LMDeploy, gpt2.cpp, minchatgpt.cpp, and SGLang. In contrast, InferLLM is domi-nated by Model Loading and Validation, while DeepSpeed-FastGen shows Memory Management as its most frequent category. llama.cpp exhibits the broadest overall profile, with substantial instances of inference, model loading, sampling, memory management, context management, quantization, and TABLE III: Patterns identified across the ten analyzed projects. 
+
+Project Training Inference Sampling Loading Memory Context Quantization Dominant Pattern 
+
+llama.cpp 43 1,267 318 923 394 371 126 Interactive Inference gemma.cpp 4 61 11 29 19 31 3 Interactive Inference ONNX Runtime GenAI 0 315 149 98 176 254 2 Interactive Inference OpenVINO GenAI 0 463 62 102 93 176 5 Interactive Inference LMDeploy 2 85 10 42 63 63 5 Interactive Inference gpt2.cpp 0 1 0 0 0 0 0 Interactive Inference minchatgpt.cpp 0 17 2 1 1 0 1 Interactive Inference InferLLM 0 18 7 47 23 2 10 Model Loading and Validation SGLang 0 19 11 18 12 19 18 Interactive Inference DeepSpeed-FastGen 31 25 6 11 36 11 24 Memory Management 
+
+a smaller amount of training-related code. ONNX Run-time GenAI and OpenVINO GenAI also contain substan-tial context-management and sampling activity in addition to inference, whereas smaller repositories such as gpt2.cpp and minchatgpt.cpp contain much narrower pattern profiles. Overall, these results indicate that local LLM systems share several recurring implementation patterns, particularly infer-ence, loading, memory handling, and context management, while the relative emphasis of those patterns differs according to repository scope and implementation purpose. Training Pipeline Interactive Inference Advanced Sampling Model Loading & Validation Memory Management Context Management Quantization Workflow                                                             
+
+> Implementation Pattern
+> llama.cpp gemma.cpp ONNX Runtime GenAI OpenVINO GenAI LMDeploy gpt2.cpp minchatgpt.cpp InferLLM SGLang DeepSpeed-FastGen
+> Project
+> 1.2 36.8 9.2 26.8 11.4 10.8 3.7 2.5 38.6 7.0 18.4 12.0 19.6 1.9 0.0 31.7 15.0 9.9 17.7 25.6 0.2 0.0 51.4 6.9 11.3 10.3 19.5 0.6 0.7 31.5 3.7 15.6 23.3 23.3 1.9 0.0 100.0 0.0 0.0 0.0 0.0 0.0 0.0 77.3 9.1 4.5 4.5 0.0 4.5 0.0 16.8 6.5 43.9 21.5 1.9 9.3 0.0 19.6 11.3 18.6 12.4 19.6 18.6 21.5 17.4 4.2 7.6 25.0 7.6 16.7
+> 020 40 60 80 100
+> Share (%)
+
+Fig. 2: Normalized distribution of implementation pattern categories across the ten analyzed C++ local LLM projects 
+
+A. Manual Validation 
+
+Because the precision, recall, and F1-scores in Table IV measure agreement with rule-based weak labels rather than independent semantic correctness, we performed a manual validation using source-level reference labels. We uniformly sampled 250 functions from the 10,807 distinct functions with valid CFGs across all ten repositories and manually inspected approximately 40 lines of source code for each function while withholding its feature vector, weak label, and ShikumiMiner prediction. Labels were assigned under the multi-label taxon-omy in Section III only when a function performed substantive work corresponding to an implementation pattern. Against these independent labels, ShikumiMiner achieved a macro F1 of 0.57 and a micro F1 of 0.53, with 74 true positives, 69 false positives, and 60 false negatives; complete agreement across all seven categories occurred for 145 of 250 functions (58%), and the 95% bootstrap confidence interval for micro F1 was [0.47, 0.60]. A second disjoint sample of 80 functions produced a macro F1 of 0.39 and micro F1 of 0.45, while pooling both samples ( n = 330 ) yielded a micro F1 of 0.51 with a 95% confidence interval of [0.46, 0.57]. These results indicate that performance against weak-supervision targets and performance against independently assigned semantic labels can differ substantially. The validation is limited by the use of a single annotator and the small number of positive examples for rare categories. 
+
+B. Ablation Study: AST-Only, CFG-Only, and AST-CFG Fusion 
+
+Table IV compares three feature configurations: AST-only, CFG-only, and the fused AST+CFG representation. The results show that AST-derived features provide the strongest overall signal for implementation-pattern detection. The AST-only configuration achieves a macro F1-score of 0.40 and a micro F1-score of 0.46, outperforming both CFG-only and the fused representation. In contrast, CFG-only obtains a macro F1-score of 0.22 and a micro F1-score of 0.24, indicating that control-flow characteristics alone are insufficient to distinguish the seven implementation-pattern categories reliably. The fused AST+CFG configuration achieves a macro F1-score of 0.39 and a micro F1-score of 0.45, which is nearly identical to, but slightly lower than, AST-only performance. At the individual-pattern level, AST-only and AST+CFG achieve similar performance for several categories. Interactive Inference reaches an F1-score of 0.58 with AST-only and 0.57 with fusion, while Model Loading and Validation ob-tains 0.55 under both configurations. Quantization Workflow also remains unchanged at 0.39. For Advanced Sampling and Memory Management, however, adding CFG features slightly reduces F1 from 0.36 to 0.34 and from 0.44 to 0.40, respectively. Training Pipeline similarly decreases from 0.20 to 0.18. Context Management likewise remains at 0.27. The CFG-only configuration performs substantially worse for most categories. For example, Training Pipeline drops to an F1-score of 0.02, Advanced Sampling to 0.12, and Memory Management to 0.22. Although CFG-only achieves relatively high recall for Context Management (0.95), its precision is only 0.10, resulting in an F1-score of 0.18. This suggests TABLE IV: Per-pattern ablation results for AST-only, CFG-only, and fused AST+CFG features. 
+
+Pattern AST Only CFG Only AST+CFG Precision Recall F1 Score Precision Recall F1 Score Precision Recall F1 Score 
+
+Training Pipeline 0.14 0.36 0.20 0.01 0.21 0.02 0.16 0.19 0.18 Interactive Inference 0.56 0.59 0.58 0.36 0.55 0.43 0.55 0.60 0.57 Advanced Sampling 0.35 0.38 0.36 0.08 0.25 0.12 0.32 0.36 0.34 Model Loading & Validation 0.69 0.46 0.55 0.29 0.33 0.31 0.68 0.46 0.55 Memory Management 0.41 0.47 0.44 0.17 0.30 0.22 0.36 0.45 0.40 Context Management 0.20 0.44 0.27 0.10 0.95 0.18 0.20 0.40 0.27 Quantization Workflow 0.43 0.36 0.39 0.56 0.18 0.28 0.43 0.36 0.39 
+
+Macro Average 0.40 0.44 0.40 0.22 0.40 0.22 0.39 0.41 0.39 
+
+Micro Average 0.42 0.50 0.46 0.16 0.49 0.24 0.42 0.49 0.45 
+
+TABLE V: ShikumiMiner evaluated against independent source-derived reference labels ( n = 250 ). 
+
+Pattern Ref. Positives Predicted TP FP FN Precision Recall F1 
+
+Training Pipeline 4 2 2 0 2 1.00 0.50 0.67 Interactive Inference 35 45 22 23 13 0.49 0.63 0.55 Advanced Sampling 10 12 6 6 4 0.50 0.60 0.55 Model Loading and Validation 22 23 10 13 12 0.44 0.46 0.44 Memory Management 25 24 14 10 11 0.58 0.56 0.57 Context Management 31 32 16 16 15 0.50 0.52 0.51 Quantization Workflow 7 5 4 1 3 0.80 0.57 0.67 
+
+Macro Average – – – – – 0.62 0.55 0.57 Micro Average – – 74 69 60 0.52 0.55 0.53 
+
+that broad control-flow properties such as branching, loop structure, graph size, and cyclomatic complexity occur across many different implementation patterns and therefore provide limited discriminative power when used without syntactic context. Overall, the ablation results show that the syntactic repre-sentation carries most of the discriminative information used by ShikumiMiner. Contrary to the expectation that simple feature concatenation would consistently improve detection, the fused AST+CFG representation does not outperform AST-only features at the aggregate level. This finding indicates that the additional CFG dimensions do not necessarily always provide sufficient complementary signal to improve overall performance under the current feature-concatenation strategy. 
+
+C. F1 Score: 
+
+Precision measures the proportion of predicted implementation-pattern instances that are correctly identified, whereas recall measures the proportion of reference instances that are successfully detected by ShikumiMiner. Because the task is formulated as a multi-label classification problem and the pattern categories exhibit different frequencies, we use the F1-score to provide a balanced assessment of precision and recall. The F1-score is defined as 
+
+F 1 = 2 × Precision × Recall Precision + Recall , (5) where Precision = T P T P + F P , (6) and Recall = T P T P + F N . (7) Training Pipeline Interactive Inference Advanced Sampling Model Loading & Validation Memory Management Context Management Quantization Workflow 
+
+> Implementation Pattern
+> 0.0 0.2 0.4 0.6 0.8 1.0
+> F1 Score
+> 0.18 0.57 0.34 0.55 0.40 0.27 0.39
+
+Fig. 3: F1 Score Comparison for ShikumiMiner Figure 3 summarizes the per-pattern F1-scores for the fused AST+CFG representation. The results differ across patterns, meaning that the AST and CFG features are more useful for identifying some patterns than others. Interactive Inference and Model Loading and Validation are comparatively easier to distinguish because their implementations contain more consistent syntactic evidence, including characteristic function calls and operations. In contrast, Training Pipeline, Context Management, and Advanced Sampling exhibit greater struc-tural overlap with other implementation patterns or contain fewer representative instances, making them more difficult to separate using the current feature representation. In particular, the low F1-score for Context Management may be due to overlapping features with other function types. When similar structural and control-flow characteristics appear across mul-tiple categories, the model can misclassify functions, leading to more false positives and false negatives. Algorithm 1 ShikumiMiner Overall Pipeline 
+
+Input: R: C++ local LLM repositories 
+
+Input: P: implementation-pattern categories 
+
+Output: ˆY : function-level predictions 
+
+Output: Profiles : project-level pattern profiles  
+
+> 1:
+
+X ← ⟨ ⟩  
+
+> 2:
+
+M eta ← ⟨ ⟩  
+
+> 3:
+
+for all r ∈ R do  
+
+> 4:
+
+F ← COLLECT FILES (r) 
+
+> 5:
+
+F ← FILTER FILES (F ) 
+
+> 6:
+
+for all f ile ∈ F do  
+
+> 7:
+
+AST ← GEN AST (f ile ) 
+
+> 8:
+
+for all f ∈ FUNCTIONS (AST ) do  
+
+> 9:
+
+if ¬ ISDEFINED IN(f, f ile ) then  
+
+> 10:
+
+continue  
+
+> 11:
+
+end if  
+
+> 12:
+
+cf g ← GEN CFG (f ) 
+
+> 13:
+
+if cf g = ⊥ then  
+
+> 14:
+
+continue  
+
+> 15:
+
+end if  
+
+> 16:
+
+Af ← ASTF EATURES (f ) 
+
+> 17:
+
+Cf ← CFGF EATURES (cf g ) 
+
+> 18:
+
+Xf ← [Af ∥ Cf ] 
+
+> 19:
+
+APPEND (X, X f ) 
+
+> 20:
+
+APPEND (M eta, (r, f ))  
+
+> 21:
+
+end for  
+
+> 22:
+
+end for  
+
+> 23:
+
+end for  
+
+> 24:
+
+M ← TRAIN PATTERN MODEL (X, P) 
+
+> 25:
+
+ˆY ← ⟨ ⟩  
+
+> 26:
+
+for i ← 1 to |X| do  
+
+> 27:
+
+ˆYi ← PREDICT (M, X i) 
+
+> 28:
+
+APPEND ( ˆY , ˆYi) 
+
+> 29:
+
+end for  
+
+> 30:
+
+P rof iles ← ∅  
+
+> 31:
+
+for all r ∈ R do  
+
+> 32:
+
+ˆYr ← PROJECT LABELS ( ˆY , M eta, r ) 
+
+> 33:
+
+P rof iles [r] ← AGGREGATE ( ˆYr ) 
+
+> 34:
+
+end for  
+
+> 35:
+
+return ˆY , P rof iles 
+
+D. Leave-One-Project-Out Generalization: 
+
+Table VI evaluates ShikumiMiner using Leave-One-Project-Out (LOPO) validation, where each repository is held out in turn and the model is trained on the remaining nine repositories. Across the ten held-out projects, ShikumiMiner achieves an average Macro F1 of 0.112 and an average Micro F1 of 0.167, indicating limited cross-project general-ization. Performance varies across repositories, with minchat-gpt.cpp obtaining the highest Micro F1 of 0.318, followed by llama.cpp at 0.274, whereas gpt2.cpp obtains both macro and micro F1-scores of 0.000; however, this result provides only limited evidence, as the held-out set contains just three functions. Most other repositories obtain Micro F1 values 
+
+Algorithm 2 Weak-Label Generation and Multi-Label Classi-fier Training 
+
+Input: X: fused AST-CFG feature vectors 
+
+Input: P: set of pattern categories 
+
+Output: M : trained multi-label classifier  
+
+> 1:
+
+Y w ← ∅  
+
+> 2:
+
+for all Xf ∈ X do  
+
+> 3:
+
+Y wf ← [0 , . . . , 0]  
+
+> 4:
+
+for all pk ∈ P do  
+
+> 5:
+
+if RULE k(Xf ) = true then  
+
+> 6:
+
+Y wf,k ← 1 
+
+> 7:
+
+end if  
+
+> 8:
+
+end for  
+
+> 9:
+
+Y w ← Y w ∪ { Y wf } 
+
+> 10:
+
+end for  
+
+> 11:
+
+M ← TRAIN CLASSIFIER (X, Y w) 
+
+> 12:
+
+return M
+
+between approximately 0.10 and 0.19. These results suggest that although recurring implementation-pattern categories are observed across multiple local LLM systems, the concrete AST- and CFG-level characteristics associated with those pat-terns differ substantially between repositories. Consequently, models trained on some repositories may not perform well when they are applied to a completely new repository. The results therefore highlight the strong repository-specific nature of implementation-pattern occurrence. The results also suggest that ShikumiMiner may work better on new repositories if it learns from a wider variety of projects and uses features that are not too dependent on one project’s specific code structure or coding style. 
+
+E. Jaccard Index: 
+
+To examine similarities among the analyzed local LLM repositories, we use the Jaccard index to compare their de-tected implementation-pattern coverage. After ShikumiMiner identifies function-level patterns, each repository is represented as a set containing the implementation-pattern categories that occur at least once in that repository. Thus, the Jaccard analysis focuses on whether a pattern category is present in a project rather than on how frequently that pattern occurs. For two repositories Pi and Pj , the Jaccard similarity is defined as 
+
+J(Pi, P j ) = |Patterns( Pi) ∩ Patterns( Pj )||Patterns( Pi) ∪ Patterns( Pj )| . (8) Here, Patterns( Pi) and Patterns( Pj ) denote the sets of implementation-pattern categories detected in repositories Pi
+
+and Pj , respectively. A Jaccard value of 1.0 indicates identical pattern-category coverage, whereas a value of 0.0 indicates that the two repositories share no detected categories. Higher values therefore indicate greater similarity in the types of implementation patterns represented in the two systems. The results reveal substantial overlap among most of the analyzed repositories. llama.cpp , gemma.cpp ,
+
+LMDeploy , and DeepSpeed-FastGen each contain all TABLE VI: Leave-One-Project-Out (LOPO) generalization performance of ShikumiMiner. 
+
+Held-out Repository Test Functions Patterns Macro F1 Micro F1 
+
+llama.cpp 3,577 7 0.172 0.274 gemma.cpp 335 7 0.103 0.169 ONNX Runtime GenAI 1,290 6 0.134 0.189 OpenVINO GenAI 1,699 6 0.115 0.166 LMDeploy 647 7 0.119 0.191 gpt2.cpp 3 1 0.000 0.000 minchatgpt.cpp 30 5 0.202 0.318 InferLLM 149 6 0.129 0.161 SGLang 217 6 0.072 0.102 DeepSpeed-FastGen 283 7 0.076 0.102 
+
+Average – – 0.112 0.167 
+
+seven implementation-pattern categories and therefore obtain a Jaccard similarity of 1.00 with one another. ONNX Runtime GenAI, OpenVINO GenAI, InferLLM, and SGLang contain the same six categories, with Training Pipeline absent, and consequently also obtain pairwise Jaccard similarity values of 
+
+1.00 . When a seven-category repository is compared with one of these six-category repositories, the Jaccard similarity is ap-proximately 0.86 (6 /7) , indicating that their pattern coverage differs only by the presence of training-related functionality. 
+
+minchatgpt.cpp exhibits a narrower profile, containing Interactive Inference, Advanced Sampling, Model Loading and Validation, Memory Management, and Quantization Workflow, but no Training Pipeline or Context Management instances. Its Jaccard similarity with the six-category repositories is therefore approximately 0.83 (5 /6) , while its similarity with the seven-category repositories is approximately 0.71 (5 /7) .In contrast, gpt2.cpp contains only Interactive Inference in the analyzed corpus and consequently exhibits the lowest similarity to the other repositories. Its Jaccard similarity ranges from approximately 0.14 against repositories containing all seven categories to 0.20 against minchatgpt.cpp .llama.cpp gemma.cpp ONNX Runtime GenAI OpenVINO GenAI LMDeploy gpt2.cpp minchatgpt.cpp InferLLM SGLang DeepSpeed-FastGen                                                                                           
+
+> Project
+> llama.cpp gemma.cpp ONNX Runtime GenAI OpenVINO GenAI LMDeploy gpt2.cpp minchatgpt.cpp InferLLM SGLang DeepSpeed-FastGen
+> Project
+> 1.00 1.00 0.86 0.86 1.00 0.14 0.71 0.86 0.86 1.00 1.00 1.00 0.86 0.86 1.00 0.14 0.71 0.86 0.86 1.00 0.86 0.86 1.00 1.00 0.86 0.17 0.83 1.00 1.00 0.86 0.86 0.86 1.00 1.00 0.86 0.17 0.83 1.00 1.00 0.86 1.00 1.00 0.86 0.86 1.00 0.14 0.71 0.86 0.86 1.00 0.14 0.14 0.17 0.17 0.14 1.00 0.20 0.17 0.17 0.14 0.71 0.71 0.83 0.83 0.71 0.20 1.00 0.83 0.83 0.71 0.86 0.86 1.00 1.00 0.86 0.17 0.83 1.00 1.00 0.86 0.86 0.86 1.00 1.00 0.86 0.17 0.83 1.00 1.00 0.86 1.00 1.00 0.86 0.86 1.00 0.14 0.71 0.86 0.86 1.00
+> 0.0 0.2 0.4 0.6 0.8 1.0
+> Jaccard Similarity
+
+Fig. 4: Jaccard Similarity Overall, the Jaccard analysis indicates that most of the analyzed C++ local LLM systems share a common set of re-curring implementation patterns despite substantial differences in repository size and implementation purpose. The primary differences arise from whether projects contain specialized Function-call count CFG edge count CFG node count Cyclomatic complexity CFG branch-node count Branch count AST depth Loop count CFG loop depth Validation-path count       
+
+> AST/CFG-Derived Feature
+> 0.00 0.05 0.10 0.15 0.20 0.25 0.30 0.35 0.40
+> Spearman Correlation (  s)
+> 0.30 0.27 0.27 0.26 0.26 0.25 0.23 0.21 0.21 0.20
+
+Fig. 5: Spearman correlation between AST/CFG-derived fea-tures and detected pattern evidence. functionality such as training or whether they implement only a narrower subset of inference-related patterns. However, be-cause Jaccard similarity considers only the presence or absence of pattern categories, it does not capture differences in their relative frequencies. Two repositories may therefore obtain a Jaccard similarity of 1.00 even when their pattern distributions differ substantially. Accordingly, Jaccard should be interpreted as a measure of pattern-category coverage similarity rather than similarity in the detailed distribution or architecture of the repositories. 
+
+F. Spearman Correlation: 
+
+We use Spearman rank correlation to examine the rela-tionship between function-level structural characteristics and the amount of implementation-pattern evidence detected by ShikumiMiner. Each function is treated as one observation, and the number of detected pattern categories assigned to that function is used as the response variable. The analyzed source-code metrics include AST depth, function-call count, loop count, branch count, CFG node count, CFG edge count, CFG branch-node count, CFG loop depth, cyclomatic complexity, and validation-path count. Spearman correlation is selected because source-code metrics are not necessarily normally distributed and may contain highly skewed values and outliers. The Spearman rank correlation coefficient is defined as 
+
+ρs =
+
+Pni=1 (Ri − ¯R)( Si − ¯S)
+
+qPni=1 (Ri − ¯R)2
+
+qPni=1 (Si − ¯S)2
+
+, (9) where Ri denotes the rank of a structural or control-flow feature for function i, Si denotes the rank of the corresponding number of detected implementation patterns, and ¯R and ¯S
+
+represent their mean ranks. Tied observations are assigned average ranks. Figure 5 shows positive but weak associations for all ten analyzed features, with coefficients ranging from 0.20 to 0.30. The strongest relationship is observed for function-call count (ρs = 0 .30 ), indicating that functions containing more function calls tend to carry evidence for a slightly larger number of implementation patterns. Control-flow size measures follow closely: CFG edge count and CFG node count both reach ρs =TABLE VII: Representative case studies illustrating AST and CFG evidence for detected implementation patterns.     
+
+> Project / Function Detected Pattern AST Evidence CFG Evidence Interpretation llama.cpp
+> llama_init_from_model
+> (llama-context.cpp:3557 )Interactive Inference (also Memory, Quantization) 32 calls, 17 branches, 2 loops, 6 local variables, AST depth 14 53 nodes, 83 edges, 31 branch nodes, 2 loop nodes, 2 back edges, cyclomatic complexity 32 Context-initialization entry point for inference. The 31 branch nodes show configuration-dependent setup, not straight-line initialization. Its three labels are correct: the function also inspects KV-cache quantization types and allocates the context.
+> OpenVINO GenAI
+> StatefulSpeculative LLMPipeline::generate_tokens
+> (fast_draft_strategy.cpp:416 )Context Management (also Inference) 123 calls, 15 branches, 4 loops, 40 local variables, AST depth 18 51 nodes, 71 edges, 21 branch nodes, 4 loop nodes, 4 back edges, cyclomatic complexity 22, loop depth 2 Speculative-decoding state handling. The 40 local variables and four loops at depth 2 are the Context Management signature: substantial state is traversed repeatedly, with back edges confirming that it is revisited rather than initialized once.
+> llama.cpp
+> ggml_opt_build
+> (ggml-opt.cpp:322 )Training Pipeline (also Sampling, Memory) 93 calls, 7 training-related calls, 30 branches, 4 loops, 29 local variables, AST depth 16 101 nodes, 149 edges, 46 branch nodes, 4 loop nodes, 4 back edges, cyclomatic complexity 50, loop depth 1 Optimizer graph construction, the densest training function in the corpus. Only 77 of 10,807 functions carry training evidence, and its control flow is indistinguishable from ordinary graph building—which is why the category scores 0.18 in Table IV.
+
+0.27 , cyclomatic complexity and CFG branch-node count both reach ρs = 0 .26 , and branch count reaches ρs = 0 .25 . AST depth shows a weaker association ( ρs = 0 .23 ), as do loop count and CFG loop depth (both ρs = 0 .21 ) and validation-path count ( ρs = 0 .20 ). The narrow spread across these ten measures is itself informative. No individual structural or control-flow metric shows a strong monotonic association with the number of detected implementation patterns. Larger and more complex functions receive slightly more pattern assignments, but the relationship remains weak, indicating that structural size alone is not a strong proxy for implementation-pattern evidence. 
+
+VI. Discussion: 
+
+The experimental results show that the seven implementation patterns recur across the ten local LLM repositories. The patterns depend on project-specific syntactic and API-level conventions more than on distinctive control-flow structure. Most repositories share common implementation patterns such as inference, model loading, memory management, and con-text handling. However, training and quantization are more common only in some projects, depending on what each repository is designed to support. The ablation results show that this separation is driven primarily by syntactic evidence. CFG features provide considerably weaker discrimination and do not necessarily improve overall performance under feature concatenation. Manual validation suggests that ShikumiMiner can make mistakes when a function performs a certain task but does not contain clear keywords or code elements that directly indicate that task. The Leave-One-Project-Out results show limited transfer across repositories. 
+
+VII. Threats to Validity 
+
+Our conducted experiments for ShikumiMiner have several threats to validity. First, different projects may organize differ-ent patterns in different ways, which is why our proposed pat-tern taxonomy may not capture all implementation strategies used in local LLM repositories. Second, the use of rule-based weak labeling may introduce noise when pattern evidence is incomplete, ambiguous, or spread across multiple functions. Third, the evaluation is limited to ten open-source C++ local LLM repositories, so the findings may not generalize to all LLM systems, industrial projects, or implementations written in other languages such as Python and Java. Fourth, the reference set comprises 250 functions, together with a disjoint held-out sample of 80 (330 in total), and was annotated by a single annotator, a larger independently annotated dataset with inter-rater agreement might have yielded a different result. In addition, the analyzed repositories vary substantially in size and in the frequency of individual pattern categories. This may give more detected pattern numbers to larger projects in the repository datasets and may influence the overall per-formance results. In addition, some functions could not be analyzed because valid CFGs were unavailable, particularly in repositories containing CUDA extensions or specialized build dependencies, which may affect repository-level coverage. 
+
+VIII. Conclusion 
+
+In this study, we presented a static-analysis framework named ShikumiMiner, which characterizes recurring implementation patterns in C++ local LLM repositories. ShikumiMiner suc-cessfully identifies these recurring patterns across ten open-source systems through the use of AST- and CFG-derived evidence, while also revealing substantial variation in how these patterns are present across the repositories. The eval-uation shows that syntactic evidence provides the strongest discriminative signal, whereas control-flow information con-tributes primarily to execution-oriented characterization. Over-all, ShikumiMiner provides a basis for more interpretable and reproducible comparison of local LLM implementations. As future work, ShikumiMiner paves the way towards richer se-mantic and cross-project representations of local LLM systems in order to understand the system better and for designing LLM systems. References 
+
+[1] W. Ma, Z. Lin, S. Liu, Q. Hu, Y. Liu, W. Wang, C. Zhang, L. Nie, L. Li, Y. Liu et al. , “Exploring code analysis: Zero-shot insights on syntax and semantics with llms,” ACM Transactions on Software Engineering and Methodology , 2026. [2] X. Jiang, Z. Zheng, C. Lyu, L. Li, and L. Lyu, “Treebert: A tree-based pre-trained model for programming language,” in Uncertainty in artificial intelligence . PMLR, 2021, pp. 54–63. [3] D. Guo, S. Lu, N. Duan, Y. Wang, M. Zhou, and J. Yin, “Unixcoder: Unified cross-modal pre-training for code representation,” in Proceed-ings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , 2022, pp. 7212–7225. [4] F.-M. Lazar and O. Banias, “Clone detection algorithm based on the abstract syntax tree approach,” in 2014 IEEE 9th IEEE International Symposium on Applied Computational Intelligence and Informatics (SACI) . IEEE, 2014, pp. 73–78. [5] V. Wahler, D. Seipel, J. Wolff, and G. Fischer, “Clone detection in source code by frequent itemset techniques,” in Source code analysis and manipulation, fourth IEEE international workshop on . IEEE, 2004, pp. 128–135. [6] I. D. Baxter, A. Yahin, L. Moura, M. Sant’Anna, and L. Bier, “Clone detection using abstract syntax trees,” in Proceedings. International Conference on Software Maintenance (Cat. No. 98CB36272) . IEEE, 1998, pp. 368–377. [7] D. Guo, S. Ren, S. Lu, Z. Feng, D. Tang, S. Liu, L. Zhou, N. Duan, A. Svyatkovskiy, S. Fu et al. , “Graphcodebert: Pre-training code repre-sentations with data flow,” arXiv preprint arXiv:2009.08366 , 2020. [8] J. Li, Y. Wang, M. R. Lyu, and I. King, “Code completion with neural attention and pointer networks,” arXiv preprint arXiv:1711.09573 , 2017. [9] A. T. Nguyen and T. N. Nguyen, “Graph-based statistical language model for code,” in 2015 IEEE/ACM 37th IEEE International Confer-ence on Software Engineering , vol. 1. IEEE, 2015, pp. 858–868. [10] M. Rabinovich, M. Stern, and D. Klein, “Abstract syntax networks for code generation and semantic parsing,” in Proceedings of the 55th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , 2017, pp. 1139–1149. [11] M. White, M. Tufano, C. Vendome, and D. Poshyvanyk, “Deep learning code fragments for code clone detection,” in Proceedings of the 31st IEEE/ACM international conference on automated software engineering ,2016, pp. 87–98. [12] L. Mou, G. Li, L. Zhang, T. Wang, and Z. Jin, “Convolutional neural networks over tree structures for programming language processing,” in 
+
+Proceedings of the AAAI conference on artificial intelligence , vol. 30, no. 1, 2016. [13] Y. Wan, Z. Zhao, M. Yang, G. Xu, H. Ying, J. Wu, and P. S. Yu, “Improving automatic source code summarization via deep reinforce-ment learning,” in Proceedings of the 33rd ACM/IEEE international conference on automated software engineering , 2018, pp. 397–407. [14] U. Alon, S. Brody, O. Levy, and E. Yahav, “code2seq: Generating sequences from structured representations of code,” arXiv preprint arXiv:1808.01400 , 2018. [15] X. Hu, G. Li, X. Xia, D. Lo, and Z. Jin, “Deep code comment genera-tion,” in Proceedings of the 26th conference on program comprehension ,2018, pp. 200–210. [16] L. Jiang, G. Misherghi, Z. Su, and S. Glondu, “Deckard: Scalable and accurate tree-based detection of code clones,” in 29th International Conference on Software Engineering (ICSE’07) . IEEE, 2007, pp. 96– 105. [17] J. Zhang, X. Wang, H. Zhang, H. Sun, K. Wang, and X. Liu, “A novel neural source code representation based on abstract syntax tree,” in 
+
+2019 IEEE/ACM 41st International Conference on Software Engineering (ICSE) . IEEE, 2019, pp. 783–794. [18] U. Alon, M. Zilberstein, O. Levy, and E. Yahav, “code2vec: Learning distributed representations of code,” Proceedings of the ACM on Pro-gramming Languages , vol. 3, no. POPL, pp. 1–29, 2019. [19] N. D. Bui, Y. Yu, and L. Jiang, “Treecaps: Tree-based capsule networks for source code processing,” in Proceedings of the AAAI conference on artificial intelligence , vol. 35, no. 1, 2021, pp. 30–38. [20] M. Tufano, C. Watson, G. Bavota, M. D. Penta, M. White, and D. Poshyvanyk, “An empirical study on learning bug-fixing patches in the wild via neural machine translation,” ACM Transactions on Software Engineering and Methodology (TOSEM) , vol. 28, no. 4, pp. 1–29, 2019. [21] M. Allamanis, M. Brockschmidt, and M. Khademi, “Learning to repre-sent programs with graphs,” arXiv preprint arXiv:1711.00740 , 2017. [22] U. Alon, R. Sadaka, O. Levy, and E. Yahav, “Structural language models of code,” in International conference on machine learning . PMLR, 2020, pp. 245–256. [23] M. Brockschmidt, M. Allamanis, A. L. Gaunt, and O. Polozov, “Gen-erative code modeling with graphs,” arXiv preprint arXiv:1805.08490 ,2018. [24] L. Buratti, S. Pujar, M. Bornea, S. McCarley, Y. Zheng, G. Rossiello, A. Morari, J. Laredo, V. Thost, Y. Zhuang et al. , “Exploring soft-ware naturalness through neural language models,” arXiv preprint arXiv:2006.12641 , 2020. [25] V. J. Hellendoorn, C. Sutton, R. Singh, P. Maniatis, and D. Bieber, “Global relational models of source code,” in International conference on learning representations , 2019. [26] P. Yin and G. Neubig, “A syntactic neural model for general-purpose code generation,” in Proceedings of the 55th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) ,2017, pp. 440–450. [27] Y. Xiong, X. Liu, M. Zeng, L. Zhang, and G. Huang, “Identifying patch correctness in test-based program repair,” in Proceedings of the 40th international conference on software engineering , 2018, pp. 789–799. [28] T. Ben-Nun, A. S. Jakobovits, and T. Hoefler, “Neural code comprehen-sion: A learnable representation of code semantics,” Advances in neural information processing systems , vol. 31, 2018. [29] F. Yamaguchi, M. Lottmann, and K. Rieck, “Generalized vulnerability extrapolation using abstract syntax trees,” in Proceedings of the 28th annual computer security applications conference , 2012, pp. 359–368. [30] A. Tasnim and M. R. Rahman, “Inferring bug patterns for detecting bugs in javascript by analyzing abstract syntax tree,” in 2018 Joint 7th International Conference on Informatics, Electronics & Vision (ICIEV) and 2018 2nd International Conference on Imaging, Vision & Pattern Recognition (icIVPR) . IEEE, 2018, pp. 503–507. [31] M. Pradel and K. Sen, “Deep learning to find bugs,” TU Darmstadt, Department of Computer Science , vol. 4, no. 1, 2017. [32] R.-M. Karampatsis and C. Sutton, “Scelmo: Source code embeddings from language models,” arXiv preprint arXiv:2004.13214 , 2020. [33] D. Z¨ ugner, T. Kirschstein, M. Catasta, J. Leskovec, and S. G¨ unnemann, “Language-agnostic representation learning of source code from struc-ture and context,” arXiv preprint arXiv:2103.11318 , 2021. [34] S. Kim, J. Zhao, Y. Tian, and S. Chandra, “Code prediction by feeding trees to transformers,” in 2021 IEEE/ACM 43rd International Conference on Software Engineering (ICSE) . IEEE, 2021, pp. 150–162. [35] Z. Feng, D. Guo, D. Tang, N. Duan, X. Feng, M. Gong, L. Shou, B. Qin, T. Liu, D. Jiang et al. , “Codebert: A pre-trained model for programming and natural languages,” in Findings of the association for computational linguistics: EMNLP 2020 , 2020, pp. 1536–1547. [36] Y. Wan, W. Zhao, H. Zhang, Y. Sui, G. Xu, and H. Jin, “What do they capture? a structural analysis of pre-trained language models for source code,” in Proceedings of the 44th international conference on software engineering , 2022, pp. 2377–2388. [37] Y. Wang, W. Wang, S. Joty, and S. C. Hoi, “Codet5: Identifier-aware unified pre-trained encoder-decoder models for code understanding and generation,” in Proceedings of the 2021 conference on empirical methods in natural language processing , 2021, pp. 8696–8708. [38] S. Troshin and N. Chirkova, “Probing pretrained models of source codes,” in Proceedings of the Fifth BlackboxNLP Workshop on Analyzing and Interpreting Neural Networks for NLP , 2022, pp. 371–383. [39] M. Tufano, C. Watson, G. Bavota, M. Di Penta, M. White, and D. Poshy-vanyk, “Deep learning similarities from different representations of source code,” in Proceedings of the 15th international conference on mining software repositories , 2018, pp. 542–553. [40] G. Zhao and J. Huang, “Deepsim: deep learning code functional simi-larity,” in Proceedings of the 2018 26th ACM joint meeting on european software engineering conference and symposium on the foundations of software engineering , 2018, pp. 141–151. [41] X. Xu, C. Liu, Q. Feng, H. Yin, L. Song, and D. Song, “Neural network-based graph embedding for cross-platform binary code similarity detec-tion,” in Proceedings of the 2017 ACM SIGSAC conference on computer and communications security , 2017, pp. 363–376. [42] L. Jiang, R. Rewcastle, P. Denny, and E. Tempero, “Comparecfg: Providing visual feedback on code quality using control flow graphs,” in 
+
+Proceedings of the 2020 acm conference on innovation and technology in computer science education , 2020, pp. 493–499. [43] L. Cui, Z. Hao, Y. Jiao, H. Fei, and X. Yun, “Vuldetector: Detecting vulnerabilities using weighted feature graph comparison,” IEEE Trans-actions on Information Forensics and Security , vol. 16, pp. 2004–2017, 2020. [44] S. Eschweiler, K. Yakdan, E. Gerhards-Padilla et al. , “Discovre: Efficient cross-architecture identification of bugs in binary code.” in Ndss , vol. 52, 2016, pp. 58–79. [45] S. Chakraborty, R. Krishna, Y. Ding, and B. Ray, “Deep learning based vulnerability detection: Are we there yet?” IEEE Transactions on Software Engineering , vol. 48, no. 9, pp. 3280–3296, 2021. [46] B. Steenhoek, H. Gao, and W. Le, “Dataflow analysis-inspired deep learning for efficient vulnerability detection,” in Proceedings of the 46th ieee/acm international conference on software engineering , 2024, pp. 1– 13. [47] W. Wang, G. Li, B. Ma, X. Xia, and Z. Jin, “Detecting code clones with graph neural networkand flow-augmented abstract syntax tree,” arXiv preprint arXiv:2002.08653 , 2020. [48] Y. Zhou, S. Liu, J. Siow, X. Du, and Y. Liu, “Devign: Effective vul-nerability identification by learning comprehensive program semantics via graph neural networks,” Advances in neural information processing systems , vol. 32, 2019. [49] Y. Li, S. Wang, and T. N. Nguyen, “Vulnerability detection with fine-grained interpretations,” in Proceedings of the 29th ACM joint meeting on European software engineering conference and symposium on the foundations of software engineering , 2021, pp. 292–303. [50] F. Yamaguchi, N. Golde, D. Arp, and K. Rieck, “Modeling and discover-ing vulnerabilities with code property graphs,” in 2014 IEEE symposium on security and privacy . IEEE, 2014, pp. 590–604. [51] Y. Wan, J. Shu, Y. Sui, G. Xu, Z. Zhao, J. Wu, and P. Yu, “Multi-modal attention network learning for semantic source code retrieval,” in 
+
+2019 34th IEEE/ACM International Conference on Automated Software Engineering (ASE) . IEEE, 2019, pp. 13–25. [52] W. Ma, M. Zhao, E. Soremekun, Q. Hu, J. M. Zhang, M. Papadakis, M. Cordy, X. Xie, and Y. L. Traon, “Graphcode2vec: Generic code em-bedding via lexical and program dependence analyses,” in Proceedings of the 19th international conference on mining software repositories ,2022, pp. 524–536. [53] W. Wang, K. Zhang, G. Li, S. Liu, A. Li, Z. Jin, and Y. Liu, “Learning program representations with a tree-structured transformer,” in 2023 IEEE International Conference on Software Analysis, Evolution and Reengineering (SANER) . IEEE, 2023, pp. 248–259.
