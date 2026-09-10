@@ -1,0 +1,276 @@
+Title: Diffs vs. Whole Files: An Empirical Comparison of Iterative Edit-Based and Direct Generation for Flutter/Dart Code Models
+
+URL Source: https://arxiv.org/pdf/2609.05779v1
+
+Published Time: Wed, 09 Sep 2026 00:19:50 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# Diffs vs. Whole Files: An Empirical Comparison of Iterative Edit-Based and Direct Generation for Flutter/Dart Code Models 
+
+Andrej Andrejev 11Independent researcher (bbidpa) , andrew.andrejev@gmail.com 
+
+September 9, 2026 
+
+Abstract 
+
+Large language models used for code editing can be trained and deployed in at least two distinct output regimes: direct generation, where the model emits the entire modified file in one shot, and iterative diff-based generation (“steps”), where the model emits a sequence of localized search/replace edits that are applied one at a time until the model signals completion or a step budget is exhausted. The diff-based regime is attractive because it mirrors how human developers edit code and because, in principle, it should require the model to generate far fewer tokens per turn. We train two code models — a 100M-parameter model trained from scratch (Rainbow-Pony-100M) and a fine-tuned Qwen2.5-Coder-0.5B (Hui et al., 2024) — in both regimes on a shared Flutter/Dart code-editing dataset, and evaluate all four resulting models (architecture × regime) on a held-out set of ≈1,790 tasks per model. We find that direct generation substantially outperforms iterative diff-based generation on every metric we measure — compilation/static-analysis pass rate, bits-per-byte, character-level similarity to the reference, and blinded LLM-judge ratings of goal fulfillment, correctness, and code quality — and that this gap persists even after controlling for task difficulty via a matched-ID comparison and even when restricting the comparison to code that compiles on both sides. We then look for the conditions under which the diff-based model does win, and find a single, architecture-independent mechanism: diff-based generation is competitive specifically on short, spatially localized edits (few required edit steps), and its category-level wins concentrate in exactly the two task categories — refactoring and error-handling/edge-case fixes — that independently have the lowest mean edit-step count in our dataset. We term this task locality and discuss its implications for when an edit-based training regime is and is not the right choice for a code-editing model. 
+
+# 1 Introduction 
+
+When a language model is asked to modify an existing source file, there are two natural ways to have it express the change. The first is to regenerate the entire file from scratch, conditioned on the original file and the instruction ( direct generation). The second is to have the model emit a sequence of localized edits — typically in a search/replace or unified-diff format — that are mechanically applied to the original file (iterative or diff-based generation). Production coding agents and IDE-integrated tools overwhelmingly favor some variant of the second approach (Aider, ongoing), for reasons that are intuitive: a diff is shorter than a whole file, so it is cheaper to generate and less likely to silently corrupt code the model was never asked to touch; it also mirrors the unit of work a human reviewer actually looks at (a pull-request diff, not a whole-file rewrite). 
+
+This work is licensed under a Creative Commons Attribution 4.0 International License (CC BY 4.0). 
+
+1arXiv:2609.05779v1 [cs.SE] 5 Sep 2026 Whether this intuition holds up as a training objective, rather than just an inference-time interface choice, is less settled. Recent work is mixed. LintSeq (Piterbarg et al., 2025) shows that training on synthetic 
+
+edit sequences — decomposing a reference program into a chain of small, lint-error-free edits — improves downstream code-synthesis quality relative to training on the final program alone, arguing that edit sequences are a better curriculum, not just a better interface. Conversely, practical edit-format benchmarks (Aider, ongoing) report that diff-style formats increase the rate of malformed edits (edits the harness cannot apply at all) relative to whole-file replacement, especially for weaker models, trading a token-efficiency win for a reliability cost. Adaptive-format work (Cheng et al., 2026) goes further and argues that neither format is uniformly better — the right format is a property of the specific edit, and a model (or router) that can choose per-edit outperforms a model committed to either format across the board. This paper is an empirical contribution to that question, run end-to-end on our own models rather than third-party benchmark leaderboards, on a single narrow but realistic domain: Flutter/Dart code editing. We train two architecturally very different models — a small transformer trained from scratch and a mid-size pretrained model fine-tuned for the task — each in both a direct and a steps (iterative diff-based) variant, holding the training data, tokenization pipeline, and evaluation harness fixed across all four resulting models. This within-domain, within-dataset design lets us isolate the effect of the output regime itself from the many confounds (different base models, different datasets, different edit-format syntax) that make cross-paper comparisons on this question difficult. 
+
+Contributions. We report four findings: 1. Across both architectures, direct generation beats iterative diff-based generation by a wide margin on every metric we measure (Section 4.1), and the gap is not explained away by the diff-based model running out of its edit-step budget or by outright edit-application failures — the majority of diff-based failures occur in trajectories that completed normally (Section 4.2). 2. The gap survives a matched-ID comparison that controls for the possibility that diff-based failures concentrate on intrinsically harder tasks (Section 4.4), and survives restricting the comparison to only the code that compiles on both sides, as independently confirmed by a blinded LLM judge scoring goal fulfillment, correctness, and code quality (Section 4.5). 3. Despite the aggregate gap, there is a real and reproducible subset of tasks where the diff-based model wins on judge-rated quality, and this subset is not random: it concentrates heavily in short edit trajectories (Section 4.6). 4. The category- and trajectory-length-based findings are not two separate phenomena: the two task cate-gories where diff-based wins are overrepresented (refactoring and error-handling/edge-case fixes) are, independently, the two lowest mean-edit-step-count categories in the dataset for both architectures. We unify these into a single explanatory variable we call task locality (Section 4.7). 
+
+# 2 Related Work 
+
+Edit formats as an inference-time interface. The most direct practical precedent for this work is the Aider project’s ongoing benchmarking of edit formats across many LLMs (Aider, ongoing), which finds that diff-style formats (unified diff, search/replace) reduce token cost relative to whole-file replacement but increase the incidence of edits the harness cannot mechanically apply, with the effect more pronounced in weaker models. Our apply_failed and malformed stop_reason categories (Section 3.2) are a direct analogue of this failure mode, measured end-to-end on models we trained and evaluated ourselves rather than via API calls to third-party models. 2Diff/edit sequences as a training curriculum. LintSeq (Piterbarg et al., 2025) decomposes reference programs into synthetic, lint-clean edit sequences and shows that training on the sequence (not just the final program) improves pass@1 on downstream code-synthesis benchmarks relative to training on final programs alone. Our “steps” models are trained on edit trajectories in a similar spirit, but applied to a code-editing 
+
+task (modify an existing file) rather than code synthesis from a blank slate, and our result is directionally opposite for this task/domain: on Flutter/Dart editing specifically, the edit-trained model underperforms the direct model by a wide margin. We view these as reconcilable rather than contradictory — see Section 5 for discussion of why editing an existing, semantically constrained file may behave differently from synthesizing a new one. 
+
+Adaptive and hybrid formats. Cheng et al. (2026) argue that the choice between diff and whole-file output should be adaptive per-edit rather than fixed per-model, and report that different edit categories favor different formats. Our task-locality finding (Section 4.7) is complementary evidence for exactly this claim, obtained independently on a different domain: we find that the diff-based model is specifically competitive on short, spatially localized edits and specifically weak on longer, non-local ones, which is consistent with an adaptive-format model doing better than either fixed-format model. 
+
+Iterative program repair and multi-step editing agents. Iterative, multi-turn editing is also the dominant paradigm in LLM coding agents evaluated on SWE-bench-style benchmarks (Deng et al., 2025; Zhang et al., 2026; Vallecillos Ruiz et al., 2025), where a model proposes a patch, observes tool/test feedback, and revises. Our steps mode is a simpler, single-pass version of this loop (no execution feedback between edits; the model commits to a full edit trajectory conditioned only on its own prior edits), and our results should not be read as a claim about agentic, feedback-driven repair loops, which are architected differently and evaluated on a different distribution of tasks (bug localization and repair in large real-world repositories, rather than small self-contained Flutter/Dart snippets). We discuss this scoping limitation in Section 6. 
+
+Instruction-tuned code editing. Li et al. (2024) study instruction-tuning specifically for code-editing tasks and report that response format choices materially affect edit quality, again consistent with edit format being a real design axis rather than a purely cosmetic one. 
+
+# 3 Methodology 
+
+3.1 Models and training regimes 
+
+We use two backbones with very different capacity and pretraining history: • Rainbow-Pony-100M : a ∼100M-parameter decoder-only transformer trained entirely from scratch for this project. The shared pretrained checkpoint (before either direct- or steps-mode fine-tuning) is released as bbidpa/Rainbow-Pony-100m-Flutter-base : pretrained for 119,000 steps (batch size 16, block size 1,024; 16,384 tokens/step) on ≈1.95 billion tokens — ≈0.79 of one epoch over a 2.60-billion-token corpus (2.47B train / 131M validation tokens; 70% Flutter/Dart source code, 30% English text) — using a custom 16k-vocabulary BPE tokenizer, with a cosine learning-rate schedule peaking at 3 × 10 −4
+
+and decaying to 2 × 10 −5 by the final logged step, and final train/validation loss of 1.28/1.31 (last logged evaluation, step 118,800). The pretrain-stage checkpoint has 98,146,432 parameters; resizing the vocabulary to 16,022 post-hoc to accommodate structural special tokens such as <GOAL> , <CODE> , and the steps-mode action tags brings the two fine-tuned checkpoints to 98,163,350 parameters each. Unlike Qwen2.5-Coder, this backbone has no exposure to any other programming language or to a general-purpose 3multi-language code pretraining corpus, which isolates the effect of output regime from any confound introduced by a broadly-pretrained backbone’s own biases toward one format or another. • Qwen2.5-Coder-0.5B (Hui et al., 2024): a pretrained code model ( ∼0.5B parameters, itself derived from Qwen2.5-0.5B), fine-tuned on the same underlying Flutter/Dart task pool as Rainbow-Pony (Section 3.1.1). This tests whether the direct-vs-steps gap is an artifact of an undertrained from-scratch model or persists in a model that already has substantial code-generation prior. Each backbone is fine-tuned in two regimes on task data derived from the same underlying pool of source examples (Section 3.1.1): • direct : given the initial file and an edit instruction, the model generates the complete modified file in a single forward pass. • steps : given the initial file and instruction, the model generates a sequence of search/replace edit actions. Each action is mechanically applied to the current file state (see apply_edit below) before the next action is generated, until the model emits an explicit stop action or a maximum step budget (20 steps) is reached. This yields four arms — rainbow-pony-direct , rainbow-pony-steps , qwen-direct , and 
+
+qwen-steps — all evaluated on the same held-out Flutter/Dart task set under greedy decoding. 
+
+3.1.1 Training data 
+
+Both fine-tuning datasets derive from the same underlying pool of 14,600 hand-designed Flutter/Dart tasks, released as bbidpa/flutter-full-examples-v1 (goal , initial_code , final_code triples spanning 36 task types across three complexity tiers; Apache-2.0 license). This pool is used directly as the direct-mode fine-tuning data (5M tokens sampled from it) and is also the source for a step-decomposition procedure — in the spirit of LintSeq’s synthetic edit sequences (Piterbarg et al., 2025) — that expands each full-file example into a forward/backward sequence of individual search/replace edits, released as 
+
+bbidpa/flutter-diff-steps-v1 (100K–1M rows, each row one step in a trajectory linked back to its source example via source_example_id ; Apache-2.0 license). Steps-mode fine-tuning draws 50M tokens from this decomposed set. We flag explicitly that this means the two fine-tuning regimes are not token-matched: steps mode receives roughly 10 × more fine-tuning tokens than direct mode (50M vs. 5M), a direct consequence of a single full-file example expanding into many step-level training rows under decomposition. We discuss the implication of this asymmetry in Section 6. Table 1 reports the fine-tuning configuration actually used for each arm. All four arms share a batch size of 8 and a block size of 1,024. The direct-mode arms were each trained for 5,000 steps ( ≈3.0 target epochs over their respective ≈13.1k-example train splits); the steps-mode arms were each trained for 43,000 steps ( ≈3.0 target epochs over their respective step-decomposed train splits). Three of the four arms — 
+
+rainbow-pony-direct , rainbow-pony-steps , and qwen-steps — used a cosine learning-rate schedule with peak LR 3 × 10 −5 decaying to a floor of 3 × 10 −6, confirmed directly from the full per-step training logs: each of these three runs’ logged LR reaches 3.00 × 10 −5 shortly after warmup (step ∼500) and decays to 3.0 × 10 −6 at its final logged step. 
+
+qwen-direct did not follow this schedule, and we disclose this rather than silently correct it after the fact. Its cosine scheduler was built while the run’s target step count was, at that point in our training script, still set to the step-mode value (43,000) rather than the 5,000 steps this arm actually ran, so the scheduler’s decay horizon was roughly 8.5× longer than the run itself: at step 5,000 the schedule had only traversed 4the first ∼12% of its intended cosine decay. The logged LR for this run confirms this exactly — it reaches 
+
+3.00 × 10 −5 after warmup as intended, but only decays to 2.9–3.0 × 10 −5 (not 10 −6) by its final logged step, roughly an order of magnitude higher than the other three arms at the same point in training. All 
+
+qwen-direct results reported in this paper are computed from the checkpoint this run actually produced; see Section 6 for discussion of the likely direction of this deviation’s effect. Final train/validation loss, taken from each run’s last logged evaluation, is available for all four arms. Table 1: Fine-tuning configuration and outcome per arm, as logged by the training harness. Batch size 8 and block size 1,024 throughout. 
+
+Arm Params Steps Epochs Fine-tune tokens Final train loss Final val loss rainbow-pony-direct 98.16M 5,000 3.06 5.03M / 0.54M (val) 0.157 0.189 rainbow-pony-steps 98.16M 43,000 2.99 146.1M processed ∗ 0.221 0.292 qwen-direct 493.81M 5,000 3.05 4.71M / 0.52M (val) 0.074 0.162 qwen-steps 493.81M 43,000 2.96 138.3M processed ∗ 0.202 0.247 
+
+> ∗
+
+The steps-mode fine-tuning dataset is ≈50M tokens (Section 3.1.1); “tokens processed” is larger because training ran for ≈3 epochs over it, re-visiting the same tokens multiple times, whereas the direct-mode dataset column reports the (single-epoch-sized) token count of the underlying train/validation split directly. 
+
+3.1.2 Action format 
+
+Concretely, each steps-mode instance is a plain-text prompt with tagged sections — <GOAL> , <CODE> (the file’s current state), <HISTORY> (prior actions in the trajectory so far, empty on the first step), and an open 
+
+<OUTPUT> tag the model completes — and the model’s completion is one <ACTION> record (an action 
+
+TYPE and a natural-language DESC ) plus one or more <CHANGES> hunks, terminated by </OUTPUT> 
+
+(with an additional <DONE></DONE> marker when the action is the trajectory’s final step). Listing 1 is a real, unedited training instance from flutter-diff-steps-v1 (second step of a two-step trajectory, rendered by the same render_step_prompt function used at both training and inference time): Listing 1: A real steps-mode training instance: prompt (everything through the open <OUTPUT> tag) plus the model’s target completion.                      
+
+> <GOAL> Create asimple stateless Flutter widget displaying centered text </GOAL> <CODE> import ’package:flutter/material.dart’; </CODE> <HISTORY> <ACTION><TYPE>add_import</TYPE><DESC>Added the import statement ’import ’package:flutter/ material.dart’;’</DESC></ACTION> </HISTORY> <OUTPUT> <ACTION><TYPE>add_method</TYPE><DESC>Added the main method with runApp call.</DESC></ACTION> <CHANGES> <HUNK> <SEARCH> import ’package:flutter/material.dart’; </SEARCH> <REPLACE>
+
+5import ’package:flutter/material.dart’; void main() {runApp(MaterialApp(home: SimpleTextWidget())); }</REPLACE> </HUNK> </CHANGES> </OUTPUT> 
+
+Direct mode uses the same <GOAL> , <CODE> , and <OUTPUT> tags but no <HISTORY> or <ACTION> /
+
+<CHANGES> structure: the model’s completion is simply the complete modified (or newly created) file, verbatim, followed by </OUTPUT> .
+
+3.1.3 Edit application and the fallback heuristic 
+
+Each steps-mode edit action specifies a search span and a replace span. Application is exact-match: if 
+
+search occurs in the current file exactly once, it is replaced; if it occurs zero times, the edit is rejected out-right (an apply_failed step). If it occurs more than once , a fallback heuristic is invoked to disambiguate, since rejecting on ambiguity alone would make every short-and-generic search span an automatic failure. Our fallback resolves ambiguity by matching the first occurrence of search in the file: 
+
+count = code.count(search) if count ≤ 1: raise (re-raised as apply_failed) index = code.find(search) return code[:index] + replace + code[index + len(search):] 
+
+We flag this as a heuristic, not a principled fix: neither first-occurrence nor last-occurrence resolution is reliably correct in general, since either can silently edit the wrong instance of a repeated span. A more robust design would reject overly generic or short search blocks outright rather than guessing; we did not implement this and note it as a source of some of the done -but-still-dart_pass=False trajectories discussed in Section 4.3. 
+
+3.2 Evaluation harness and metrics 
+
+Each model is evaluated on the same ≈1,790-example held-out set ( rainbow-pony : n = 1 ,789 ; qwen :
+
+n = 1 ,792 ; the small difference is attributable to differing tokenizer behavior under a fixed 1024-token block size during tokenization, which drops a handful of examples differently per tokenizer). For each example we record: • dart_pass : whether the model’s final output passes Dart static analysis ( dart analyze ) — our primary correctness signal. • bits_per_byte : model perplexity on the reference completion, computed identically regardless of mode (a single-shot teacher-forced score against the reference final_code , decoupled from the steps trajectory itself — see the caveat in Section 4.6.1). • similarity_ratio : character-level similarity between the model’s output and the reference final_code .• stop_reason (steps mode only): why the trajectory ended — done (model emitted an explicit stop action), 
+
+max_steps (20-step budget exhausted), apply_failed (an edit could not be applied and no fallback rescued it), or malformed (the model emitted an unparseable action). 6• num_steps , num_fallback_steps (steps mode only): the trajectory length and how many of those steps required the ambiguity fallback of Section 3.1.3. 
+
+3.3 Matched-ID (“clean” / “best-case”) comparison 
+
+A naive direct-vs-steps comparison on the full held-out set risks conflating two distinct effects: (a) steps mode is worse at the same task , and (b) steps mode’s failures happen to concentrate on tasks that are independently harder. To separate these, we define a clean steps-mode subset per architecture:               
+
+> clean_steps ={r∈steps_results :stop_reason (r) = done
+> ∧num_fallback_steps (r) = 0 ∧num_steps (r)<20 }
+
+i.e. trajectories that completed normally, required no ambiguity fallback, and did not hit the step budget. We then compare this subset against the direct -mode results on the same sample IDs (matched_direct ), rather than against direct’s full results. We refer to this restricted, same-ID comparison as the matched-ID comparison throughout, and to it further restricted to dart_pass=True steps rows as the best-case 
+
+comparison, since it isolates the specific population of steps trajectories a practitioner could hope to reach with more training (no fallback, no budget exhaustion, and a correct result). 
+
+3.4 Blinded LLM-as-judge protocol 
+
+To validate that dart_pass (a binary static-analysis signal) is not masking quality differences among code that compiles on both sides, we additionally score a subset of outputs with an LLM judge. The judge is shown only the task instruction, the initial file, and a single candidate output file; it is never told the model name, training mode, or the dart_pass outcome for that candidate (a fully blinded, single-candidate protocol — the judge scores one output in isolation per call, not a head-to-head pair). It returns three integer ratings on a 1–5 scale via a structured-output schema: goal_fulfillment , correctness , and 
+
+code_quality , plus a free-text justification. The judge model used throughout is gpt-4.1 . Unlike a subsampled audit, the judge was run over essentially the full held-out set for all four arms: 1,792/1,792 rows for qwen-direct and qwen-steps , 1,789/1,789 for rainbow-pony-direct , and 1,788/1,789 for rainbow-pony-steps (one row skipped with judge_error=empty_output_code , i.e. the model produced no output to score) — 7,161 judged rows in total across the four evaluation datasets. 
+
+# 4 Results 
+
+4.1 Aggregate performance 
+
+Table 2 summarizes all three core metrics across the four arms. Wilson 95% confidence intervals are reported for dart_pass .Table 2: Aggregate evaluation metrics by architecture and mode. n is the held-out set size per architecture (shared across its direct/steps arms). Architecture Mode n dart_pass (95% CI) bits/byte similarity Rainbow-Pony-100M direct 1,789 0.802 [0.783, 0.820] 0.107 0.511 Rainbow-Pony-100M steps 1,789 0.347 [0.325, 0.369] 0.180 0.439 Qwen2.5-Coder-0.5B direct 1,792 0.900 [0.885, 0.913] 0.088 0.568 Qwen2.5-Coder-0.5B steps 1,792 0.501 [0.478, 0.524] 0.142 0.493 7Direct generation beats steps-mode generation by a wide, non-overlapping margin on dart_pass 
+
+for both architectures (45.5 percentage points for Rainbow-Pony; 39.9 points for Qwen), and consistently on bits_per_byte and similarity_ratio as well. The gap is present regardless of whether the backbone was trained from scratch or fine-tuned from a strong pretrained checkpoint, which argues against “the from-scratch model just hasn’t learned the edit format yet” as a complete explanation. Figure 1 visualizes these results together with the stop-reason, fallback, and judge-score breakdowns discussed in the remainder of this section. 
+
+4.2 Failure attribution: where do steps-mode failures come from? 
+
+A natural hypothesis is that steps-mode’s lower dart_pass rate is mostly a process-failure artifact: the model runs out of its step budget, or an edit cannot be applied. Table 3 shows this is not the dominant story. Table 3: Steps-mode trajectory outcomes ( stop_reason ) by architecture. Architecture done apply_failed max_steps malformed Rainbow-Pony-100M 1,525 (85.2%) 116 (6.5%) 144 (8.1%) 4 (0.2%) Qwen2.5-Coder-0.5B 1,456 (81.3%) 118 (6.6%) 213 (11.9%) 5 (0.3%) The large majority of steps-mode trajectories (81–85%) complete normally ( stop_reason=done )rather than failing outright. Table 4 breaks dart_pass down by stop_reason .Table 4: dart_pass rate conditional on stop_reason , steps mode. malformed has n ≤ 5 per architecture and is noise. Architecture done apply_failed max_steps malformed ( n)Rainbow-Pony-100M 0.356 0.336 0.236 1.00 (4) Qwen2.5-Coder-0.5B 0.569 0.229 0.183 0.60 (5) Because done trajectories are both the large majority of the data and have a dart_pass rate well below the direct-mode baseline, they account for the bulk of total steps-mode failures: approximately 84% of all Rainbow-Pony steps-mode failures and approximately 70% of all Qwen steps-mode failures occur in trajectories that completed normally, not in trajectories that hit the step budget or suffered an unrecoverable apply failure. In other words, most of the quality gap is silent content corruption within successfully-completed trajectories , not budget exhaustion or mechanical apply errors. 
+
+4.3 The role of fallback edits 
+
+Section 3.1.3 noted that ambiguous search spans are resolved via a first-occurrence heuristic rather than rejected. Table 5 shows this heuristic is a major driver of failure even among done trajectories. Trajectories that required at least one fallback resolution pass at less than a quarter of the rate of trajectories that never needed one, for both architectures. Despite being a minority of done rows, fallback-affected trajectories account for roughly 65% (Rainbow-Pony) and 71% (Qwen) of all failures within the done 
+
+bucket. This localizes a large share of the quality gap to a specific, identifiable mechanism: ambiguous edit targets that the model itself created (by emitting a search span that matches multiple locations) and that our disambiguation heuristic cannot reliably resolve. 8Figure 1: Summary panel: dart_pass rate, bits_per_byte , similarity_ratio , stop-reason and fallback breakdowns, the matched-ID best-case comparison, and blinded judge scores, across both architectures. 9Table 5: dart_pass rate within done -only trajectories, split by whether the trajectory required at least one ambiguity-fallback edit. Architecture no fallback ( n) fallback used ( n)Rainbow-Pony-100M 0.570 (795) 0.123 (730) Qwen2.5-Coder-0.5B 0.800 (919) 0.175 (537) 
+
+4.4 Correcting for task-selection bias: matched-ID comparison 
+
+Applying the matched-ID methodology of Section 3.3 to Rainbow-Pony yields 792 “clean” steps IDs (done, no fallback, <20 steps). Comparing this subset against direct-mode results restricted to the same IDs (Table 6) shows two things. First, the clean subset is measurably easier for direct mode too (matched-direct’s dart_pass rate exceeds direct’s full-population rate from Table 2), confirming that “clean” steps trajectories are not a random sample of tasks — they skew toward intrinsically easier edits. Second, and more importantly, once this selection effect is accounted for, the residual gap between steps and direct is larger , not smaller, than the naive full-population gap. Table 6: Matched-ID comparison: clean steps-mode trajectories vs. direct mode on the identical sample IDs. Recomputed directly from the released evaluation datasets (Section 8). Architecture clean IDs ( n) clean-steps dart_pass matched-direct dart_pass gap (pp) Rainbow-Pony-100M 792 57.2% 82.1% 24.9 Qwen2.5-Coder-0.5B 919 80.0% 92.4% 12.4 
+
+4.5 Independent confirmation via blinded LLM judge 
+
+The matched-ID comparison still relies on dart_pass , a binary static-analysis signal that says nothing about the quality of code that compiles on both sides. We therefore restrict the matched-ID subset further to rows where dart_pass=True on both sides, and score those rows with the blinded judge of Section 3.4. Table 7 reports the results. Table 7: Blinded LLM-judge scores (1–5 scale) among matched-ID rows where both steps and direct pass 
+
+dart_pass (n = 390 paired rows for Rainbow-Pony-100M, n = 688 for Qwen2.5-Coder-0.5B). All six pairwise differences are significant under Welch’s t-test at p < 0.001 . Recomputed directly from the released evaluation datasets (Section 8). Architecture Dimension steps direct t (Welch) p
+
+Rainbow-Pony-100M goal fulfillment 3.44 3.89 −4.27 2.2 × 10 −5
+
+correctness 3.71 4.14 −4.60 5.0 × 10 −6
+
+code quality 3.96 4.46 −6.87 < 10 −6
+
+Qwen2.5-Coder-0.5B goal fulfillment 4.36 4.72 −6.95 < 10 −6
+
+correctness 4.36 4.75 −8.17 < 10 −6
+
+code quality 4.52 4.82 −8.25 < 10 −6
+
+Even restricted to code that compiles on both sides, direct-mode output is rated measurably higher quality 10 by a judge that never saw which arm produced which output. This is the paper’s central negative result for steps mode: roughly half of the raw dart_pass gap is explained by steps mode’s lower compile rate, but the other half is a genuine, judge-confirmed residual quality difference among code that compiles successfully either way. Figures 2 and 3 present the same six-metric comparison as a heatmap, for the full population and the best-case subset respectively. 
+
+Figure 2: Heatmap summary of all four arms across six key metrics (darker = better, per-column normalized). 
+
+Figure 3: Same heatmap restricted to the best-case steps population (done, no fallback, <20 steps, 
+
+dart_pass=True ) vs. matched direct-mode rows. 
+
+4.6 Where does steps mode win? A paired analysis 
+
+Sections 4.1–4.5 establish that direct mode wins in aggregate, robustly. This section asks the complementary question: is there any identifiable subpopulation where steps mode is competitive or better, and if so, what characterizes it? We answer this via a per-row paired analysis: for every sample ID present in both a model’s direct and steps outputs, we flag whether steps “wins” on each metric (a strict improvement over direct on that same task). 
+
+4.6.1 Per-metric win rates 
+
+Table 8 reports the resulting win rate for each metric. 11 Table 8: Steps-mode per-row win rate by metric, across both architectures (ranges span the two architectures). Metric steps win rate dart_pass (steps passes, direct fails) 3.5% – 4.8% bits_per_byte (steps lower) 0.1% – 0.3% similarity_ratio (steps higher) 33.7% – 34.8% judge dimensions (steps higher) 4.8% – 9.2% Two of these numbers require a caveat before they can be interpreted as signal. bits_per_byte 
+
+is computed identically regardless of mode — a single-shot teacher-forced score against the reference completion — so it is structurally decoupled from whatever the steps trajectory actually did; its near-zero win rate is expected and uninformative about editing quality. similarity_ratio ’s unusually high win rate is, we believe, a metric artifact rather than a real quality signal: steps mode’s edit-based generation process naturally preserves more character-level overlap with the reference final_code , because both were constructed via incremental edits from the same initial_code , independent of whether the edits were semantically correct. We therefore treat the dart_pass and judge win rates as the meaningful signal, and focus the remainder of this section on those. We also tested whether initial_code_len (the length of the file being edited) predicts steps-mode wins, on the hypothesis that longer starting files might favor an edit-based approach. This hypothesis is rejected: the effect has opposite sign between architectures (Rainbow-Pony wins skew toward 6% longer initial files; Qwen wins skew toward 11% shorter ones), and both effects are small. File length alone does not explain when steps mode wins. 
+
+4.6.2 Category analysis 
+
+Table 9 shows the task-category composition of dart_pass steps-mode wins relative to each category’s baseline share of the dataset (11.2% under a 9-category uniform baseline). Table 9: Task categories overrepresented among dart_pass steps-mode wins, relative to their ∼11.2% baseline share of the dataset, in both architectures. Win counts are small ( n = 63 –86 total wins per architecture); other categories disagreed in direction between architectures and are treated as noise. Category Rainbow-Pony share of wins Qwen share of wins refactoring_edits 18.6% 14.3% error_handling_and_edge_cases 15.1% 15.9% (baseline share, all categories) ∼11.2% These are the only two categories consistently overrepresented among steps-mode wins in both architec-tures. 
+
+4.6.3 Trajectory length analysis 
+
+We next asked whether steps-mode wins concentrate at particular trajectory lengths ( num_steps ). Table 10 compares the mean/median num_steps of rows where steps wins on a majority ( ≥ 2 of 3) of judge dimensions against all other rows. The same pattern holds when the three judge dimensions are tested individually (Table 11): in all six tests (2 architectures × 3 dimensions), steps-mode wins are associated with significantly shorter trajectories. 12 Table 10: Trajectory length ( num_steps ) for composite judge-majority wins vs. all other rows. All differences significant under Welch’s t-test, p ≈ 0.Architecture wins mean wins median rest mean rest median t
+
+Rainbow-Pony-100M 5.54 5 8.94 8 −8.60 
+
+Qwen2.5-Coder-0.5B 6.65 6 9.02 8 −4.54 
+
+Table 11: Per-dimension Welch’s t-tests: trajectory length of steps-mode judge wins vs. non-wins. All 
+
+p < 0.001 .Architecture Dimension t p
+
+Rainbow-Pony-100M goal fulfillment −8.48 < 0.001 
+
+correctness −9.99 < 0.001 
+
+code quality −5.09 < 0.001 
+
+Qwen2.5-Coder-0.5B goal fulfillment −3.85 0.0002 
+
+correctness −5.39 < 0.001 
+
+code quality −3.72 0.0003 
+
+Win rate declines monotonically (with minor noise) from roughly 10–18% at num_steps 1–6 down to approximately 0% by num_steps 14–19, and this decline is consistent across all six category/architecture breakdowns we examined (Figures 4 and 6). The underlying raw judge score shows the same pattern from the other direction: steps mode’s own score declines steadily as trajectory length grows, most visibly in Figure 5 (and Figure 7 for the best-case-only subset), while direct mode’s score on the same rows stays roughly flat across the same range — the win-rate decline above is a direct consequence of this asymmetry between the two modes, not an independent effect. For reference, Figure 7 shows the same best-case-steps-vs. matched-direct judge scores as Figure 5, but restricted to the best-case subset on both axes (rather than overlaid against the all-data lines). 
+
+4.7 Unifying the findings: task locality 
+
+Sections 4.6.2 and 4.6.3 report what look like two separate findings — a category effect and a trajectory-length effect — but they are the same mechanism observed twice. Table 12 reports mean num_steps by category, sorted ascending, for both architectures. Table 12: Mean num_steps for the two win-overrepresented categories vs. the full 9-category distribution. Both are the lowest or near-lowest mean-step-count categories in both architectures. Category Rainbow-Pony mean steps Qwen mean steps refactoring_edits (median 2–3) 4.14 4.49 error_handling_and_edge_cases 6.84 7.24 
+
+refactoring_edits and error_handling_and_edge_cases are, in both architectures, lit-erally the two lowest mean-num_steps categories out of nine. This is not a coincidence: it is the same underlying variable driving both the category finding and the trajectory-length finding. We term this variable 
+
+task locality — how spatially narrow and self-contained the required change is — and conclude that task 13 Figure 4: Judge win rate by trajectory length ( num_steps ), all steps rows vs. best-case-only steps rows, per architecture and judge dimension. 
+
+Figure 5: Mean judge score by trajectory length: steps (all data), steps (best-case IDs), direct (all data), direct (best-case IDs). 14 Figure 6: Win rate by trajectory length for both directions (steps-wins, direct-wins), all data vs. best-case IDs. 
+
+Figure 7: Judge score by trajectory length, best-case steps (done, no fallback, <20 steps, 
+
+dart_pass=True ) vs. matched direct-mode rows on the same sample IDs. Shown for reference alongside Figure 5. 15 locality, not category label or architecture per se, is what predicts when an iterative diff-based approach is competitive with direct whole-file generation. 
+
+# 5 Discussion 
+
+The aggregate picture is unambiguous: on this Flutter/Dart editing task, at both model scales we tested, whole-file direct generation is the better default. But the task-locality finding gives that result a mechanism, not just a verdict. Every additional edit step in a steps-mode trajectory is an additional opportunity for the ambiguity-fallback heuristic (Section 3.1.3) to silently pick the wrong occurrence of a repeated span, for error to compound across a longer chain of dependent edits, and for the model to lose track of file state it is not directly re-reading in full at each step. Direct generation pays a fixed cost (regenerate everything) regardless of how localized the true change is; steps mode pays a cost that scales with trajectory length, and our results show that cost grows faster than its token-efficiency benefit for anything beyond a handful of steps. This also reframes the relationship to LintSeq’s finding (Piterbarg et al., 2025) that edit-sequence training improves code synthesis . Synthesizing a new program via a chain of small, individually-verifiable (lint-clean) edits is a fundamentally different task from editing an existing, already-correct file under our steps regime: in LintSeq’s setting, every edit step is checked against a linter before being kept in the training sequence, and the “correct” end state is being constructed incrementally rather than located inside an already-semantically-constrained file where a wrong disambiguation can silently break something that was previously working. Our results are consistent with Cheng et al. (2026)’s adaptive-format argument: the two paradigms are not in conflict once task locality is taken into account, they are complementary tools for different points on the same axis. 
+
+# 6 Limitations 
+
+• Unequal fine-tuning token budgets. As disclosed in Section 3.1.1, steps-mode fine-tuning used roughly 
+
+10 × more tokens than direct-mode fine-tuning (50M vs. 5M) for both architectures, since step-decomposing the same source examples multiplies row count. We did not token-match the two regimes. This asymmetry cuts against our central finding rather than explaining it away: steps mode still underperforms direct mode in aggregate despite the larger fine-tuning budget, which if anything strengthens the case that the gap reflects something about the output regime itself rather than undertraining. We nonetheless flag it as a confound a token-matched follow-up should control for directly, particularly for the task-locality result (Section 4.7), where it remains possible that longer trajectories are specifically undertrained relative to short ones within the steps-mode fine-tuning set. • Single-domain evaluation. All results are on Flutter/Dart code editing specifically. We make no claim that the direct-over-steps ranking generalizes to other languages or to larger, multi-file repositories. • Greedy decoding, single sample. All four arms are evaluated under greedy decoding with one generation per task; we do not measure pass@ k or the effect of sampling temperature on either regime. • No execution feedback in steps mode. Our steps mode commits to a full edit trajectory without observing compiler or test feedback between edits, unlike agentic repair loops (Deng et al., 2025; Zhang et al., 2026; Vallecillos Ruiz et al., 2025). Results here should not be extrapolated to feedback-driven, tool-using agents. • Ambiguity-fallback heuristic. The first-occurrence fallback (Section 3.1.3) is a known source of silent er-rors; a steps-mode model trained/evaluated against a stricter apply harness (e.g., one that rejects ambiguous 
+
+search spans outright rather than guessing) might show a smaller gap, since some of what we attribute to “steps mode is worse” may partly be “our apply harness guesses wrong.” 16 • Judge validity. The blinded LLM judge ( gpt-4.1 ; Section 3.4) is itself a model with its own biases; we mitigate obvious confounds (blinding to model identity, mode, and dart_pass outcome) but do not independently validate judge scores against human raters in this work. A human-agreement spot-check on a sample of judged rows would strengthen this result and is left to future work. • Small-n subgroup analyses. The category-level win analysis (Section 4.6.2) is based on 63–86 total wins per architecture; the two highlighted categories are robust across both architectures, but per-category counts within that are small and we do not report category-level significance tests. • qwen-direct trained under an unintended, non-decaying learning rate. As disclosed in Sec-tion 3.1.1, a scheduler configuration error left qwen-direct ’s learning rate at 2.9–3.0 × 10 −5 for the back half of its run, instead of annealing down to the 3×10 −6 floor the other three arms reached. Consistent with this, its validation loss falls steadily through step ∼2,400 and then plateaus into a noisy ≈ 0.143 –0.164 
+
+band for the remaining ≈2,600 steps rather than continuing to settle — the kind of persistent oscillation an LR that never anneals would be expected to produce. We take this as suggestive, not conclusive, evidence that a properly-decaying run would have converged to a tighter optimum. Despite the deviation, 
+
+qwen-direct is the best-performing arm in this paper on every metric we report (Table 2), so we have no evidence it hurt the result; if a corrected schedule would have pushed performance higher still, that only strengthens our central finding rather than undermining it. We report the result from the checkpoint actually produced rather than re-running training, and flag this explicitly for reproducibility. 
+
+# 7 Conclusion 
+
+Across two architecturally distinct code models trained on the same Flutter/Dart editing data, direct whole-file generation outperforms iterative diff-based generation on every metric we measured, including a blinded LLM judge’s assessment of code that compiles successfully under both regimes. This is not primarily a story about the diff-based model running out of budget or producing unparseable edits — most of the gap comes from trajectories that complete normally but drift semantically, disproportionately so when an edit’s 
+
+search target is ambiguous. At the same time, diff-based generation is not uniformly worse: it is specifically competitive on short, spatially local edits, and the categories where it wins are exactly the categories that are, independently, shortest in required trajectory length. We term this task locality and suggest it as the right axis along which to decide, per edit rather than per model, whether a whole-file or diff-based generation strategy is appropriate — a conclusion that agrees with, and adds an independent empirical data point to, recent adaptive-format proposals (Cheng et al., 2026). 
+
+# 8 Data and Code Availability 
+
+The four evaluation datasets underlying every table and figure in this paper are released on the Hugging Face Hub, one per architecture/mode arm, joined on a shared sample_id column that identifies the same underlying task across all four: • https://huggingface.co/datasets/bbidpa/Rainbow-Pony-100m-Flutter-dir ect-eval (1,789 rows) • https://huggingface.co/datasets/bbidpa/Rainbow-Pony-100m-Flutter-ste ps-eval (1,789 rows) • https://huggingface.co/datasets/bbidpa/Qwen2.5-Coder-0.5B-Flutter-dir ect-eval (1,792 rows) 17 • https://huggingface.co/datasets/bbidpa/Qwen2.5-Coder-0.5B-Flutter-ste ps-eval (1,792 rows) Each dataset includes the task instruction, initial file, reference final file, and model output, together with:               
+
+> • automated metrics: dart_pass and the underlying dart analyze error/warning/info counts, bits_per_byte ,
+> similarity_ratio ;• steps-mode trajectory metadata: stop_reason ,num_steps ,num_fallback_steps ,
+> action_list ,steps_log ;• blinded LLM-judge scores: judge_goal_fulfillment ,judge_correctness ,judge_code_quality ,
+> judge_notes (judge model: gpt-4.1 ).
+
+The four fine-tuned model checkpoints, plus the shared Rainbow-Pony pretrained-only base checkpoint (Section 3.1), are released at: • https://huggingface.co/bbidpa/Rainbow-Pony-100m-Flutter-base (pretrained-only checkpoint, shared by both Rainbow-Pony arms) • https://huggingface.co/bbidpa/Rainbow-Pony-100m-Flutter-direct 
+
+• https://huggingface.co/bbidpa/Rainbow-Pony-100m-Flutter-steps 
+
+• https://huggingface.co/bbidpa/Qwen2.5-Coder-0.5B-Flutter-direct 
+
+• https://huggingface.co/bbidpa/Qwen2.5-Coder-0.5B-Flutter-steps 
+
+The two fine-tuning datasets underlying Section 3.1.1 are released at: • https://huggingface.co/datasets/bbidpa/flutter-full-examples-v1 (14,600 rows; direct-mode fine-tuning source) • https://huggingface.co/datasets/bbidpa/flutter-diff-steps-v1 (100K–1M rows; steps-mode fine-tuning source, decomposed from the same source examples) Licensing differs by artifact type: the four evaluation datasets and all five model checkpoints are released under the MIT license; the two fine-tuning datasets ( flutter-full-examples-v1 and 
+
+flutter-diff-steps-v1 ) are released under the Apache-2.0 license. The training and evaluation harness code — fine-tuning scripts, the step-decomposition pipeline that produces flutter-diff-steps-v1 , the Dart static-analysis evaluation scaffold, and the blinded judge script ( judge_outputs.py ) — is released at https://github.com/bbidpa/rainbow-pony .
+
+# References 
+
+Binyuan Hui, Jian Yang, et al. Qwen2.5-Coder Technical Report. arXiv preprint arXiv:2409.12186 , 2024. Aider-AI. Edit formats and code-editing benchmarks. https://aider.chat/docs/more/edi t-formats.html and https://aider.chat/docs/leaderboards/edit.html , accessed 2026. Ulyana Piterbarg, Lerrel Pinto, and Rob Fergus. Training Language Models on Synthetic Edit Se-quences Improves Code Synthesis. International Conference on Learning Representations (ICLR) , 2025. arXiv:2410.02749. 18 Wei Cheng, Yongchang Cao, Chen Shen, Binhua Li, Jue Chen, Yongbin Li, and Wei Hu. To Diff or Not to Diff? Structure-Aware and Adaptive Output Formats for Efficient LLM-based Code Editing. arXiv preprint arXiv:2604.27296 , 2026. Xiang Deng, Jeff Da, Edwin Pan, et al. SWE-Bench Pro: Can AI Agents Solve Long-Horizon Software Engineering Tasks? arXiv preprint arXiv:2509.16941 , 2025. Yikai Zhang, Jiaxin Pei, Kenan Li, et al. SWE-Edit: Rethinking Code Editing for Efficient SWE-Agent. 
+
+arXiv preprint arXiv:2604.26102 , 2026. Fernando Vallecillos Ruiz, Max Hort, and Leon Moonen. The Art of Repair: Optimizing Iterative Program Repair with Instruction-Tuned Models. Proceedings of the 29th International Conference on Evaluation and Assessment in Software Engineering (EASE) , 2025. arXiv:2505.02931. Kaixin Li, Qisheng Hu, James Xu Zhao, Hui Chen, Yuxi Xie, Tiedong Liu, Michael Shieh, and Junxian He. InstructCoder: Instruction Tuning Large Language Models for Code Editing. Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 4: Student Research Workshop) ,2024. 19
