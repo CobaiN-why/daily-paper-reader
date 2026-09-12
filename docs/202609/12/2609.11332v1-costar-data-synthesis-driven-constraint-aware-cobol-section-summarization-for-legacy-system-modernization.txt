@@ -1,0 +1,460 @@
+Title: CoSTAR: Data Synthesis-Driven Constraint-Aware COBOL Section Summarization for Legacy System Modernization
+
+URL Source: https://arxiv.org/pdf/2609.11332v1
+
+Published Time: Fri, 11 Sep 2026 00:52:06 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+> 1
+
+# CoSTAR: Data Synthesis-Driven Constraint-Aware COBOL Section Summarization for Legacy System Modernization 
+
+Hao Lin, He Jiang, Xiaochen Li, Weihong Sun, Yufu Wang, Zhilei Ren, and Ang Jia 
+
+Abstract —COBOL remains critical to governments, financial institutions, and large enterprises; yet, aging technologies, shrink-ing expertise, and missing documentation make modernization of COBOL-based legacy systems increasingly urgent. Before migration, code summarization is a common practice to support legacy system understanding. However, COBOL code summa-rization, especially on section-level, faces two key challenges: data scarcity and migration constraint preservation. To address these challenges, we propose CoSTAR , an integrated framework that combines execution-validated data synthesis with constraint-aware model training. CoSTAR repurposes general-purpose pro-gramming tasks to synthesize execution-validated COBOL code-summary data through LLM-based generation to overcome data scarcity. Based on the synthesized data, CoSTAR augments target sections with relevant data declarations and natural-language explanations, and uses constraint-guided structured rationales to train smaller base LLMs. The trained LLMs preserve the migration constraints for COBOL section summarization. We evaluate CoSTAR on both public and confidential enterprise COBOL systems. CoSTAR effectively synthesizes 3,764 execution-validated training instances. Based on these instances, CoSTAR 
+
+built on 7B/8B base LLMs can improve these LLMs with average relative gains of 25.38% on ROUGE-L, 53.84% on METEOR, and 37.22% on chrF. In real-world enterprise evaluation, CoSTAR 
+
+built on only Qwen3-8B , outperforms the enterprise-deployed 
+
+Qwen3-235B in accuracy, completeness, and conciseness. These results show that CoSTAR enables small, locally deployable LLMs to achieve performance competitive with substantially larger LLMs for privacy-sensitive COBOL legacy systems. 
+
+Index Terms —COBOL, legacy systems, software moderniza-tion, code summarization, large language models 
+
+I. I NTRODUCTION 
+
+For over six decades, COBOL has supported critical ser-vices across governments, financial institutions, and more than 40,000 enterprises [1], [2]. Over 800 billion lines of COBOL code remain in active use; these systems process 80% of financial transactions, 95% of ATM transactions, and approx-imately USD 3 trillion in daily commercial transactions [3]– [5]. However, the foundations sustaining these systems are becoming increasingly fragile. Decades of evolution have created intricate internal dependencies and incomplete or even misleading documentation [6], [7]. Even worse, the pool of ex-perienced COBOL developers is shrinking dramatically, while technical support is also receding [8], [9]. As reported, nearly 
+
+H. Lin, H. Jiang, X. Li, Y. Wang, Z. Ren, and A. Jia are with the School of Software, Dalian University of Technology, Dalian, China. H. Jiang is also with the DUT Artificial Intelligence Institute, Dalian, China. W. Sun is with Hi-Think Technology, Corp., Dalian, China. Corresponding author: He Jiang. E-mail: jianghe@dlut.edu.cn. 
+
+40% of the most critical U.S. federal legacy systems relied on unsupported hardware or software, while 64% operated with known cybersecurity vulnerabilities [10]. For organizations that still depend on these systems, modernization is becoming increasingly urgent. Legacy system modernization aims to improve the maintain-ability and evolvability of aging systems, typically requiring their business knowledge to be recovered and documented before migration [7]. A seemingly attractive shortcut is direct migration, which bypasses this understanding process by trans-lating legacy code directly into a modern language. However, this direction is impractically. As reported, DOGE planned to use AI to migrate over 60 million lines of COBOL at the U.S. Social Security Administration (SSA) within months; but after nearly a year of effort, the initiative ultimately failed [11]–[13]. This is unsurprising. On the one hand, traditional rule-based translation often carries accumulated technical debt into the target language, producing verbose and difficult-to-maintain “JOBOL” code [14], [15]. On the other hand, LLM-based translation is likewise unreliable. Even on real-world projects in data-rich languages such as Java and Python, the best evalu-ated LLM succeeded on only 8.1% of translations. Worse still, human reviewers may overlook a substantial fraction of bugs in LLM-generated code [16]. Therefore, direct LLM translation cannot be trusted for mission-critical legacy systems, where behavioral deviations are unacceptable [17], [18]. Therefore, prior studies suggest that a more practical route is to understand legacy systems before migration [6], [19]. Code summarization supports this process by distilling pro-gram behavior, data transformations, and business rules into concise natural-language descriptions for subsequent code mi-gration and data transformation [20], [21]. Despite substantial progress, code summarization studies remain concentrated on mainstream languages such as Java and Python, leaving legacy languages (e.g., COBOL) comparatively underexplored [22], [23]. However, applying existing techniques on COBOL code summarization pose two key challenges. 
+
+Challenge 1: Data scarcity. Existing LLM-based code sum-marization methods rely heavily on large-scale aligned code-summary training data [22], [23]. Despite its extensive use in mission-critical sectors (e.g., government and finance), as statistics in Fig. 1, COBOL accounts for only 0.0186% of programming-language tokens [24], since much production COBOL code remains confidential. Moreover, the limited public-available COBOL code lack human-written summary. Most projects contain only file level description. In COBOL, arXiv:2609.11332v1 [cs.SE] 10 Sep 2026 2 
+
+> Fig. 1. Programming-language token distribution in The Stack v3.
+
+section is the natural functional unit for understanding business logic [25], yet section-level summaries are practically absent from public data. This scarcity not only hinders developers from understanding section-level code, but also makes training summarization models at this granularity difficult. 
+
+Challenge 2: Migration constraint preservation. 
+
+Modernization-oriented summaries should not only describe section behavior but also preserve the constraints needed to reproduce that behavior after migration. This is difficult for two reasons. First, as illustrated in Fig. 2, COBOL separates executable logic in the procedure division from identifier definitions in the data division. When taking only section itself as input for summarization, it misses key properties such as 
+
+PIC and VALUE ; while simply retrieving these definitions is insufficient: their behavioral effects depend on how identifiers participate in comparisons, arithmetic, assignments, and state updates. Second, a concise summary cannot report every recovered constraint. The model must identify and prioritize constraints that materially affect migration, such as numeric precision, overflow, boundary conditions, and state effects. Effective modernization-oriented summarization therefore requires both reliable constraint recovery and interpretation, and selective preservation of migration-critical constraints. In this paper, we present CoSTAR , an integrated framework for modernization-oriented COBOL section summarization that addresses both challenges through execution-validated data synthesis and constraint-aware model training. We target COBOL section-level summarization, since this level orga-nizes related paragraphs into a more complete unit of pro-cedural logic, providing a natural granularity for developer-facing documentation [25]. To address data scarcity, CoSTAR 
+
+repurposes the extensive natural-language descriptions and executable tests in general-purpose programming tasks; it uses the former to guide COBOL program generation and the latter to validate and refine the generated programs, thereby en-abling execution-validated code-summary supervision without existing COBOL summaries. To preserve migration-critical constraints, CoSTAR transfers the required capabilities to  
+
+> Fig. 2. An example of COBOL code. COBOL separates data definitions from executable logic. The target section comprises multiple paragraphs but depends on data constraints defined separately in the data division.
+
+two smaller task-specific models, model-explain and model-summary . Model-explain is fine-tuned on teacher-generated identifier explanations to interpret relevant data definitions and construct expanded context. Model-summary is fine-tuned on judge-validated structured rationales to learn which constraints are important for modernization and how to reflect them in the final summary. At inference, the two smaller models run sequentially and locally. They first recover relevant identifier semantics and then generate a constraint-aware summary from the expanded context, without invoking the large teacher LLMs, thereby supporting the data-privacy requirements of enterprise legacy-system modernization. We evaluate CoSTAR on datasets from both open-source and real-world enterprise COBOL systems (dubbed Stack-120 and Industrial-200). The synthesis stage produces 3,764 execution-validated COBOL code-summary instances for sub-sequent model training. Built on four base LLMs (with 7B or 8B parameters), CoSTAR improves COBOL summariza-tion performance, with average relative gains of 25.38%, 53.84%, and 37.22% on ROUGE-L, METEOR, and chrF, respectively. Its best configurations, built on these small models, also remain competitive with substantially larger LLMs (with over 284B parameters). In real-world enterprise evaluation, CoSTAR , built on only Qwen3-8B , outperforms the enterprise-deployed Qwen3-235B by 4.35%, 8.06%, and 4.21% in accuracy, completeness, and conciseness, respec-tively. In ablation experiment, both execution-validated data synthesis and constraint-aware model improves the effective-3
+
+ness of CoSTAR significantly. These results confirms that constraint-aware reasoning with synthesized data by CoSTAR 
+
+enables small, locally deployable LLMs for privacy-sensitive COBOL modernization. The main contributions of this study are as follows.  
+
+> •
+
+We present CoSTAR , an integrated framework for modernization-oriented COBOL section summarization that combines execution-validated data synthesis with constraint-aware reasoning. It constructs training supervi-sion without existing COBOL summaries and explicitly recovers and incorporates data constraints that affect section behavior.  
+
+> •
+
+We conduct extensive experiments on open-source and real-world enterprise COBOL systems, demonstrating the effectiveness of CoSTAR and its key designs.  
+
+> •
+
+We release replication artifacts to support reproducibility and future research on low-resource legacy languages 1.The remainder of this paper is organized as follows. Sec-tion II reviews related work. Section III presents the CoSTAR 
+
+framework. Section IV describes the experimental setup and reports the evaluation results. Section V discusses threats to validity. Finally, Section VI concludes the paper. II. R ELATED WORK 
+
+A. Code Summarization 
+
+Automatic code summarization has evolved from information-retrieval and template-based techniques to neural models, structure-aware approaches, pretrained code models, and, more recently, LLM-based methods [23], [26]. Most data-driven approaches rely on aligned code– summary data, while existing datasets and studies remain concentrated on mainstream languages such as Java and Python [22], [23]. Prior work has reduced annotation dependence through self-supervised pretraining, multilingual learning, data augmentation, and LLM-generated summaries for existing code [22], [27]–[30]. These approaches, however, still presuppose access to target-language code. For legacy languages such as COBOL, however, commercial confidentiality limits access to real-world code, while sparse fine-grained documentation leaves even fewer aligned code–summary pairs. Consequently, methods that rely on existing target-language code or seed code–summary data for augmentation or pseudo-labeling are difficult to apply directly. 
+
+CoSTAR addresses this cold-start setting by synthesizing and execution-validating COBOL code–summary data from the natural-language descriptions and executable tests available in general-purpose programming tasks. Beyond data availability, summarization quality also de-pends on the program context available to the model. Prior work has modeled AST relations and control flow, augmented prompts with automatically extracted semantic facts, expanded code snippets with variable-related statements, and incorpo-rated calling context [31]–[35]. These studies show that the target code alone may be insufficient for complete summariza-tion. However, they primarily capture syntax, control flow, data 
+
+> 1https://github.com/LH01/CoSTAR
+
+flow, or call relationships in mainstream languages. CoSTAR 
+
+instead targets COBOL’s separation of data definitions and executable logic by retrieving relevant data declarations for each target section and further explaining the correspond-ing identifiers in natural language, providing focused cross-division context. Recent LLM-based work has also explored zero- and few-shot prompting, semantic augmentation, and knowledge distil-lation for code summarization [26], [30], [35], [36]. Distilla-tion can train smaller, locally deployable models using sum-maries generated by larger models, while advanced prompt-ing strategies such as chain-of-thought do not consistently improve summarization across models and languages [26], [30]. CoSTAR goes beyond training on teacher-generated final summaries by using constraint-guided structured rationales under judge-based quality control as intermediate supervision, enabling smaller models to learn how identifier semantics and data constraints shape program behavior. 
+
+B. Legacy System Understanding for Modernization 
+
+Legacy system modernization spans re-engineering and migration to new languages, architectures, databases, and platforms [7]. Across these strategies, engineers typically need to recover implemented business functions, component inter-actions, data and state changes, and business rules that must be preserved. Such knowledge supports feasibility assessment, system decomposition, and target-system design [37], [38]. In practice, however, the required expertise is often scarce and existing documentation incomplete [6]. Traditional work supports legacy-system understanding through reverse engineering, program analysis, architecture recovery, business-rule extraction, and redocumentation [39]– [42]. These techniques recover artifacts such as architecture views, call and dependency relationships, control- and data-flow representations, data dictionaries, and business rules [38], [41]. While such artifacts support system-level understanding, engineers maintaining, refactoring, or migrating specific code units also need concise accounts of their behavior, data ef-fects, and governing constraints. Unit-level natural-language summaries therefore complement system-recovery artifacts. LLMs have recently been applied to legacy-code documen-tation. Diggs et al. study line-wise comments for MUMPS and mainframe assembly [43], while XMainframe targets main-frame knowledge and COBOL summarization [4]. However, in COBOL, section is the natural functional unit for under-standing business logic. A section in the procedure division can organize multiple related paragraphs, forming a more complete yet still localized unit of procedural logic and thus a natural granularity for summarization [25]. To our knowledge, existing legacy-code documentation work has not specifically investigated COBOL section-level summarization, nor how to recover relevant data division constraints and semantics at this granularity, and ensure that these constraints inform the final summary. Such constraint-aware section-level documentation is important for efficient program understanding and behavior-preserving migration of COBOL legacy systems. 4         
+
+> Fig. 3. Overview of CoSTAR . Stage 1 synthesizes execution-validated COBOL code–summary data from general-purpose programming tasks. Stage 2 constructs constraint-aware supervision through identifier extraction and explanation and structured rationale generation, and fine-tunes two task-specific models. Stage 3 sequentially applies model-explain and model-summary to generate the final summary. Teacher and judge LLMs are used only for offline supervision construction and quality control. Circled numbers 1⃝–8⃝correspond to the core steps described in the text.
+
+III. A PPROACH 
+
+A. Overview 
+
+This section presents CoSTAR , an integrated framework for COBOL section summarization in legacy system moderniza-tion. Given a COBOL program containing a data division and a target section in the procedure division, our goal is to generate a concise natural-language summary that captures the section’s principal behavior, data effects, and behavior-relevant data constraints. As shown in Fig. 3, CoSTAR comprises three connected stages. Stage 1 repurposes general-purpose programming tasks to synthesize execution-validated COBOL code–summary data, addressing data scarcity. The resulting dataset then supports Stage 2, which connects separated data and logic through relevant data declarations and identifier explanations, and uses constraint-guided structured rationales to train two smaller task-specific models. Stage 3 first explains relevant identifiers in the target section to construct expanded context, and then generates the final constraint-aware summary from this context. 
+
+B. Code Summary Dataset Synthesis 
+
+Stage 1 of CoSTAR constructs COBOL section summa-rization data from general-purpose programming tasks. It is based on a core observation that a programming task can be represented by a task specification, a program implementation, and executable tests: 
+
+Ti = ⟨Spec i, Prog i, Tests i⟩, Spec i = ⟨Desc i, IO i⟩. (1) Here, Ti denotes the i-th programming task. Spec i denotes its task specification, comprising a natural-language description 
+
+Desc i and an input/output specification IO i; Prog i denotes a program implementation; and Tests i denotes its executable tests. The specification and tests jointly constrain the expected program behavior, providing both guidance for program syn-thesis and executable evidence for validating the generated implementation. 
+
+CoSTAR instantiates this relation by providing Spec i to a Code LLM to synthesize a COBOL implementation Prog i,while withholding Tests i for subsequent execution validation. This repurposes the natural-language descriptions and exe-cutable tests already available in general-purpose program-ming tasks to construct execution-validated COBOL code– summary supervision. As shown in Stage 1 of Fig. 3, the process comprises four core elements: 1⃝ a general-purpose programming task dataset, 2⃝ a dataset pre-filter, 3⃝ a COBOL 5      
+
+> TABLE I STATISTICS OF CODE SUMMARY DATASET SYNTHESIS .
+> Item Count
+> Original subproblems 11,592 Removed without executable tests 528 Removed with overlong test content 140 Eligible subproblems 10,924 Execution-validated COBOL instances 3,764
+
+code synthesizer, and 4⃝ a compiler & test executor. We describe them below in the same order. 
+
+1) General-Purpose Programming Task Dataset: The syn-thesis stage does not assume a fixed source-task granularity. Since this study uses COBOL sections as the function-level summarization unit, we instantiate the process with function-level programming tasks. Specifically, we use CodeFlow-Bench [44], whose snapshot in our study contains 11,592 function-level subproblems, providing sufficient synthesis scale and a natural granularity match with individual COBOL sections. Each subproblem provides a natural-language task description, an input/output specification, and executable tests, supplying Spec i and Tests i in Eq. 1. The synthesis process can be applied to other programming-task resources that provide comparable task specifications and executable tests. 
+
+2) Dataset Pre-filter: Before synthesis, the dataset pre-filter removes subproblems that either lack executable tests or contain excessively long test content. The former cannot support behavioral validation, while the latter incur excessive processing overhead. We define the eligible subset as 
+
+Delig = {qi ∈ D raw | Tests i̸ = ∅, ℓ tok (Tests i) ≤ τ }. (2) Here, qi denotes the i-th source subproblem; Draw and Delig 
+
+denote the original and eligible subproblem sets, respec-tively; Tests i denotes the executable tests associated with qi;
+
+ℓtok (Tests i) denotes their token length; and τ is the maximum allowed length. Based on the empirical distribution of test-content lengths, we set τ to 5,000 tokens to remove a small number of unusually long cases while retaining the vast majority of subproblems with executable tests. Among the 11,592 source subproblems, 528 are removed for lacking executable tests and another 140 for exceeding the threshold, leaving 10,924 eligible subproblems. After pre-filtering, the task specification of each eligible subproblem is passed to the COBOL code synthesizer, while its executable tests are reserved for subsequent validation. 
+
+3) COBOL Code Synthesizer: For each eligible subprob-lem, the COBOL code synthesizer instantiates a predefined prompt with its natural-language task description and in-put/output specification and submits the prompt to a Code LLM. As shown in Fig. 4, the prompt specifies the COBOL source format, program structure, input/output conventions, and section organization required for subsequent compilation, execution validation, and section-level summarization. The executable tests are deliberately withheld from the Code LLM and used only by the subsequent compiler & test executor.  
+
+> Fig. 4. Condensed prompt used by the COBOL code synthesizer. The complete prompt is available in our replication repository.
+
+The synthesizer generates a complete COBOL program rather than an isolated section. This provides both the complete structure required for compilation and execution and the data division declarations needed for subsequent constraint-aware summarization. Since a task specification may admit multiple correct implementations, each generated program is treated as a candidate until it passes execution validation. The source task description is retained as the paired summary for the target section once the program is validated. 
+
+4) Compiler & Test Executor: The compiler & test executor validates each candidate through compilation and test execu-tion. Let Compile i indicate that candidate Prog i compiles successfully and PassAll i that it passes every executable test in Tests i. We define the acceptance indicator as 
+
+Accept i =
+
+(
+
+1, Compile i ∧ PassAll i,
+
+0, otherwise . (3) We compile each candidate with GnuCOBOL 3.2 in free source format using cobc -free -x . Its open-source command-line compiler supports the required free-format COBOL source and can be readily integrated into our auto-mated execution-validation pipeline. Compilation and testing provide complementary validation signals. Compilation verifies that the generated program is accepted by the target compiler, while testing checks whether its observable behavior satisfies the source task requirements. Passing a finite test suite does not prove complete semantic correctness, but provides executable evidence that each ac-cepted program satisfies all tested behaviors. Each accepted program yields one execution-validated COBOL section instance, with the source task description serving as its paired summary and the target section, data 6
+
+division, and other information required for subsequent data construction retained. As shown in Table I, 3,764 of the 10,924 eligible subproblems yield programs that compile successfully and pass all tests. These instances form the COBOL code sum-mary dataset that serves as the data foundation for constraint-aware model training in Stage 2 of CoSTAR .
+
+C. Constraint-Aware Model Training 
+
+Stages 2 of CoSTAR address the second challenge, the separation of data and logic. Rather than merely linking the data and procedure divisions, CoSTAR progressively recovers relevant data definitions, explains their semantics, reasons about how the resulting constraints affect section behavior, and transfers this process to two smaller task-specific models. As shown in Fig. 3, Stage 2 comprises three dependent steps. Step 5⃝ recovers and explains relevant data definitions to construct expanded context; Step 6⃝ builds constraint-guided reasoning supervision from this context; and Step 7⃝ uses the resulting data to fine-tune two smaller task-specific mod-els (i.e., model-explain and model-summary ). Strong teacher LLMs are used in Steps 5⃝ and 6⃝ to construct supervision, and the two teacher roles need not use the same underlying model; a judge LLM performs quality control. These large models are used only offline. 
+
+1) Identifier Extraction and Explanation: Constraint-aware summarization first requires recovering the data definitions on which the target section actually depends. For each execution-validated COBOL section instance produced in Stage 1, the regex-based extractor identifies data identifiers referenced by the target section and retrieves their corresponding declarations from the data division, while retaining necessary parent group items and key defining information such as PIC and VALUE .
+
+PIC describes the category and format of a data item, in-cluding properties such as field width and implied decimal positions, whereas VALUE specifies its initial value. Such definitions can affect comparisons, assignments, boundary handling, and other program behavior, making them impor-tant context for understanding the section. We refer to the retrieved declarations as relevant identifier definitions , which preserve pertinent data constraints while excluding unrelated data division declarations. However, raw COBOL declarations remain compact and symbolic, making their data semantics and potential risks difficult for the smaller, locally deployable models targeted in this work to interpret reliably. To provide these models with explicit semantic supervision, a stronger teacher LLM gener-ates a natural-language identifier explanation for each retrieved identifier from its name and raw COBOL definition, describing its physical semantics, constraint bounds, and potential risk profile. The resulting explanations are then combined with the target section and relevant identifier definitions to form the expanded context for subsequent constraint-aware reasoning. The generated results also form the identifier explanation dataset. Each sample maps an identifier and its raw defi-nition to the corresponding identifier explanation. Step 7⃝
+
+later uses this dataset to train model-explain , enabling the same identifier-level semantics and constraints to be recovered individually without invoking a teacher LLM during inference. 
+
+2) Structured Rationale Generation: The identifier expla-nation supplies the target section with relevant data seman-tics, but providing this information alone does not ensure that a summarization model will correctly reason about its behavioral implications or preserve important constraints in the final summary. We therefore construct structured rationale supervision that explicitly organizes identifier understanding, constraint analysis, logic abstraction, and final summarization into a progressive reasoning process. The Description retained in the COBOL code summary dataset originates from the source general-purpose program-ming task and specifies the intended program behavior. Be-cause it exists before the concrete COBOL implementation is synthesized, it cannot capture the data definitions and constraints introduced by that implementation and its data division. CoSTAR therefore uses the Description only as an auxiliary behavioral specification during offline structured rationale construction rather than directly treating it as the final constraint-aware reference summary. A teacher LLM uses the expanded context together with this behavioral specification to generate a structured rationale organized into four ordered phases: 1) Identifier Explanation identifies the roles and behavior-relevant properties of the data items used by the section. 2) Constraint Analysis examines COBOL-specific con-straints such as field formats, numeric precision, signed-ness, initialization values, hierarchy, and shared-state up-dates. 3) Logic Abstraction summarizes the section’s control flow, data flow, branch conditions, iterations, external interac-tions, and state changes. 4) Final Summary integrates the preceding three phases to generate a concise summary of the section’s principal behavior, data effects, and migration-relevant constraints. This organization grounds the final summary in explicitly recovered identifier semantics, data constraints, and section behavior rather than only surface patterns in the local code. In particular, the fourth phase, Final Summary , generates the summary from the preceding three phases so that it can incorporate constraints introduced by the concrete COBOL im-plementation rather than directly reuse the source Description. Automatically generated structured rationales may still con-tain interpretations inconsistent with the code context, inco-herent reasoning, or omissions of important constraints. To prevent such errors from entering the fine-tuning data, a judge LLM evaluates each candidate and returns refinement feedback when the required quality criteria are not satisfied. Given the target section, relevant identifier definitions, iden-tifier explanation, and candidate structured rationale, including its final summary, the judge LLM evaluates the result accord-ing to the three criteria summarized in Table II. Each criterion is scored on a five-point scale. A candi-date is accepted only when Context Adherence and Logical Coherence both score at least 4 and Constraint Coverage receives a score of 5. The first two thresholds allow only minor deficiencies that do not alter the core interpretation, whereas Constraint Coverage uses the strictest threshold because omit-7     
+
+> TABLE II JUDGE CRITERIA AND ACCEPTANCE THRESHOLDS .
+> Criterion Evaluation Focus Threshold
+> Context Adherence Whether identifier explanations are grounded in the provided code and declarations without unsupported properties or omissions.
+> ≥4
+> Logical Coherence Whether constraint analysis and logic abstraction form a consistent reasoning process. ≥4
+> Constraint Coverage Whether the final summary preserves the migration-relevant constraints and state effects identified in the rationale.
+> = 5
+
+Algorithm 1 Teacher–Judge Structured Rationale Refinement                                                    
+
+> Require: Instance context x; Teacher T; Judge J
+> Require: Maximum generation rounds G; maximum refinements R
+> Ensure: Qualified structured rationale r, or ∅
+> 1: for g←1to Gdo
+> 2: r←T. GENERATE (x)
+> 3: for k←0to Rdo
+> 4: (q, f )←J. EVALUATE (x, r )
+> 5: if qsatisfies all acceptance thresholds then
+> 6: return r
+> 7: end if
+> 8: if k < R then
+> 9: r←T. REFINE (x, r, f )
+> 10: end if
+> 11: end for
+> 12: end for
+> 13: return ∅
+
+ting an identified migration-relevant constraint or state effect would directly weaken subsequent summarization supervision. A candidate that fails any threshold is returned to the teacher together with judge-generated refinement feedback. The teacher revises the structured rationale according to this feedback and resubmits it for evaluation, forming a generate– judge–refine loop summarized in Algorithm 1. In our implementation, each generation round allows at most three teacher–judge refinements, and each instance allows at most five independent generation rounds. Local refinement revises an existing candidate according to judge feedback; if the candidate remains unqualified after reaching the refinement limit, a new candidate is generated independently from the original inputs. If a structured-rationale supervision sample remains unqualified across all generation rounds, it is excluded from the structured rationale dataset. Once a candidate passes quality control, its complete four-phase output is retained as the qualified rationale, with the Phase 4 final summary serving as the reference summary. Thus, the qualified rationale and reference summary entering the structured rationale dataset in Fig. 3 originate from the same quality-controlled output rather than from the source Description. The key prompt instructions for identifier explanation, struc-tured rationale generation, judge evaluation, and rationale refinement are summarized in Fig. 5. The figure retains only the instructions defining the inputs, core tasks, and output structures; the complete prompt templates are provided in our replication repository. 
+
+3) Task-Specific Fine-Tuning: Steps 5⃝ and 6⃝ produce two connected forms of supervision. The identifier explanation dataset teaches a model to recover identifier semantics from each identifier and its corresponding definition within the target section context, while the structured rationale dataset teaches a second model to perform constraint-aware reasoning and summarization from the expanded context. We perform supervised fine-tuning with low-rank adaptation (LoRA) on the two datasets, producing two task-specific mod-els. model-explain learns to generate the identifier explanation, whereas model-summary learns to generate the four-phase structured rationale from the expanded context, with Phase 4 providing the final constraint-aware summary. Through this generated supervision, task-specific COBOL understanding and constraint reasoning from the stronger teacher LLMs are transferred to the two smaller deployable models. This task decomposition separates identifier-semantic recov-ery from constraint-aware summarization rather than requiring a single smaller model to learn the entire mapping from raw COBOL code to a constraint-aware summary. Neither the source Description nor judge-generated refinement feedback is available during inference; the teacher and judge LLMs are used only for offline supervision construction and quality control. 
+
+D. Model Inference 
+
+Stage 3 performs Step 8⃝, sequentially applying the two task-specific models trained in Stage 2 to previously unseen COBOL sections. As shown in Fig. 3, the user provides only the target section and its data division; inference requires neither the Description from the source general-purpose pro-gramming task nor the teacher and judge LLMs. The same regex-based extractor first retrieves the relevant identifier definitions for identifiers referenced by the target section from the data division. model-explain then processes each retrieved identifier individually, taking its name and raw definition as input to generate the corresponding identifier explanation. The explanations of all relevant identifiers are then aggregated with the target section and relevant identifier definitions to form the expanded context. model-summary 
+
+generates a structured rationale from this context following the four-phase organization learned during fine-tuning, and its Phase 4 final summary is returned to the user as the generated summary. Consequently, deployment requires only the cross-division information relevant to the current section and the sequential application of two smaller task-specific models, without in-voking the large teacher or judge LLMs. This design explicitly incorporates data constraints that affect section behavior while confining actual inference to locally deployable smaller mod-els, making it suitable for privacy-sensitive enterprise COBOL environments. IV. E VALUATION 
+
+To comprehensively evaluate CoSTAR , we first examine its overall effectiveness, then investigate the contributions of synthesized data, expanded context, and structured rationale 8  
+
+> Fig. 5. Condensed prompt templates used for offline supervision construction in CoSTAR : (a) Identifier Explanation, (b) Structured Rationale Generation, (c) Judge Evaluation, and (d) Rationale Refinement. Complete prompts are provided in our replication repository.
+
+supervision, and finally assess its applicability to real-world enterprise COBOL modernization. We investigate the follow-ing five research questions.  
+
+> •
+
+RQ1. Overall Effectiveness: How does CoSTAR per-form compared with its corresponding base LLMs and large-scale LLM baselines?  
+
+> •
+
+RQ2. Synthesized Data Effectiveness: How does syn-thesized training-data scale affect COBOL section sum-marization performance?  
+
+> •
+
+RQ3. Expanded Context: How does the expanded context used during training and inference affect the performance of CoSTAR ? 
+
+> •
+
+RQ4. Structured Rationale Supervision: How does constraint-guided structured rationale supervision affect the performance of CoSTAR compared with summary-only supervised fine-tuning (hereafter Summary-only SFT)?  
+
+> •
+
+RQ5. Industrial Applicability: How does CoSTAR 
+
+perform in real-world enterprise COBOL modernization scenarios? 
+
+A. Experimental Setup 1) Datasets: We use two complementary evaluation datasets covering open-source and real-world enterprise COBOL systems. 
+
+Stack-120. Stack-120 is our public evaluation dataset for COBOL section-level code summarization. We construct it by manually selecting 120 sections from open-source COBOL programs in The Stack together with their relevant data divi-sion declarations. For each section, one engineer from our industrial partner writes an initial reference summary following a unified anno-tation guideline, while the other two independently review it against the target section and its relevant data division dec-larations. Any disagreements are resolved through discussion among all three engineers until consensus is reached. Each engineer has more than ten years of COBOL development experience. The resulting references describe the principal section behavior and preserve modernization-relevant infor-mation, including important data items, state effects, data constraints, boundary behavior, and potential migration risks. Stack-120 is used for the automatic evaluation in RQ1–RQ4. 
+
+Industrial-200. Industrial-200 contains 200 business-critical sections selected by our industrial partner from real-world enterprise COBOL systems undergoing modernization. These sections implement core business logic targeted by the part-ner’s modernization efforts and are used exclusively for the human evaluation in RQ5. Because the source systems con-tain confidential business logic, Industrial-200 is not publicly released. All model inference and evaluation are conducted within the partner’s local environment, and only anonymized ratings are returned for analysis. For each evaluation instance, we extract the target section and its relevant data division declarations, retaining necessary parent group items and related structural information when available. Unavailable copybook definitions are not inferred. The same preprocessing procedure is applied across compara-ble models and experimental settings. 
+
+2) Evaluation Metrics: Existing evaluation metrics for code summarization can be broadly categorized into textual similar-ity metrics, semantic similarity metrics, and human evaluation metrics [45]. To evaluate CoSTAR , we adopt metrics from all three categories. 
+
+Textual Similarity Metrics. Following prior studies [46]– [49], we report ROUGE-L, METEOR, and chrF. ROUGE-L measures sequence-level overlap based on the longest common 9
+
+subsequence. METEOR measures unigram alignment while considering matching order and fragmentation. chrF measures character n-gram similarity and is particularly suitable for summaries containing identifiers, abbreviations, and numeric expressions. Although BLEU is frequently used in code summarization, prior studies show that it can be unstable and weakly correlated with human judgments [46]–[48]. We therefore do not use BLEU as a primary metric. 
+
+Semantic Similarity Metrics. Following prior studies [46], [47], we use BERTScore and SentenceBERT similarity. BERTScore evaluates token-level semantic correspondence us-ing contextual embeddings, whereas SentenceBERT measures cosine similarity between sentence-level representations of the generated and reference summaries. All automatic scores are reported as percentages, with higher values indicating greater similarity to the reference summary. We compute ROUGE-L using rouge-score ,METEOR using NLTK , chrF using SacreBLEU , BERTScore using the bert-score library with the pretrained 
+
+RoBERTa-large model, and SentenceBERT similarity using sentence-transformers with the pretrained 
+
+stsb-roberta-large model. 
+
+Human Evaluation Metrics. Automatic metrics cannot fully determine whether a generated summary preserves COBOL-specific constraints, boundary conditions, state effects, and migration-relevant risks [46], [49]. We therefore conduct hu-man evaluation on Industrial-200, with the detailed protocol presented in RQ5. 
+
+3) Baselines: To assess the performance gap between smaller CoSTAR models and large-scale general-purpose LLMs, we include five large-scale LLM baselines: the open-weight DeepSeek-V3.2 and DeepSeek-V4-Flash , and the closed-source Gemini-2.5-Flash-Lite , Gemini-3.1-Flash-Lite , and Claude-Haiku-4.5 . These models receive no task-specific fine-tuning and use the same task instructions, input information, and output requirements as CoSTAR whenever supported. The base LLMs and con-trolled comparison settings used for individual RQs are intro-duced within the corresponding RQs. 
+
+4) Implementation Details: The offline data-construction pipeline of CoSTAR does not depend on specific LLM choices. In our implementation, we instantiate its code-generation, supervision-generation, and quality-control roles with DeepSeek-V3.2 , Qwen3-Coder-480B-A35B-Instruct , and DeepSeek-R1 , respectively, and keep these implementation choices fixed across all experiments to avoid introducing additional model-selection variation. Specifically, DeepSeek-V3.2 generates COBOL programs in Stage 1, Qwen3-Coder-480B-A35B-Instruct 
+
+generates identifier explanations and structured rationales in Stage 2, and DeepSeek-R1 performs quality evaluation. These models are used only for offline data construction, while inference uses the fine-tuned task-specific models. Generated COBOL programs are compiled with GnuCOBOL 3.2 in free source format using cobc -free -x <source_file> -o <program_name> , and only programs that compile successfully and pass all associated tests are retained. All fine-tuning experiments are conducted on a server running Ubuntu 22.04.4 LTS with one NVIDIA RTX A6000 GPU with 48 GB of memory, 128 GB of RAM, and an Intel Core i9-13900K CPU. We implement the training pipeline us-ing LLaMA-Factory 0.9.5.dev0, Python 3.11.14, and PyTorch 2.10.0. For each CoSTAR instantiation, model-explain and model-summary are independently fine-tuned from the same base LLM to control backbone variation, although the framework itself does not require them to share the same backbone. Both models use LoRA with rank 8, scaling factor 16, dropout 0, and a cutoff length of 4,096. We train for three epochs with a learning rate of 5 × 10 −5, a per-device batch size of 2, eight gradient accumulation steps, a maximum gradient norm of 1.0, and BF16 precision. We reserve 15% of the training data for validation and use the final checkpoint after the third epoch. Across all controlled experiments, we keep the training and inference settings unchanged except for the factor explicitly examined by the corresponding RQ, thereby isolating its effect on summarization performance. During inference, all models use the same preprocessing and post-processing procedures. Local models use nucleus sampling with a temperature of 0.3 and a top-p value of 0.95. Large-scale LLM baselines are accessed through public APIs and use the same task prompt and decoding settings whenever supported. For CoSTAR , all automatic and human evaluations use only the Phase 4 final summary; the intermediate struc-tured rationale is excluded from metric computation. 
+
+B. RQ1: Overall Effectiveness 
+
+Motivation. As an integrated framework, CoSTAR should first demonstrate its overall effectiveness across different base LLMs. We therefore examine whether CoSTAR consistently improves different base LLMs and whether its variants built on small-scale LLMs (e.g., 7B or 8B models) can compete with substantially larger general-purpose LLMs. 
+
+Methodology. Considering model popularity and broad adop-tion, representativeness across model types, and feasibil-ity for local deployment, we select four well-known open-weight 7B or 8B base LLMs from different model fami-lies: the code-oriented CodeGemma-1.1-7B-Instruct ,the reasoning-oriented DeepSeek-R1-Distill-Llama-8B , and the general instruction models Llama-3.1-8B-Instruct and Qwen3-8B . This selection allows us to examine the applicability of CoSTAR across different model types and families while controlling the model scale. We first compare each CoSTAR variant with its corresponding original base LLM to isolate the gains introduced by the complete framework. We then compare the CoSTAR variants with the five large-scale LLM baselines described in Section IV-A. All models are evaluated on Stack-120 using the five automatic metrics. 
+
+Results. Table III reports the exact performance of CoSTAR ,its corresponding base LLMs, and the large-scale LLM base-lines on Stack-120. Fig. 6 visualizes the improvements ob-tained over the corresponding base LLMs, while Fig. 7 com-pares the per-metric best CoSTAR results with the best large-scale LLM baselines. 10 
+
+TABLE III OVERALL PERFORMANCE OF COSTAR COMPARED WITH BASE LLM S AND LARGE -SCALE LLM BASELINES ON STACK -120. 
+
+Category Model Size ROUGE-L METEOR chrF BERTScore SentenceBERT 
+
+Base LLM CodeGemma-1.1-7B-Instruct 7B 16.535 11.624 17.352 83.684 55.411 DeepSeek-R1-Distill-Llama-8B 8B 13.040 10.411 17.704 82.700 52.322 Llama-3.1-8B-Instruct 8B 22.452 18.204 25.305 84.932 61.740 Qwen3-8B 8B 23.306 20.605 28.372 85.694 64.411 
+
+CoSTAR 
+
+CodeGemma-1.1-7B-Instruct 7B 19.550 21.555 29.368 84.354 61.136 DeepSeek-R1-Distill-Llama-8B 8B 22.048 20.102 26.710 85.029 60.464 Llama-3.1-8B-Instruct 8B 24.990 23.670 30.324 85.807 64.982 Qwen3-8B 8B 23.984 22.012 30.901 86.023 67.881 Large-scale LLM DeepSeek-V3.2 671B 25.865 20.060 29.709 84.910 67.468 DeepSeek-V4-Flash 284B 28.237 23.528 32.406 85.610 70.638 Gemini-2.5-Flash-Lite N/A 25.856 20.908 28.495 85.753 67.665 Gemini-3.1-Flash-Lite N/A 21.065 18.921 32.355 84.659 66.367 Claude-Haiku-4.5 N/A 24.214 19.469 31.222 84.841 67.596 
+
+Note. N/A indicates that the parameter size of the closed-source models is not publicly disclosed. CodeGemma-1.1-7B DeepSeek-R1-8B Llama-3.1-8B Qwen3-8B                       
+
+> 18.2% 85.4% 69.2% 0.8% 10.3% 69.1% 93.1% 50.9% 2.8% 15.6% 11.3% 30.0% 19.8% 1.0% 5.3% 2.9% 6.8% 8.9% 0.4% 5.4%
+> ROUGE-L METEOR chrF BERT Score Sentence BERT 020 40 60 80 Relative gain (%)
+
+Fig. 6. Relative gains of CoSTAR over the corresponding base LLMs on Stack-120. Each cell reports the relative improvement obtained by applying 
+
+CoSTAR to the same underlying base LLM. DeepSeek-R1-8B abbreviates DeepSeek-R1-Distill-Llama-8B. 
+
+Comparison with Base LLMs. As shown in Table III and Fig. 6, CoSTAR improves every base LLM across all five automatic metrics. Averaged across the four model fami-lies, the relative gains are 25.38% on ROUGE-L, 53.84% on METEOR, 37.22% on chrF, 1.26% on BERTScore, and 9.13% on SentenceBERT. The larger improvements on the textual similarity metrics indicate closer lexical and structural alignment with the human-written references. The consistent gains on BERTScore and SentenceBERT further show that the improvements are not limited to surface-level overlap but also extend to semantic similarity. The improvements are observed across model families with different initial performance levels. DeepSeek-R1-Distill-Llama-8B obtains the largest overall gains, in-cluding improvements of 69.08%, 93.08%, and 50.87% on ROUGE-L, METEOR, and chrF, respectively. CodeGemma-1.1-7B-Instruct also benefits substantially, with gains of 85.44% on METEOR and 69.25% on chrF. Although Qwen3-8B is the strongest original base LLM across all five metrics ROUGE-L METEOR chrF BERTScore SentenceBERT   
+
+> 020 40 60 80
+> Best large-scale LLM (per metric) Best CoSTAR variant (per metric) 88.5% 100.6% 95.4% 100.3% 96.1%
+
+Fig. 7. Per-metric comparison between the best CoSTAR and the best large-scale LLM baseline on Stack-120. Each metric is normalized to its best large-scale LLM score (set to 100%); values above 100% indicate better CoSTAR 
+
+performance. The top-performing model may vary across metrics. 
+
+and consequently exhibits smaller relative gains, CoSTAR still improves every metric. These results demonstrate that the effectiveness of CoSTAR is not confined to a particular model family or to base LLMs with weak initial performance. 
+
+Comparison with Large-Scale LLMs. Despite being instan-tiated with only 7B or 8B base LLMs, the CoSTAR vari-ants remain competitive with the large-scale LLM baselines. As shown in Fig. 7, the per-metric best CoSTAR results reach 88.50%, 100.60%, 95.36%, 100.31%, and 96.10% of the corresponding best large-scale LLM results on ROUGE-L, METEOR, chrF, BERTScore, and SentenceBERT, respec-tively. In particular, CoSTAR -Llama-3.1-8B-Instruct 
+
+achieves the highest METEOR among all compared models, exceeding the best large-scale LLM baseline by 0.142 points. Similarly, CoSTAR -Qwen3-8B achieves the highest overall BERTScore, exceeding the best large-scale LLM baseline by 0.270 points. This competitiveness is not merely a consequence of se-lecting a different CoSTAR variant for each metric. A single variant, CoSTAR -Llama-3.1-8B-Instruct , outperforms 11                                      
+
+> TABLE IV IMPACT OF SYNTHESIZED TRAINING -DATA SCALE ON COBOL SECTION SUMMARIZATION PERFORMANCE ON STACK -120.
+> Model Name Training Setting Training Instances ROUGE-L METEOR chrF BERTScore SentenceBERT
+> DeepSeek-R1-Distill-Llama-8B Base LLM /13.040 10.411 17.704 82.700 52.322
+> CoSTAR
+> 500 18.995 15.272 23.141 83.918 57.394 1,000 19.617 16.895 24.502 84.279 57.395 2,000 19.979 18.314 25.725 84.426 58.570 3,764 22.048 20.102 26.710 85.029 60.464
+> Note. “/” indicates that training instances are not applicable to the original base LLM.
+
+every large-scale LLM baseline on at least two metrics. It ex-ceeds DeepSeek-V4-Flash on METEOR and BERTScore and outperforms each of the other four large-scale baselines on at least three of the five metrics. Although the large-scale LLMs retain the best ROUGE-L, chrF, and SentenceBERT results, these findings show that task-specific instruction tuning substantially narrows the performance gap and enables smaller base LLMs to surpass large-scale general-purpose LLMs on selected evaluation dimensions. 
+
+Answer to RQ1 
+
+CoSTAR improves all four base LLMs across all five automatic metrics, with average relative gains of 53.84% on METEOR and 37.22% on chrF. Despite using only 7B or 8B base LLMs, its variants achieve the highest overall ME-TEOR and BERTScore, while a single variant, CoSTAR -
+
+Llama-3.1-8B-Instruct , outperforms every large-scale LLM baseline on at least two metrics. These results demonstrate the consistent effectiveness of CoSTAR across different base LLM families and its ability to make smaller, task-specific models competitive with large-scale general-purpose LLMs. 
+
+C. RQ2: Synthesized Data Effectiveness 
+
+Motivation. Stage 1 of CoSTAR is designed to allevi-ate training-data scarcity by synthesizing execution-validated COBOL code–summary data. We therefore investigate the effectiveness of the synthesized training data and how their scale affects COBOL section summarization performance. 
+
+Methodology. We use DeepSeek-R1-Distill-Llama-8B as the fixed base LLM. It is a representative and widely adopted open-weight reasoning model at the 8B scale and falls within the locally deployable model range targeted by this study. To isolate the effect of synthesized training-data scale, we first randomly shuffle the 3,764 instances produced in Stage 1 using a fixed random seed. We then take the first 500, 1,000, and 2,000 instances, together with the full set of 3,764 instances, forming four nested training sets. For each scale, we apply the same subsequent supervision-construction and 
+
+CoSTAR fine-tuning pipeline while keeping the model, train-ing hyperparameters, inference settings, and Stack-120 evalua-tion set unchanged. The original DeepSeek-R1-Distill-Llama-8B without task-specific fine-tuning serves as the control. 
+
+Results. As shown in Table IV, even 500 synthesized training instances improve all five automatic metrics. Compared with the base LLM without task-specific fine-tuning, ROUGE-L, METEOR, and chrF improve by 45.67%, 46.69%, and 30.71%, respectively, while BERTScore and SentenceBERT improve by 1.47% and 9.69%. These gains show that the data constructed in Stage 1 provide effective supervision even at a relatively small training scale. More importantly, all five automatic metrics increase con-sistently as the synthesized training-data scale grows from 500 to 1,000, 2,000, and 3,764 instances, with the full-data setting achieving the best result on every metric. Scaling from 500 to 3,764 instances yields further relative improvements of 16.07% on ROUGE-L, 31.63% on METEOR, 15.42% on chrF, 1.32% on BERTScore, and 5.35% on SentenceBERT. The particularly large additional gain on METEOR indicates that increasing synthesized supervision continues to strengthen the learned summarization behavior. The benefit also persists at larger training scales. Increasing the synthesized set from 2,000 to 3,764 instances still improves all five metrics, including further gains of 10.36% on ROUGE-L and 9.76% on METEOR. The improvement therefore does not rapidly saturate after introducing a small amount of synthe-sized data; within the evaluated range, increasing the amount of execution-validated synthesized training data continues to provide additional benefits. 
+
+Answer to RQ2 
+
+The data synthesized in Stage 1 provide effective supervi-sion for COBOL section summarization, and their benefits consistently increase with training-data scale. Scaling from 500 to 3,764 instances improves all five automatic metrics, including further gains of 31.63% on METEOR, 16.07% on ROUGE-L, and 15.42% on chrF. All five metrics continue to improve even when scaling from 2,000 to 3,764 instances, showing that, within the evaluated range, increasing synthesized training data consistently improves summarization performance. 
+
+D. RQ3: Expanded Context 
+
+Motivation. CoSTAR constructs expanded context by aug-menting the target section with relevant data division declara-tions and identifier explanations to address the separation of data and logic. However, it remains necessary to determine 12    
+
+> TABLE V IMPACT OF TRAINING AND INFERENCE CONTEXT ON COBOL SECTION SUMMARIZATION PERFORMANCE ON STACK -120.
+
+Model Variant Training / Inference Context ROUGE-L METEOR chrF BERTScore SentenceBERT 
+
+Base-DeepSeek-R1-Distill-Llama-8B Section Code + DD + IE 13.040 10.411 17.704 82.700 52.322 
+
+CoSTAR -Code Section Code 17.334 14.925 20.962 78.336 52.931 
+
+CoSTAR -Code+DD Section Code + DD 20.039 17.289 24.482 84.461 58.117 
+
+CoSTAR -Code+IE Section Code + IE 20.600 19.087 26.479 84.623 58.306 
+
+CoSTAR -Full Section Code + DD + IE 22.048 20.102 26.710 85.029 60.464                     
+
+> Note. DD denotes relevant data division declarations, and IE denotes identifier explanation. For the base LLM, the listed context is used only during inference. 15.6% 15.8% 16.8% 7.8% 9.8% 18.8% 27.9% 26.3% 8.0% 10.2% 27.2% 34.7% 27.4% 8.5% 14.2%
+> ROUGE-L METEOR chrF BERT Score Sentence BERT
+> Code + DD Code + IE Code+DD+IE
+> 010 20 30 Relative gain (%)
+> Fig. 8. Relative gains produced by different expanded-context configurations on Stack-120. All gains are calculated relative to CoSTAR -Code, which uses only the target section code during training and inference. DD denotes relevant data division declarations, and IE denotes identifier explanation.
+
+whether this additional context improves summarization and how the raw declarations and their natural-language explana-tions contribute. We therefore examine the effects of relevant data division declarations, identifier explanations, and their combination on COBOL section summarization performance. 
+
+Methodology. Following RQ2, we use DeepSeek-R1-Distill-Llama-8B as the fixed base LLM and compare four CoSTAR variants that differ only in the context provided during training and inference. CoSTAR -Code uses only the target section; CoSTAR -Code+DD additionally includes the relevant data division declarations; CoSTAR -Code+IE addi-tionally includes the identifier explanation; and CoSTAR -Full combines the target section, relevant declarations, and identifier explanation, corresponding to the complete expanded context. For settings containing IE, each identifier explanation is generated from the identifier name and its retrieved data declaration following the standard CoSTAR pipeline. All other factors, including structured rationale supervision, training configurations, and inference settings, remain unchanged. For reference, we also report the original base LLM using the full expanded context at inference time. 
+
+Results. Table V reports the raw scores under different context configurations, while Fig. 8 visualizes the relative gains of the expanded-context variants over CoSTAR -Code. Adding relevant data division declarations consistently improves all five metrics. Compared with CoSTAR -Code, 
+
+CoSTAR -Code+DD improves ROUGE-L, METEOR, chrF, BERTScore, and SentenceBERT by 15.61%, 15.84%, 16.79%, 7.82%, and 9.80%, respectively. This result confirms that local section code alone does not provide sufficient information for constraint-aware summarization. The relevant declarations expose data properties and constraints that are defined outside the procedure division and are therefore unavailable from the target section alone. The generated identifier explanation provides a more ac-cessible natural-language representation of these declara-tions. Relative to CoSTAR -Code, CoSTAR -Code+IE improves ROUGE-L, METEOR, chrF, BERTScore, and SentenceBERT by 18.84%, 27.89%, 26.32%, 8.03%, and 10.15%, respectively. It also outperforms CoSTAR -Code+DD on every metric, with particularly clear additional gains of 10.40% on METEOR and 8.16% on chrF. These results indicate that explicitly explaining identifier roles, data properties, and relevant constraints makes compact and symbolic COBOL declarations easier for the model to use. The best results are obtained by CoSTAR -Full, which combines the target section, relevant data division declara-tions, and identifier explanation. Compared with CoSTAR -Code, it improves ROUGE-L, METEOR, chrF, BERTScore, and SentenceBERT by 27.20%, 34.69%, 27.42%, 8.54%, and 14.23%, respectively. It also consistently outperforms 
+
+CoSTAR -Code+IE. This result shows that the original declara-tions and their natural-language explanations are complemen-tary rather than redundant. The identifier explanation makes the relevant semantics explicit and easier to use, while the original declarations preserve precise source-level constraints that may be simplified or omitted during abstraction. 
+
+Answer to RQ3 
+
+Expanded context consistently improves COBOL section summarization. Relevant data division declarations provide constraints unavailable in local section code, while the identifier explanation makes these constraints more explicit and easier to use. Combining both representations yields the best performance, improving METEOR by 34.69% and SentenceBERT by 14.23% over section code alone. These results confirm that raw declarations and their natural-language explanations provide complementary information. 
+
+E. RQ4: Structured Rationale Supervision 
+
+Motivation. CoSTAR uses constraint-guided structured ratio-nale supervision to explicitly analyze identifier semantics, data constraints, and section behavior before producing the final 13     
+
+> TABLE VI EFFECT OF STRUCTURED RATIONALE SUPERVISION COMPARED WITH BASE AND SUMMARY -ONLY SFT SETTINGS ON STACK -120.
+
+Model Name Training Setting ROUGE-L METEOR chrF BERTScore SentenceBERT 
+
+DeepSeek-R1-Distill-Llama-8B Base 13.040 10.411 17.704 82.700 52.322 Summary-only SFT 15.529 13.150 20.933 82.972 53.663 
+
+CoSTAR 22.048 20.102 26.710 85.029 60.464            
+
+> Note. All settings use the same full expanded context during evaluation. The two fine-tuned settings use the same training instances, input context, and hyperparameters. 020 40 60 80 100
+> Relative improvement (%)
+> ROUGE-L METEOR chrF BERTScore SentenceBERT
+> 69.1% 93.1% 50.9% 2.8% 15.6% 19.1% 26.3% 18.2% 0.3% 2.6%
+> CoSTAR over Base Summary-only SFT over Base
+> Fig. 9. Relative improvements of Summary-only SFT and CoSTAR over the same base LLM on Stack-120. All settings use DeepSeek-R1-Distill-Llama-8B and the same full expanded context during evaluation.
+
+summary. However, the performance gains observed in RQ1 may also partly arise from supervised fine-tuning itself rather than from the structured rationale. We therefore investigate whether structured rationale supervision provides additional benefits over direct summary-only supervision. 
+
+Methodology. Following RQ2 and RQ3, we use DeepSeek-R1-Distill-Llama-8B as the fixed base LLM and com-pare three settings: the original base LLM without task-specific fine-tuning, Summary-only SFT, and the complete CoSTAR .All settings use the same full expanded context during evalua-tion. The two fine-tuned settings further use the same training instances, data scale, input context, and hyperparameters, dif-fering only in their supervision targets. Specifically, Summary-only SFT uses only the Phase 4 final summary from each qualified rationale as its supervision target, whereas CoSTAR 
+
+uses the complete four-phase structured rationale from the same instance, comprising identifier explanation, constraint analysis, logic abstraction, and final summary. Thus, the two fine-tuned settings share exactly the same final-summary supervision, while CoSTAR additionally provides intermediate structured rationale supervision before the final summary. By controlling all other factors, this experiment isolates the effect of structured rationale supervision relative to direct summary supervision. 
+
+Results. Table VI reports the raw scores of the three settings, while Fig. 9 compares the relative improvements of Summary-only SFT and CoSTAR over the same base LLM. Summary-only SFT improves the base LLM across all five metrics. Its relative gains reach 19.09% on ROUGE-L, 26.31% on METEOR, and 18.24% on chrF. In contrast, the gains on BERTScore and SentenceBERT are only 0.33% and 2.56%, respectively. This pattern suggests that direct summary supervision improves alignment with the reference wording but provides a comparatively limited learning signal for capturing COBOL-specific semantics and data constraints. 
+
+CoSTAR produces substantially larger improvements. Rela-tive to the base LLM, it improves ROUGE-L, METEOR, chrF, BERTScore, and SentenceBERT by 69.08%, 93.08%, 50.87%, 2.82%, and 15.56%, respectively. Compared directly with Summary-only SFT, CoSTAR further improves the five metrics by 41.98%, 52.87%, 27.60%, 2.48%, and 12.67%. Because the two fine-tuned settings use the same base LLM, training samples, data scale, expanded context, and hyperparameters, these additional gains do not arise from a larger model, more training data, or additional input information, but correspond to the difference in supervision. These results demonstrate that constraint-guided structured rationale supervision provides a more effective task-specific learning signal than direct summary supervision. By explicitly organizing identifier roles, data division constraints, control and data flow, and modernization-relevant behavior, the struc-tured rationale teaches the model how these elements relate before producing the final summary, enabling it to make more effective use of the expanded context. 
+
+Answer to RQ4 
+
+Summary-only SFT improves the base LLM, but structured rationale supervision provides substantially larger gains. Under the same base LLM, training data, and full expanded context, CoSTAR further improves METEOR by 52.87% and SentenceBERT by 12.67% over Summary-only SFT. These results show that the effectiveness of CoSTAR 
+
+cannot be explained by supervised fine-tuning alone and that constraint-guided structured rationale supervision is a key contributor to its performance. 
+
+F. RQ5: Industrial Applicability 
+
+Motivation. Legacy-system modernization ultimately involves real-world enterprise COBOL code under confidentiality and local-deployment constraints. Moreover, automatic metrics cannot fully capture migration-relevant information such as data constraints, boundary conditions, and state effects [46], [49]. We therefore conduct a human evaluation on Industrial-200 to assess the practical applicability of CoSTAR in real-world enterprise modernization scenarios. 
+
+Methodology. We evaluate CoSTAR in our industrial part-ner’s local environment, where Qwen3-235B is currently deployed to support COBOL code migration. To enable a more controlled same-family comparison, we instantiate CoSTAR 14   
+
+> TABLE VII HUMAN EVALUATION RUBRIC FOR COBOL SECTION SUMMARIES .
+
+Metric Description Grade Scale 
+
+Accuracy Whether the summary is consistent with the target section and relevant data division declarations, without unsupported or hallucinated claims. 
+
+4: Fully accurate, with no unsupported claims. 
+
+3: Mostly accurate, with only minor imprecision. 
+
+2: Contains notable errors or unsupported claims. 
+
+1: Largely incorrect or misleading. Completeness Whether the summary covers the principal section behavior and essential migration-relevant information, including data constraints, boundary conditions, and state effects. 
+
+4: Covers all essential information. 
+
+3: Covers the main behavior and most essential information. 
+
+2: Contains important omissions. 
+
+1: Misses the principal behavior or most essential information. Conciseness Whether the summary communicates essential information directly, without unnecessary detail, repetition, or poor prioritization. 
+
+4: Focused and succinct. 
+
+3: Mostly concise, with minor redundancy. 
+
+2: Noticeably verbose or repetitive. 
+
+1: Excessively verbose or unfocused. 
+
+with Qwen3-8B , yielding CoSTAR-Qwen3-8B . This set-ting reduces confounding from cross-family differences and allows us to examine whether task specialization can enable a substantially smaller, locally deployable model to match or surpass the enterprise-deployed LLM. The human evaluation is organized around the participants and evaluation criteria, evaluation procedure, and statistical analysis. 
+
+Participants and Evaluation Criteria. We invite three engi-neers from our industrial partner to serve as domain experts. Each expert has more than ten years of COBOL development experience and extensive experience with IBM Z mainframes and enterprise legacy systems. Following prior code summa-rization studies [30], [47], the experts independently assess each generated summary in terms of accuracy, completeness, and conciseness using the four-point rubric shown in Ta-ble VII. Higher scores indicate better summary quality. 
+
+Evaluation Procedure. For each section in Industrial-200, 
+
+CoSTAR-Qwen3-8B and Qwen3-235B independently gen-erate one summary. Model identities are hidden during evalu-ation, so the experts do not know which model generated each summary. Each expert independently evaluates each summary with access to the target section and its relevant data division declarations, and rates both model outputs for all 200 sections according to the rubric in Table VII. Because Industrial-200 contains confidential business logic, all model inference and human evaluation are conducted within the partner’s local environment. No source code or generated summary leaves this environment; only anonymized ratings are returned for statistical analysis. 
+
+Statistical Analysis. For each section, model, and criterion, we first average the ratings assigned by the three experts. The reported means and sample standard deviations are then calculated over the resulting 200 section-level scores. Follow-ing prior software engineering studies [50], we use two-sided Wilcoxon signed-rank tests [51] to compare the paired section-level scores of the two models. Because accuracy, complete-ness, and conciseness constitute three related hypotheses, we apply the Holm correction [52] to control the family-wise error rate. Inter-rater agreement is measured using Fleiss’ kappa [53] based on the experts’ original integer ratings.                        
+
+> TABLE VIII HUMAN EVALUATION ON INDUSTRIAL -200. V ALUES ARE MEAN (SAMPLE STANDARD DEVIATION ).
+> Metric CoSTAR-Qwen3-8B Qwen3-235B Holm-adjusted
+> p-value
+> Accuracy 3.195 (0.728) 3.062 (0.730) 9.259 ×10 −3
+> Completeness 3.083 (0.740) 2.853 (0.746) 3.885 ×10 −6
+> Conciseness 3.175 (0.755) 3.047 (0.752) 3.512 ×10 −3
+
+Results. Table VIII reports the human evaluation results on Industrial-200. 
+
+CoSTAR-Qwen3-8B achieves higher mean scores than the enterprise-deployed Qwen3-235B on all three criteria. Specifically, it improves accuracy, completeness, and con-ciseness by 4.35%, 8.06%, and 4.21%, respectively, cor-responding to an average relative improvement of 5.54%. The largest improvement occurs in completeness, indicating that CoSTAR more effectively captures the principal section behavior together with migration-relevant information such as data constraints, boundary conditions, and state effects. The simultaneous improvements in accuracy and conciseness further indicate that this additional information is provided without more unsupported claims or unnecessary verbosity. All three differences remain statistically significant after Holm correction, with adjusted p-values below 0.01. The sample standard deviations range from 0.728 to 0.755 and are similar across the two models, indicating comparable variation in the expert ratings. The overall Fleiss’ kappa is 0.763, while the values across the six model–criterion combinations range from 0.732 to 0.794. These results indicate substantial agreement among the three experts and support the reliability of the human evaluation findings. Overall, despite being built on only an 8B base LLM, CoSTAR-Qwen3-8B significantly outperforms the enterprise-deployed Qwen3-235B across accuracy, complete-ness, and conciseness. This result shows that task specializa-tion for COBOL section summarization can enable a substan-tially smaller locally deployable model to achieve better sum-mary quality in real-world enterprise modernization scenarios. 15 
+
+Answer to RQ5 
+
+On Industrial-200, CoSTAR-Qwen3-8B outperforms the enterprise-deployed Qwen3-235B in accuracy, complete-ness, and conciseness by 4.35%, 8.06%, and 4.21%, re-spectively, with all three differences remaining statistically significant after Holm correction. The overall Fleiss’ kappa of 0.763 indicates substantial inter-rater agreement. These findings show that CoSTAR , built on only an 8B base LLM, can outperform a substantially larger enterprise-deployed LLM under real-world confidentiality and local-deployment constraints. V. T HREATS TO VALIDITY 
+
+Internal Threats. Internal threats mainly concern the relia-bility of training supervision construction and potential data leakage. Although compilation and test execution filter incor-rect generated programs, finite test suites cannot guarantee complete semantic correctness. We therefore filter low-quality tasks and employ a judge LLM [45] to control the quality of teacher-generated structured rationales and reference sum-maries. Nevertheless, automated verification and LLM-based evaluation cannot completely eliminate noise or hallucinations. The synthesized training set, Stack-120, and Industrial-200 are constructed independently to avoid direct overlap; however, the non-transparent pretraining corpora of base LLMs prevent us from fully excluding prior exposure to public COBOL code or task descriptions. 
+
+External Threats. External threats concern the generalizabil-ity of our findings. Although our data synthesis methodology is language- and granularity-agnostic, it is instantiated through CodeFlowBench and evaluated only on COBOL section-level summarization. Applying it to other languages, granularities, or tasks may require adjusted prompts and validation criteria. Moreover, variations in compiler dialects, coding conventions, and application domains may limit generalization to broader COBOL legacy systems. Although CoSTAR does not require a shared backbone, we use the same base LLM for both modules to control backbone variation. Future work will ex-plore heterogeneous backbone combinations, broader COBOL environments, and other low-resource legacy languages. 
+
+Construct Threats. Construct threats concern whether our evaluation methodology accurately reflects COBOL section summarization quality. Since conventional metrics may not fully capture COBOL-specific semantics such as field con-straints and state updates, we combine complementary auto-matic metrics with expert evaluation on Industrial-200. Human evaluation may introduce subjectivity; therefore, three enter-prise engineers with more than ten years of COBOL experi-ence independently rated the summaries using a shared four-point rubric, achieving substantial agreement (Fleiss’ kappa = 0.763). Reference quality is another potential threat. Although judge-based quality control is applied, teacher-generated struc-tured rationales and their Phase 4 reference summaries may still contain inaccuracies. For Stack-120, each reference sum-mary is independently reviewed by three enterprise COBOL experts, with disagreements resolved through discussion. VI. C ONCLUSION 
+
+In this paper, we present CoSTAR , an integrated frame-work for COBOL section summarization in legacy system modernization that unifies execution-validated data synthesis with constraint-aware model training and inference. The syn-thesis stage transforms general-purpose programming tasks into execution-validated COBOL code-summary data, and experiments further confirm that these synthesized data pro-vide effective training supervision for section summarization. Across four 7B or 8B base LLMs, CoSTAR improves all five automatic metrics, with average relative gains of 53.84% on METEOR and 37.22% on chrF. Ablation studies further confirm the effectiveness of expanded context and struc-tured rationale supervision. On real-world enterprise COBOL systems, CoSTAR-Qwen3-8B significantly outperforms the enterprise-deployed Qwen3-235B in accuracy, completeness, and conciseness. Overall, these results show that execution-validated data synthesis and constraint-aware reasoning can enable small, locally deployable LLMs to effectively support COBOL program understanding and modernization. Future work will extend our study to more industrial systems, COBOL dialects and compiler environments, program gran-ularities, and other low-resource programming languages. REFERENCES [1] A. Upadhaya, “Understanding legacy software: The current relevance of COBOL,” Master’s thesis, Vrije Universiteit Amsterdam, Amsterdam, The Netherlands, 2023, available: https://ictinstitute.nl/wp-content/upl oads/2023/12/COBOL Thesis Dec4 Ashish.pdf. Accessed on: 2026. [2] S. Agarwal, S. Chimalakonda, S. Krishnan, V. Kanvar, and S. Shah, “Tutorial report on legacy software modernization: A journey from non-AI to generative AI approaches,” in Proceedings of the 17th Innovations in Software Engineering Conference , 2024, pp. 1–3. [3] Micro Focus, “COBOL rocks,” https://www.microfocus.com/zh-cn/ma rketing/cobol-rocks, accessed on: 2026. [4] A. T. Dau, H. T. Dao, A. T. Nguyen, H. T. Tran, P. X. Nguyen, and N. D. Bui, “XMainframe: A large language model for mainframe modernization,” arXiv preprint arXiv:2408.04660 , 2024. [5] T. Taulli, “COBOL Language: Call It A Comeback?” https://www.forb es.com/sites/tomtaulli/2020/07/13/cobol-language-call-it-a-comeback/, 2020, forbes, Accessed: Jul. 4, 2026. [6] R. Khadka, B. V. Batlajery, A. M. Saeidi, S. Jansen, and J. Hage, “How do professionals perceive legacy systems and software modernization?” in Proceedings of the 36th International Conference on Software Engi-neering , 2014, pp. 36–47. [7] W. K. Assunc ¸ ˜ ao, L. Marchezan, L. Arkoh, A. Egyed, and R. Ramler, “Contemporary software modernization: Strategies, driving forces, and research opportunities,” ACM Transactions on Software Engineering and Methodology , vol. 34, no. 5, pp. 1–35, 2025. [8] A. K. Gangula, “A comparative analysis of LLM-driven vs. manual legacy code refactoring: A case study in .NET Core migration,” 2025. [9] S. Strobl, M. Bernhart, and T. Grechenig, “Towards a topology for legacy system migration,” in Proceedings of the IEEE/ACM 42nd International Conference on Software Engineering Workshops , 2020, pp. 586–594. [10] U.S. Government Accountability Office, “Information Technology: Agencies Need to Plan for Modernizing Critical Decades-Old Legacy Systems,” https://www.gao.gov/products/gao-25-107795, 2025, report No. GAO-25-107795, published July 17, 2025. Accessed on: August 4, 2026. [11] M. Kelly, “DOGE Plans to Rebuild SSA Code Base in Months, Risking Benefits and System Collapse,” https://www.wired.com/story/doge-r ebuild-social-security-administration-cobol-benefits/, 2025, wIRED, published March 28, 2025. Accessed on: August 4, 2026. [12] G. E. Connolly, “Letter to Michelle L. Anderson, Performing the Duties of the Inspector General, Social Security Administration,” https://oversi ghtdemocrats.house.gov/imo/media/doc/2025-04-17.gec-to-ssa-oig-mas ter-data.pdf, 2025, u.S. House Committee on Oversight and Government Reform, April 17, 2025. Accessed on: August 4, 2026. 16 
+
+[13] Social Security Administration, “The Justification of Estimates for Appropriations Committees: Fiscal Year 2027,” https://www.ssa.gov/ budget/assets/materials/2027/FY27 The Justification of Estimates for Appropriations Committees.pdf, 2026, publication No. 22-017, April 2026, p. 129. Accessed on: August 4, 2026. [14] J. Bloomberg, “Modernizing your mainframe COBOL? beware the “JOBOL” pitfall,” https://intellyx.com/2022/07/16/modernizing-you r-mainframe-cobol-beware-the-jobol-pitfall/, 2022, accessed on: 2026. [15] Y. Kindelberger, A. Perrier, C. Mukherjee, S. Eveillard, and T. Gray, “AWS Blu Age code maintainability,” https://aws.amazon.com/cn/bl ogs/migration-and-modernization/aws-blu-age-code-maintainability/, 2025, accessed on: 2026. [16] S. Kabir, D. N. Udo-Imeh, B. Kou, and T. Zhang, “Is Stack Overflow ob-solete? an empirical study of the characteristics of ChatGPT answers to Stack Overflow questions,” in Proceedings of the 2024 CHI Conference on Human Factors in Computing Systems , 2024, pp. 1–17. [17] “Translation is not modernization,” https://www.resqsoft.com/blog/tran slation-is-not-modernization.html, accessed on: 2026. [18] A. R. Ibrahimzada, K. Ke, M. Pawagi, M. S. Abid, R. Pan, S. Sinha, and R. Jabbarvand, “AlphaTrans: A neuro-symbolic compositional approach for repository-level code translation and validation,” Proceedings of the ACM on Software Engineering , vol. 2, no. FSE, pp. 2454–2476, 2025. [19] Swimm, “Accelerating COBOL Modernization: Closing the Knowledge Gap,” https://25477114.fs1.hubspotusercontent-eu1.net/hubfs/2547711 4/Gated%20Documents/WP Accelerating COBOL Modernization S wimm.pdf, white paper, Accessed: Aug. 4, 2026. [20] D. Wolfart, W. K. Assunc ¸ ˜ ao, I. F. da Silva, D. C. Domingos, E. Schme-ing, G. L. D. Villaca, and D. d. N. Paza, “Modernizing legacy sys-tems with microservices: A roadmap,” in Proceedings of the 25th International Conference on Evaluation and Assessment in Software Engineering , 2021, pp. 149–159. [21] C. Diggs, M. Doyle, A. Madan, S. Scott, E. Escamilla, J. Zimmer, N. Nekoo, P. Ursino, M. Bartholf, Z. Robin et al. , “Leveraging LLMs for legacy code modernization: Challenges and opportunities for LLM-generated documentation,” arXiv preprint arXiv:2411.14971 , 2024. [22] T. Ahmed and P. Devanbu, “Multilingual training for software engineer-ing,” in Proceedings of the 44th International Conference on Software Engineering , 2022, pp. 1443–1455. [23] X. Zhang, X. Hou, X. Qiao, and W. Song, “A review of automatic source code summarization,” Empirical Software Engineering , vol. 29, no. 6, p. 162, 2024. [24] A. Lozhkov, H. Larcher, M. Morlon, L. Ben Allal, and L. von Werra, “The Stack v3: The largest open code dataset,” https://huggingface.co/d atasets/HuggingFaceCode/stack-v3-train, 2026. [25] IBM Corporation, “COBOL program format,” https://www.ibm.com/ docs/en/zos- basic- skills?topic=zos- cobol- program- format, iBM Documentation. Accessed on: 2026. [26] W. Sun, Y. Miao, Y. Li, H. Zhang, C. Fang, Y. Liu, G. Deng, Y. Liu, and Z. Chen, “Source code summarization in the era of large language models,” in 2025 IEEE/ACM 47th International Conference on Software Engineering (ICSE) . IEEE, 2025, pp. 1882–1894. [27] C. Niu, C. Li, V. Ng, J. Ge, L. Huang, and B. Luo, “SPT-Code: Sequence-to-sequence pre-training for learning source code representa-tions,” in Proceedings of the 44th International Conference on Software Engineering , 2022, pp. 2006–2018. [28] Y. Shen, X. Ju, X. Chen, and G. Yang, “Bash comment generation via data augmentation and semantic-aware CodeBERT,” Automated Software Engineering , vol. 31, no. 1, p. 30, 2024. [29] D. Song, H. Guo, Y. Zhou, S. Xing, Y. Wang, Z. Song, W. Zhang, Q. Guo, H. Yan, X. Qiu et al. , “Code needs comments: Enhancing code LLMs with comment augmentation,” in Findings of the Association for Computational Linguistics: ACL 2024 , 2024, pp. 13 640–13 656. [30] C.-Y. Su and C. McMillan, “Distilled GPT for source code summariza-tion,” Automated Software Engineering , vol. 31, no. 1, p. 22, 2024. [31] Z. Tang, X. Shen, C. Li, J. Ge, L. Huang, Z. Zhu, and B. Luo, “AST-Trans: Code summarization with efficient tree-structured attention,” in 
+
+Proceedings of the 44th International Conference on Software Engineer-ing , 2022, pp. 150–162. [32] C. Shi, B. Cai, Y. Zhao, L. Gao, K. Sood, and Y. Xiang, “CoSS: Lever-aging statement semantics for code summarization,” IEEE Transactions on Software Engineering , vol. 49, no. 6, pp. 3472–3486, 2023. [33] T. Ahmed, K. S. Pai, P. Devanbu, and E. Barr, “Automatic semantic augmentation of language model prompts (for code summarization),” in Proceedings of the IEEE/ACM 46th International Conference on Software Engineering , 2024, pp. 1–13. [34] H. Guo, X. Chen, Y. Huang, Y. Wang, X. Ding, Z. Zheng, X. Zhou, and H.-N. Dai, “Snippet comment generation based on code context expan-sion,” ACM Transactions on Software Engineering and Methodology ,vol. 33, no. 1, pp. 1–30, 2023. [35] C.-Y. Su, A. Bansal, Y. Huang, T. J.-J. Li, and C. McMillan, “Context-aware code summary generation,” Journal of Systems and Software , p. 112580, 2025. [36] T. Ahmed and P. Devanbu, “Few-shot training LLMs for project-specific code summarization,” in Proceedings of the 37th IEEE/ACM International Conference on Automated Software Engineering , 2022, pp. 1–5. [37] A. S. Ganesan and T. Chithralekha, “A survey on survey of migration of legacy systems,” in Proceedings of the International Conference on Informatics and Analytics , 2016, pp. 1–10. [38] A. S. Ganesan, T. Chithralekha, and M. Rajapandian, “A formal model for legacy system understanding,” International Journal of Intelligent Systems and Applications , vol. 10, no. 10, pp. 27–41, 2018. [39] H. M. Sneed and C. Verhoef, “From COBOL to business rules— extracting business rules from legacy code,” in Integrating Research and Practice in Software Engineering . Springer, 2019, pp. 187–208. [40] D. A. Tamburri and R. Kazman, “General methods for software ar-chitecture recovery: a potential approach and its evaluation,” Empirical Software Engineering , vol. 23, no. 3, pp. 1457–1489, 2018. [41] M. Moser and J. Pichler, “eKnows: Platform for multi-language reverse engineering and documentation generation,” in 2021 IEEE International Conference on Software Maintenance and Evolution (ICSME) . IEEE, 2021, pp. 559–568. [42] V. Geist, M. Moser, J. Pichler, R. Santos, and V. Wieser, “Leverag-ing machine learning for software redocumentation—a comprehensive comparison of methods in practice,” Software: Practice and Experience ,vol. 51, no. 4, pp. 798–823, 2021. [43] C. Diggs, M. Doyle, A. Madan, E. O. Scott, E. Escamilla, J. Zimmer, N. Nekoo, P. Ursino, M. Bartholf, Z. Robin et al. , “Leveraging LLMs for legacy code modernization: Evaluation of LLM-generated documen-tation,” in 2025 IEEE/ACM International Workshop on Large Language Models for Code (LLM4Code) . IEEE, 2025, pp. 177–184. [44] S. Wang, Z. Wang, D. Ma, Y. Yu, R. Ling, Z. Li, F. Xiong, and W. Zhang, “CodeFlowBench: A multi-turn, iterative benchmark for complex code generation,” in Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) ,2026, pp. 4369–4402. [45] Y. Wu, Y. Wan, Z. Chu, W. Zhao, Y. Liu, H. Zhang, X. Shi, H. Jin, and P. S. Yu, “Can large language models serve as evaluators for code summarization?” IEEE Transactions on Software Engineering , 2025. [46] X. Hu, Q. Chen, H. Wang, X. Xia, D. Lo, and T. Zimmermann, “Correlating automated and human evaluation of code documentation generation quality,” ACM Transactions on Software Engineering and Methodology , vol. 31, no. 4, pp. 1–28, 2022. [47] S. Haque, Z. Eberhart, A. Bansal, and C. McMillan, “Semantic similarity metrics for evaluating source code summarization,” in Proceedings of the 30th IEEE/ACM International Conference on Program Comprehension ,2022, pp. 36–47. [48] S. Stapleton, Y. Gambhir, A. LeClair, Z. Eberhart, W. Weimer, K. Leach, and Y. Huang, “A human study of comprehension and code summariza-tion,” in Proceedings of the 28th International Conference on Program Comprehension , 2020, pp. 2–13. [49] D. Roy, S. Fakhoury, and V. Arnaoudova, “Reassessing automatic evaluation metrics for code summarization tasks,” in Proceedings of the 29th ACM Joint Meeting on European Software Engineering Conference and Symposium on the Foundations of Software Engineering , 2021, pp. 1105–1116. [50] C. Fang, W. Sun, Y. Chen, X. Chen, Z. Wei, Q. Zhang, Y. You, B. Luo, Y. Liu, and Z. Chen, “ESALE: Enhancing code-summary alignment learning for source code summarization,” IEEE Transactions on Software Engineering , vol. 50, no. 8, pp. 2077–2095, 2024. [51] F. Wilcoxon, S. Katti, and R. A. Wilcox, Critical values and probability levels for the Wilcoxon rank sum test and the Wilcoxon signed rank test .Pearl River, NY: American Cyanamid, 1963, vol. 1. [52] S. Holm, “A simple sequentially rejective multiple test procedure,” 
+
+Scandinavian Journal of Statistics , pp. 65–70, 1979. [53] J. L. Fleiss, “Measuring nominal scale agreement among many raters,” 
+
+Psychological Bulletin , vol. 76, no. 5, p. 378, 1971.

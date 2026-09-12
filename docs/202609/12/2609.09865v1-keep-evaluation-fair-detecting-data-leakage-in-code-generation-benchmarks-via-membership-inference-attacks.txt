@@ -1,0 +1,917 @@
+Title: Keep Evaluation Fair: Detecting Data Leakage in Code Generation Benchmarks via Membership Inference Attacks
+
+URL Source: https://arxiv.org/pdf/2609.09865v1
+
+Published Time: Thu, 10 Sep 2026 00:59:24 GMT
+
+Number of Pages: 32
+
+Markdown Content:
+# Keep Evaluation Fair: Detecting Data Leakage in Code Generation Benchmarks via Membership Inference Attacks 
+
+DONGDONG ZHAO, School of Computer Science and Artificial Intelligence, Wuhan University of Technology, China 
+
+JIAN CHEN, School of Computer Science and Artificial Intelligence, Wuhan University of Technology, China 
+
+GUANCHENG LIN, Department of Computer Science, City University of Hong Kong, China 
+
+JIANWEN XIANG, Engineering Research Center of Transportation Information and Safety (ERCTIS), MoE of China, Wuhan University of Technology, China 
+
+JACKY WAI KEUNG, Department of Computer Science, City University of Hong Kong, China 
+
+XIAO YU ∗, State Key Laboratory of Blockchain and Data Security, Zhejiang University, China To systematically evaluate code generation capabilities of Large Language Models (LLMs), numerous bench-marks have been developed. However, a critical concern is the potential leakage of benchmark data into LLM training sets, which can inflate model performance and undermine the validity of evaluations. To the best of our knowledge, DetectLeak is currently the only method specifically designed to detect leakage in code generation benchmarks. It relies solely on perplexity scores, assuming that samples with lower perplexity are more likely leaked. However, perplexity primarily reflects a model’s general familiarity with common patterns and performs poorly on complex or rare samples. Moreover, DetectLeak overlooks other important features such as code similarity, functional correctness, and semantic embeddings of generated code, resulting in limited detection accuracy. To address the issues, we propose CGMIA (Code-Generation-specific Membership Inference Attack), a novel approach designed to detect data leakage in code generation benchmarks. CGMIA uses a shadow model fine-tuned on a subset of benchmark samples to mimic the target model’s behavior, creating labeled data where fine-tuned samples are members and held-out samples are non-members. For each sample, it collects the input prompt, shadow model’s generated code, and the reference solution, extracting both expert features (e.g., CodeBLEU, edit distance, test pass rate, perplexity) and semantic features from CodeBERT embeddings. These features are combined in an integrated learning module to capture surface-level memorization signals and deep behavioral patterns, enabling the classifier to accurately predict whether a sample was in the target model’s training set. Extensive experiments on eight widely used code generation benchmarks show that CGMIA significantly outperforms eight existing membership inference methods in most cases, while also effectively detecting known leaked APPS samples in StarCoder-7B’s training data. 
+
+> ∗
+
+Corresponding Author: Xiao Yu. Authors’ Contact Information: Dongdong Zhao, zdd@whut.edu.cn, School of Computer Science and Artificial Intelligence, Wuhan University of Technology, Wuhan, Hubei, China; Jian Chen, 321559@whut.edu.cn, School of Computer Science and Artificial Intelligence, Wuhan University of Technology, Wuhan, Hubei, China; Guancheng Lin, guanchlin4-c@ my.cityu.edu.hk, Department of Computer Science, City University of Hong Kong, Hong Kong, China; Jianwen Xiang, jwxiang@whut.edu.cn, Engineering Research Center of Transportation Information and Safety (ERCTIS), MoE of China, Wuhan University of Technology, Wuhan, Hubei, China; Jacky Wai Keung, jacky.keung@cityu.edu.hk, Department of Computer Science, City University of Hong Kong, Hong Kong, China; Xiao Yu, xiao.yu@zju.edu.cn, State Key Laboratory of Blockchain and Data Security, Zhejiang University, Hangzhou, Zhejiang, China. Permission to make digital or hard copies of all or part of this work for personal or classroom use is granted without fee provided that copies are not made or distributed for profit or commercial advantage and that copies bear this notice and the full citation on the first page. Copyrights for components of this work owned by others than the author(s) must be honored. Abstracting with credit is permitted. To copy otherwise, or republish, to post on servers or to redistribute to lists, requires prior specific permission and/or a fee. Request permissions from permissions@acm.org. © 2026 Copyright held by the owner/author(s). Publication rights licensed to ACM. ACM 1557-7392/2026/5-ART1 https://doi.org/XXXXXXX.XXXXXXX ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026. arXiv:2609.09865v1 [cs.SE] 9 Sep 2026 1:2 Dongdong Zhao et al.     
+
+> CCS Concepts: • Software and its engineering →Empirical software validation .Additional Key Words and Phrases: Large Language Model, Code Generation Benchmark, Leakage Detection
+> ACM Reference Format:
+> Dongdong Zhao, Jian Chen, Guancheng Lin, Jianwen Xiang, Jacky Wai Keung, and Xiao Yu. 2026. Keep Evaluation Fair: Detecting Data Leakage in Code Generation Benchmarks via Membership Inference Attacks.
+> ACM Trans. Softw. Eng. Methodol. 1, 1, Article 1 (May 2026), 32 pages. https://doi.org/XXXXXXX.XXXXXXX
+
+1 Introduction 
+
+Large Language Models (LLMs) have recently demonstrated remarkable capabilities in code gener-ation tasks, driving substantial progress in automated software development [23, 33, 43, 62]. These advancements are largely attributed to large-scale pre-training on corpora that include not only natural language but also abundant source code [52, 63]. To systematically assess the code genera-tion abilities of LLMs, a growing number of benchmarks have been proposed. Early benchmarks like APPS [13], HumanEval [5], and MBXP [3] focus on algorithmic and basic programming tasks, while more recent benchmarks (e.g. RealisticCodeBench [60], CoderEval [59], EvoCodeBench [25], ClassEval [8]) target more complex scenarios such as repository-level function generation and class-level code generation. However, since LLMs are typically pre-trained on massive internet-crawled datasets (e.g., GitHub), publicly available benchmark datasets risk unintentional inclusion in training data. Indeed, recent studies [4, 31, 39, 70] show many widely used code generation benchmarks suffer from varying degrees of data leakage. For example, Zhou et al. [70] discovered that 108 samples from the APPS benchmark [13] were included in the pre-training data of certain LLMs such as StarCoder-7B [48]. As a result, StarCoder-7B exhibited substantially inflated performance on these leaked samples, achieving a pass@1 score that was 4.9 times higher than on unconfirmed samples. Such leakage raises serious concerns regarding the validity of benchmark-based evaluations, as it becomes unclear whether a model’s strong performance on the benchmark stems from genuine generalization or from memorization of benchmark samples that were present in its training data. In extreme cases, model developers could even intentionally incorporate benchmark data into training to artificially boost leaderboard scores [69]. The challenge is further intensified by the proprietary nature of many commercial LLMs, which do not disclose their training data. Consequently, detecting benchmark data leakage by directly comparing LLM training corpora with code generation benchmark datasets, as adopted in prior work [70], is practically impossible. Therefore, there is a pressing need for model-based leakage detection approaches that operate independently of LLM training data access, enabling fair and trustworthy evaluation of code generation models. 
+
+1.1 Motivation 
+
+To address this issue, Membership Inference Attacks (MIA) have been proposed as a way to detect whether specific samples were part of a model’s training set. Existing MIA methods can be broadly categorized into two types: classifier-based and metric-based approaches [ ? ]. Classifier-based methods involve training a binary classifier to distinguish between a model’s behavioral patterns on member samples (i.e., samples used during training) versus non-member samples (i.e., unseen samples)[2, 57]. A widely adopted approach in this category is the shadow model technique proposed by Shokri et al. [42]. Here, an attacker trains a shadow model designed to mimic the target model’s behavior. Since the attacker can control the shadow model’s training process, they know exactly which data was used to train it. As a result, they can collect outputs from the shadow model on both its training (member) and non-training (non-member) samples, thus creating a labeled dataset that pairs sample features with their membership status. This dataset is then used to train the  
+
+> ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026. Keep Evaluation Fair: Detecting Data Leakage in Code Generation Benchmarks via Membership Inference Attacks 1:3
+
+membership inference classifier. Once trained, the membership inference classifier takes as input features extracted from the target model’s output on a new sample. Leveraging patterns learned from the shadow model’s member and non-member outputs, it analyzes these features to infer whether the new sample is likely a member of the target model’s training set. In the code domain, classifier-based MIA methods like Gotcha [56], CodeMI [47], and TraWiC [28] have been developed to protect the intellectual property rights of code data by determining if a code snippet was in an LLM’s training set, and thus potentially used without authorization. These methods typically prompt LLMs to perform code completion or masked token prediction and then extract features from the model’s responses to train a classifier. Gotcha [56] encodes (input code, completed code, ground-truth) triplets using CodeBERT embeddings; CodeMI [47] extends this by incorporating ranking-based probability vectors of outputs as features; and TraWiC [28] computes match rates between the model’s predicted and original tokens via exact and fuzzy matching. Metric-based methods, by contrast, avoid training an explicit attack model. For example, Buzzer [65], also aimed at protecting code copyrights, introduces perturbations (e.g., case changes) to the input code and compares changes in the model’s [CLS] embedding, based on the assumption that member samples will be more sensitive to such perturbations. However, due to the inherent robustness of LLMs to minor textual variations, this method often fails to reliably distinguish member from non-member samples. DetectLeak [70] relies on perplexity scores, operating under the assumption that memorized samples will yield lower perplexity. However, perplexity largely reflects a model’s familiarity with common patterns, and thus performs poorly on complex or infrequent samples. Experimental results demonstrated that DetectLeak’s detection accuracy was only around 40–50%. Among the existing approaches [28, 47, 56, 65, 70], DetectLeak [70] is the only method specifically designed for detecting leakage in full-program code generation benchmarks. In contrast, Gotcha [56], CodeMI [47], TraWiC [28], and Buzzer [65] focus on copyright protection rather than how leakage undermines benchmark fairness. Therefore, these methods target partial code completion (e.g., function snippets or masked tokens), while full-program benchmarks require evaluating functional correctness—a dimension underaddressed by prior work. When benchmark samples leak into training data, models often generate code with abnormally high correctness (e.g., pass rates), presenting a potent yet underutilized signal for leakage detection. 
+
+1.2 Our Work and Contributions 
+
+Considering the issues, we propose CGMIA, a Code-Generation-specific Membership Inference Attack designed to detect potential data leakage in code generation benchmarks. CGMIA constructs a membership inference classifier to determine whether the sample (containing code generation prompt and reference solution) in a code generation benchmark belongs to the training set of the target model. Since the target LLM is typically accessible through black-box queries, we employ a shadow modeling strategy to simulate its behavior. Specifically, we fine-tune a shadow model on a subset of benchmark samples to create a labeled training set for the membership inference classifier: samples used in fine-tuning are designated as members, while the remaining unseen samples serve as non-members. For each sample, we gather the input prompt, reference solution, and output generated by the shadow model to form triplets of (prompt, generated code, reference solution) for the training set of the classifier. Unlike prior methods [28, 47, 56, 65, 70] that rely solely on either expert features or semantic embeddings, CGMIA integrates both: it extracts expert-designed features such as CodeBLEU [38], edit distance [64], perplexity [19], and test pass rate, and combines them with semantic features derived from CodeBERT [6] embeddings of the generated and reference code. These heterogeneous features, after feature dimension alignment, are fused via an integrated learning module to capture both surface-level memorization signals and deep behavioral patterns.  
+
+> ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026. 1:4 Dongdong Zhao et al.
+
+The resulting membership inference classifier is then employed to predict the likelihood that a benchmark sample was included in the training set of the target LLM. We select four recently released LLMs—Qwen2.5-Coder (3B), CodeGemma (2B), DeepSeek-Coder (1.3B), and Phi-2 (2.7B) as both target and shadow models for our study. Additionally, we choose eight benchmarks ranging from fundamental programming algorithm problems to class-level and repository-level code generation tasks. We compare our method against eight baseline approaches, including domain-specific methods (DetectLeak, Gotcha, CodeMI), machine learning classifiers (Logistic Regression, Random Forest) trained on expert features, and three deep learning architectures (CNN, LSTM, Transformer) that automatically learn semantic features from shadow model-generated code. Experimental results show that CGMIA consistently outperforms the baseline methods across eight code generation benchmarks and four target models. Compared with the strongest baseline for each target model, CGMIA achieves average absolute gains of 0.05–0.16 in Precision, 0.06–0.11 in Recall, 0.17–0.26 in MCC, and 0.09–0.13 in AUC. Furthermore, CGMIA can identify over 65% of the 108 known leaked APPS samples in StarCoder’s training data, which were first reported by Zhou et al. [70], confirming its practical utility. The main contributions of this work are as follows: (1) Unlike existing code membership inference studies that primarily focus on code completion or masked prediction for copyright protection, to the best of our knowledge, this work is the first to leverage MIA for data leakage detection in code generation benchmarks. (2) We propose CGMIA, which integrates code-generation-specific expert features and semantic embeddings to jointly capture surface-level memorization signals and deeper behavioral patterns for accurate detection of code generation benchmark contamination. (3) We conduct extensive experiments on eight code generation benchmarks and four open-source LLMs, demonstrating that CGMIA consistently outperforms eight baseline methods while further analyzing feature contributions, shadow-model mismatch, class imbalance, and real-world known leakage detection on StarCoder-7B/APPS. 
+
+1.3 Organization 
+
+The rest of this paper is organized as follows. In Section 2, we introduce the related work on membership inference attacks and data leakage detection for code generation benchmarks. Section 3 presents the methodology of CGMIA, including the task formulation, feature extraction, and membership inference classifier training. Section 4 describes the experimental setup, including the target and shadow models, benchmarks, baselines, and evaluation metrics. Section 5 reports the experimental results and analyzes the effectiveness, robustness, and practical applicability of CGMIA. Section 6 discusses the potential threats to validity. Finally, Section 7 concludes the paper. 
+
+2 Related Work 
+
+In the code domain, classifier-based MIA methods are typically designed to determine whether a given code snippet was present in the training set of an LLM, with a primary focus on safeguard-ing code intellectual property. To achieve this, they usually prompt the model to perform code completion or masked token prediction, and then compare the model’s outputs with the original ground-truth code to assess potential leakage. (1) Gotcha [56] fine-tunes a shadow model on a known subset of the target model’s training data. The shadow model is then tasked with code completion, and the resulting triplets (input code, completed code, ground truth) are collected. These triplets are encoded using CodeBERT and used as input features for a neural classifier that predicts membership. (2) CodeMI [47] extends Gotcha by employing multiple shadow models to better capture the target model’s behavior. It also focuses on the code completion task, converting the model’s outputs into ranked probability vectors and using these ranking-based features to  
+
+> ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026. Keep Evaluation Fair: Detecting Data Leakage in Code Generation Benchmarks via Membership Inference Attacks 1:5
+
+train a neural membership classifier. (3) TraWiC [28] preprocesses each code snippet by masking selected identifiers (e.g., variable names, function names, and strings), converting them into (prefix, MASK, suffix) format. The model’s predictions for the MASK positions are then compared with the original code using exact matching (for variable names and function names) and fuzzy matching (for strings). The resulting match rates are aggregated into a feature vector, which is used to train a random forest classifier for membership inference. However, these methods focus on partial code completion or masked token prediction and are not fully suited for leakage detection in full-program code generation benchmarks. Metric-based membership inference approaches, on the other hand, avoid training an attack model. Instead, they rely on statistical properties of the model’s outputs to infer membership. In the general machine/deep learning literature, for example, Min-k% Pro Attack [41] uses output confidence scores, while Loss Attack [58] examines the model’s loss (e.g., cross-entropy loss) on each input to determine membership status. In the code domain, several analogous methods have emerged. (1) Buzzer [65] introduces perturbations (e.g., case transformations) to the input code and compares the changes in the model’s [CLS] embedding before and after perturbation. The assumption is that member samples exhibit larger changes, while non-members remain more stable. However, due to the robustness of LLMs to minor perturbations such as case changes, the attack effectiveness is limited. (2) DetectLeak [70] is the only method specifically designed for detecting leakage in code generation benchmarks. It infers membership by measuring the perplexity of generated code. Samples with lower perplexity are considered more likely to have been memorized, indicating their presence in the target LLM’s training data. However, perplexity mainly reflects a model’s general familiarity with common patterns and performs poorly on complex or rare samples. Experimental results also show that DetectLeak’s detection accuracy is only around 40–50%, even below that of random guessing. Furthermore, a key challenge for metric-based methods lies in selecting appropriate thresholds; improper threshold can lead to high false positive or false negative rates, undermining the effectiveness of leakage detection. Moreover, the above-mentioned works [28, 47, 56, 65] often overlook a key feature of code generation benchmarks: the availability of test cases to evaluate functional correctness. Leaked samples tend to yield abnormally high pass rates [70], providing a strong signal for leakage detection. To address these gaps, we propose a novel MIA method tailored for code generation benchmarks. Our approach combines expert-designed features—such as code correctness, similarity to ground truth, and perplexity—with semantic features to enable more robust and accurate detection of data leakage in code generation benchmarks. 
+
+3 Methodology 3.1 Task Formulation 
+
+Considering a target LLM 𝑀 trained or fine-tuned on a training set 𝐷 𝑡𝑟𝑎𝑖𝑛 , we assume that the architecture, parameters, gradients, and training data of 𝑀 are inaccessible to the attacker, and that the model can only be queried through an external interface. More specifically, we adopt a query-based, score-access black-box setting: given an input 𝑥 (i.e., the code generation prompt), the attacker can obtain the generated output ˆ 𝑦 = 𝑀 (𝑥 ) together with token-level log-probabilities for the generated sequence. These token-level log-probabilities are used to compute the perplexity feature in CGMIA. This score-access assumption is realistic in many practical deployment scenarios involving both commercial LLM services and open-weight LLMs whose training data are not publicly disclosed. For commercial or proprietary LLM services, several providers expose token-level log-probabilities through their APIs. For example, OpenAI supports logprobs and top_logprobs in chat-completion interfaces [36], while Google Vertex AI      
+
+> ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026. 1:6 Dongdong Zhao et al. Unknown training set The target LLM M
+> Train
+
+Membership Inference Attack    
+
+> Query
+> xt:c ode generation
+> prompt
+> ෝ𝑦 t:generated code
+
+Membership Inference Classifier Training              
+
+> The shadow model S
+> Member set ( xm,ym)
+> Non -member set
+> (xn,yn)
+> Fine -tuning the
+> shadow model
+> Query
+> Positive training sample
+> (xm,ym,ො𝑦 m)
+> Negative training sample
+> (xn,yn,ො𝑦 n)
+> Membership inference attack
+> model training dataset
+> Train
+> Member inference
+> classifier F
+> Member
+> Non -member
+> Predict
+> Dbench
+> Generate
+> yt:
+> reference solution Generate
+> Input
+> Similar architecture
+
+(xt, yt, ො𝑦 t)
+
+Fig. 1. The overview of our CGMIA method. 
+
+provides responseLogprobs and logprobs for Gemini models [11]. In addition, although many open-weight models publicly release their model weights, their training data are often partially disclosed or entirely unavailable. When these models are deployed through inference frameworks such as vLLM [46], NVIDIA TensorRT-LLM [35], and llama.cpp [10], the frameworks provide generation interfaces that expose token-level log-probabilities. Under this practical score-access black-box scenario, a critical real-world concern arises re-garding training data leakage in code evaluation benchmarks. In practice, the training data 𝐷 𝑡𝑟𝑎𝑖𝑛 
+
+may unintentionally or even intentionally include samples from a code generation benchmark 
+
+𝐷 𝑏𝑒𝑛𝑐ℎ . Such data leakage can lead to artificially inflated performance on the benchmark, thereby undermining the reliability and fairness of evaluation results. To address this issue, we propose CGMIA, a code-generation-specific MIA approach designed to detect potential data leakage in code generation benchmarks. The objective is to train a membership inference classifier 𝐹 designed to perform membership inference: given a prompt 𝑥 , its reference solution 𝑦 , and the generated output code ˆ 𝑦 = 𝑀 (𝑥 ), the classifier predicts whether the sample (𝑥, 𝑦 ) is part of the model’s training set 
+
+𝐷 train :
+
+𝐹 (𝑥, 𝑦, ˆ𝑦 ) =
+
+ 1 𝑖 𝑓 (𝑥, 𝑦 ) ∈ 𝐷 𝑡𝑟𝑎𝑖𝑛 
+
+0 𝑜𝑡ℎ𝑒𝑟𝑤𝑖𝑠𝑒. (1) Since 𝑀 is typically a black-box model, we adopt a shadow modeling approach widely used in MIA literature [14, 17, 42, 54], by training a shadow model with a known architecture and controllable training set to simulate 𝑀 ’s output behavior on member versus non-member samples. As shown in Figure 1, this process consists of two key stages. (1) Membership Inference Classifier Training : We begin by randomly sampling 𝑝 instances from the benchmark dataset 𝐷 bench and using them to fine-tune the shadow model, denoted as 
+
+𝑆 . These 𝑝 samples form the member set. For each (𝑥 𝑚 , 𝑦 𝑚 ) in this set, we query 𝑆 to obtain its generated output ˆ 𝑦 𝑚 = 𝑆 (𝑥 𝑚 ). Each resulting triplet (𝑥 𝑚 , 𝑦 𝑚 , ˆ𝑦 𝑚 ) serves as a positive training example for the membership inference classifier 𝐹 . Next, we select the remaining 𝑞 samples from 
+
+𝐷 bench —those not used in the fine-tuning process. These comprise the non-member set. For each input 𝑥 𝑛 in this set, we query 𝑆 to obtain ˆ 𝑦 𝑛 = 𝑆 (𝑥 𝑛 ), producing negative training samples of the  
+
+> ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026. Keep Evaluation Fair: Detecting Data Leakage in Code Generation Benchmarks via Membership Inference Attacks 1:7
+
+form (𝑥 𝑛 , 𝑦 𝑛 , ˆ𝑦 𝑛 ) for 𝐹 . To avoid issues related to data imbalance, we set 𝑝 equal to 𝑞 . We then train the membership inference classifier 𝐹 on the combined set of positive and negative samples. (2) Membership Inference Attack : To detect potential benchmark leakage in the target model 
+
+𝑀 , we query 𝑀 with benchmark samples (𝑥 𝑡 , 𝑦 𝑡 ) ∈ 𝐷 bench , and obtain outputs ˆ 𝑦 𝑡 = 𝑀 (𝑥 𝑡 ). The resulting triplet (𝑥 𝑡 , 𝑦 𝑡 , ˆ𝑦 𝑡 ) is then fed into the trained classifier 𝐹 , which predicts whether each sample is likely included in 𝑀 ’s training set 𝐷 𝑡𝑟𝑎𝑖𝑛 .
+
+3.2 Membership Inference Classifier Training 
+
+The classifier training consists of two stages: feature extraction and integrated feature learning. 
+
+3.2.1 Feature Extraction. Unlike existing MIA approaches such as Gotcha [56], which solely rely on semantic embeddings, or methods like DetectLeak [70], CodeMI [47], and TraWiC [28], which focus exclusively on expert-designed features, our approach combines both expert features and semantic features. This hybrid strategy allows for a more comprehensive characterization of the model’s behavior, thereby enhancing the membership inference classifier’s ability to detect leakage. 
+
+Expert Features: Our selection of expert features is grounded in the hypothesis that if a sample in the code generation benchmark has been leaked into the training set and memorized by the target model, the generated output is more likely to exhibit memorization rather than generalization. Consequently, the generated code is expected to closely resemble the reference solution, and its probability of passing associated test cases will be higher [40]. This hypothesis is supported by mul-tiple empirical studies. Yang et al. [56] demonstrated statistically significant differences in perplexity [19], edit distance [64], and BLEU scores [32] between samples successfully detected as leaked via Gotcha and non-leaked samples—validating that similarity-focused metrics can distinguish memorized outputs. Further support comes from Zhou et al. [70], who found that StarCoder-7B achieved a Pass@1 score on 108 detecting known leaked samples from the APPS benchmark 4.9 times higher than on unconfirmed samples, confirming that functional correctness metrics (e.g., Pass@k) also capture memorization signals. These findings align with broader conventions in the code generation domain: Pass@k is widely used to evaluate the functional correctness of generated code [3, 5, 8, 25], while metrics such as edit distance [64] and CodeBLEU [38] are commonly employed to assess the syntactic and semantic similarity between generated code and reference solutions [9, 18, 49, 67]. Building on this hypothesis, empirical evidence, and domain norms, we select the four expert features: (a) CodeBLEU [38] measures the semantic and syntactic similarity between the generated code ˆ𝑦 and reference solution 𝑦 . A higher CodeBLEU means closer alignment with the reference solution. (b) Edit Distance [64] measures the normalized token-level edit distance between ˆ 𝑦 and 𝑦 ,calculated as the minimum number of single-token edits (insertions, deletions, or substitutions) required to transform ˆ 𝑦 to 𝑦 . A lower edit distance implies that the generated output closely resembles the reference solution. (c) Perplexity [19] measures how likely the generated output ˆ 𝑦 is under the queried model, conditioned on the input prompt 𝑥 . Under the score-access black-box setting adopted in this work, the queried model returns token-level log-probabilities for the generated sequence. Specifically, after tokenizing the generated output ˆ 𝑦 into a sequence of tokens (𝜏 1, 𝜏 2, . . . , 𝜏 𝑇 ), we compute perplexity as: PPL ( ˆ𝑦 | 𝑥 ) = exp − 1
+
+𝑇 
+
+> 𝑇
+
+∑︁ 
+
+> 𝑡 =1
+
+log 𝑝 𝑀 (𝜏 𝑡 | 𝑥, 𝜏 1, 𝜏 2, . . . , 𝜏 𝑡 −1)
+
+!
+
+where 𝑇 is the number of generated tokens, and 𝑝 𝑀 (𝜏 𝑡 | 𝑥, 𝜏 1, 𝜏 2, . . . , 𝜏 𝑡 −1) denotes the probability assigned by the queried model to the 𝑡 -th generated token 𝜏 𝑡 , conditioned on the input prompt  
+
+> ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026. 1:8 Dongdong Zhao et al.
+
+𝑥 and the previously generated tokens 𝜏 1, 𝜏 2, . . . , 𝜏 𝑡 −1. A lower perplexity value indicates that the generated output is more predictable or familiar to the model, which may suggest memorization of benchmark-related content. (d) Test Pass Rate is defined as a binary value set to 1 if the generated code ˆ 𝑦 passes all test cases, and 0 otherwise. Given the stochastic nature of LLMs, we mitigate generation variance by sampling five outputs ˆ 𝑦 
+
+for each input prompt 𝑥 . Each of the five generated outputs is independently evaluated to compute the four expert features, resulting in a 20-dimensional expert feature vector per benchmark sample. 
+
+Semantic Features: We extract semantic features from five generated outputs ˆ 𝑦 and the ref-erence solution 𝑦 using the pre-trained CodeBERT model [6], which has demonstrated superior performance in capturing the contextual and structural semantics of code and has been extensively employed in various software engineering tasks [1, 22, 24, 34]. Due to the input-length limitation of CodeBERT, each input sequence can contain at most 512 tokens. To avoid directly truncating long code sequences, we process them using a sliding-window strategy. Specifically, we tokenize each generated output and reference solution using the CodeBERT tokenizer. For sequences longer than the input limit, we split the tokenized code into overlapping chunks. Each chunk contains at most 510 code tokens, and the required special tokens are then added to form a valid CodeBERT input whose total length does not exceed 512 tokens. We adopt a stride of 256 tokens between adjacent chunks to preserve contextual continuity. All chunks produced by the sliding window are encoded. Each chunk is independently fed into CodeBERT, and the hidden state of the first special token, i.e., the [CLS] , is used as the chunk-level representation. For a code sequence split into multiple chunks, we average all chunk-level representations to obtain a single 768-dimensional sequence-level embedding. For code sequences within the input limit, we directly use the [CLS] as the sequence-level embedding. This process is applied uniformly to the five generated outputs and the reference solution, resulting in six 768-dimensional vectors for each benchmark sample. For each benchmark sample 𝑖 , let the five generated outputs be ˆ 𝑦 1 
+
+> 𝑖
+
+, ˆ𝑦 2 
+
+> 𝑖
+
+, . . . , ˆ𝑦 5 
+
+> 𝑖
+
+. After CodeBERT encoding, we obtain five generated-code embeddings 𝐺 𝑖 = [𝑔 1 
+
+> 𝑖
+
+; 𝑔 2 
+
+> 𝑖
+
+; . . . ; 𝑔 5 
+
+> 𝑖
+
+] ∈ R5×768 , where 𝑔 𝑘 𝑖 ∈ R768 
+
+denotes the sequence-level embedding of the 𝑘 -th generated output. We also obtain a reference-code embedding 𝑟 𝑖 ∈ R768 for the reference solution 𝑦 𝑖 . The expert feature vector is denoted as 𝑒 𝑖 ∈ R20 ,which is formed by concatenating the four expert features computed on each of the five generated outputs. In our implementation, CodeBERT is used as a frozen feature extractor, and its parameters are not updated during membership inference classifier training. 
+
+3.2.2 Integrated Feature Learning. After extracting semantic features 𝐺 𝑖 and expert features 𝑒 𝑖 ,CGMIA integrates them into a unified representation for membership inference. Directly concate-nating these semantic embeddings with the 20-dimensional expert feature vector would introduce a substantial dimensional imbalance between the two feature groups. Following Ni et al. [34], before feature fusion, we apply dimension-alignment transformations to aggregate the generated-code embeddings and project the expert features into a comparable representation space. Specifically, the stacked generated-code representation 𝐺 𝑖 is then passed through a one-dimensional CNN-based compression module. This module aggregates the five generated-code embeddings and outputs a single 768-dimensional generated-code semantic representation: 
+
+ℎ𝑔𝑒𝑛 𝑖 = Conv1D (G𝑖 ), ℎ𝑔𝑒𝑛 𝑖 ∈ R768 , 𝐺 𝑖 ∈ R5×768 . (2) This step summarizes the semantic information of the five generated outputs while keeping the representation dimension consistent with the CodeBERT embedding size. The reference solution is encoded separately by CodeBERT, and its semantic representation is denoted as: 
+
+ℎ𝑟𝑒 𝑓 𝑖 ∈ R768 . (3)  
+
+> ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026. Keep Evaluation Fair: Detecting Data Leakage in Code Generation Benchmarks via Membership Inference Attacks 1:9
+
+In parallel, the expert features computed from the five generated outputs form a 20-dimensional vector. Before fusion, this vector is standardized and then mapped into a 2048-dimensional repre-sentation through a linear projection: 
+
+ℎ𝑒𝑥𝑝 𝑖 = 𝑊 𝑒 ˜𝑒 𝑖 + 𝑏 𝑒 , ℎ𝑒𝑥𝑝 𝑖 ∈ R2048 , (4) where ˜ e𝑖 ∈ R20 denotes the standardized expert feature vector. This projection is used to reduce the imbalance caused by directly concatenating low-dimensional expert features with high-dimensional semantic embeddings. Finally, we concatenate the reference-solution representation, the compressed generated-code representation, and the projected expert-feature representation to form the fused vector z𝑖 :
+
+z𝑖 = [ℎ𝑟𝑒 𝑓 𝑖 ; ℎ𝑔𝑒𝑛 𝑖 ; ℎ𝑒𝑥𝑝 𝑖 ], 𝑧 𝑖 ∈ R3584 . (5) The fused representation is then fed into a three-layer feed-forward membership inference classifier. The classifier maps the 3584-dimensional input vector to a 1024-dimensional hidden representation, then to a 512-dimensional hidden representation, and finally to two output logits corresponding to the non-member and member classes. The output logits are converted into class probabilities using the softmax function. Let 𝑝 𝑖, 1 denote the predicted probability that sample 𝑖 
+
+belongs to the member class, and let 𝑝 𝑖, 0 denote the predicted probability that sample 𝑖 belongs to the non-member class. The ground-truth membership label is denoted as 𝑦 𝑖 ∈ { 0, 1}, where 1 indicates member and 0 indicates non-member. The classifier is trained using the cross-entropy loss: 
+
+L = − 1
+
+𝑁 
+
+> 𝑁
+
+∑︁ 
+
+> 𝑖 =1
+
+𝑦 𝑖 · log (𝑝 𝑖, 1) + ( 1 − 𝑦 𝑖 ) · log (𝑝 𝑖, 0) , (6) where 𝑁 is the number of training samples. During training, the parameters of the CNN-based semantic compression module and the expert-feature linear projection layer are frozen after initialization. Specifically, the CNN parameters used to aggregate the five generated-code embeddings, as well as the linear projection parameters W𝑒 
+
+and b𝑒 used for expert-feature dimension alignment, are not updated with membership labels. The remaining trainable modules are optimized using the shadow-model attack dataset and member-ship labels. This design is motivated by prior work [7, 37] on fixed feature transformations and heterogeneous feature fusion. In machine learning, fixed feature transformations, such as random feature maps and random convolutional kernels [7, 37], have been widely used to transform input data before training downstream classifiers, where the mappings or filters are not optimized using task labels but can still provide informative nonlinear representations while reducing the number of trainable parameters and the risk of overfitting. After training, the classifier predicts whether a benchmark sample is likely to be included in the target model’s training set based on the fused semantic and expert features. 
+
+4 Experimental Setup 4.1 Target Models and Shadow Models Implementations 
+
+We select recent open-source models CodeGemma(2B) [45], DeepSeek-Coder(1.3B) [16], Qwen2.5-Coder(3B) [20], and Phi-2(2.7B) [29] as our target and shadow models. Moreover, when these models were released, their pre-training and post-training datasets had already undergone deduplication, with benchmarks such as HumanEval and MBPP removed to ensure no leakage of benchmark data [16, 20, 29, 45]. The main reason is their strong code generation capabilities, and their frequent use in software engineering research [26, 50, 53, 55]. For models that are either closed-source or open-source but do not fully disclose their training datasets, we can only rely on this simulated leakage approach. Since the training data of these models remain hidden from researchers, even if  
+
+> ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026. 1:10 Dongdong Zhao et al.
+
+CGMIA detects potential leakage by inferring the presence of specific benchmark samples in the training set, we are unable to verify these inferences due to the lack of access to the actual training data. Without ground-truth validation, we cannot confidently confirm the accuracy of CGMIA’s detections, which undermines our ability to evaluate its effectiveness in real-world scenarios. To implement this simulated leakage setup, the overall experimental procedure is outlined as follows: (1) To maintain black-box access to the target models, we ensure that the member and non-member datasets of the shadow models do not overlap with those of the target models. The code generation benchmark 𝐷 bench is randomly and evenly partitioned into four mutually exclusive subsets: 𝐷 bench1 , 𝐷 bench2 , 𝐷 bench3 , and 𝐷 bench4 .(2) Target Model Implementations: For example, we select Qwen2.5-Coder as the target model and fine-tune it using 𝐷 bench1 . The member data of the target model’s training set is 𝐷 bench1 , while the non-member data is 𝐷 bench2 .(3) Shadow Model Construction: For example, we select DeepSeek-Coder as the shadow model and fine-tune it using the subset 𝐷 bench3 . We input 𝐷 bench3 into the fine-tuned shadow model and collect the input prompts 𝑥 , generated code ˆ 𝑦 , and reference solutions 𝑦 ; these serve as the positive training samples for the membership inference classifier 𝐹 . We then input 𝐷 bench4 into the fine-tuned shadow model, collect ( 𝑥, ˆ𝑦, 𝑦 ) similarly; these serve as the negative training samples for the classifier 𝐹 . Finally, we train the membership inference classifier 𝐹 using these positive and negative samples. (4) Testing the Membership Inference Classifier: We input 𝐷 bench1 and 𝐷 bench2 into the target model Qwen-Coder to generate corresponding ( 𝑥, ˆ𝑦, 𝑦 ). These triples are fed into the trained classifier 
+
+𝐹 , which predicts whether the data in 𝐷 bench1 and 𝐷 bench2 are member data of the target model. We use nucleus sampling with a top-p value of 0.95 and a temperature of 0.8, to prompt LLMs to produce diverse outputs. Due to the limited data volumes in some benchmarks, we train a single membership inference classifier using the combined training sets from all eight benchmarks, then individually predict which samples are leaked on each benchmark. To mitigate randomness, we repeat this process five times. The median of the five prediction results on this benchmark is considered the performance of the method on this benchmark. 
+
+4.2 Implementation Details 
+
+For all LoRA-based fine-tuning experiments, we use the same configuration: a rank of 8, a scaling factor 𝛼 of 32, and a dropout rate of 0.04. The LoRA adapters are applied to the query, key, and value matrices in the attention modules, as well as the linear layers in the feed-forward networks. The adapters are trained using the AdamW optimizer with a learning rate of 2e-5 for 20 epochs. We set the fine-tuning batch size to 2 and the maximum sequence length to 2048 tokens. The detailed architectures of the compression module and the membership inference classifier are summarized in Table 1, which specifies the parameter settings and input/output dimensions (where 𝐵 denotes the batch size). For training the membership inference classifier, we employ the Adam optimizer with a learning rate of 1e-4, a batch size of 100, and 50 epochs. 
+
+4.3 Code Generation Benchmarks 
+
+Considering the distribution of programming task difficulty, we select eight benchmark datasets for our experiments, as summarized in Table 2. HumanEval-X [68] and MBXP [3] mainly consist of manually created algorithmic and basic programming tasks, focusing on fundamental coding abilities. NaturalCodeBench [66] contains tasks derived from real and diverse code generation queries collected via the CodeGeeX [68] online service, reflecting more practical application scenarios. EvoCodeBench [25] targets repository-level code generation, with tasks collected from real GitHub Python repositories, representing more complex challenges. ClassEval [8] features  
+
+> ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026. Keep Evaluation Fair: Detecting Data Leakage in Code Generation Benchmarks via Membership Inference Attacks 1:11
+
+Table 1. The architecture of the semantic compression module and membership inference classifier. 
+
+Layer Input Shape Output Shape Parameter Setting Activation CNN architecture 
+
+Input 𝐵 × 5 × 768 𝐵 × 5 × 768 – –Transpose 𝐵 × 5 × 768 𝐵 × 768 × 5 – –Conv1D-1 𝐵 × 768 × 5 𝐵 × 768 × 5 𝑘 = 3, 𝑠 = 1, 𝑝 = 1 ReLU Conv1D-2 𝐵 × 768 × 5 𝐵 × 768 × 5 𝑘 = 3, 𝑠 = 1, 𝑝 = 1 –Adaptive AvgPool1D 𝐵 × 768 × 5 𝐵 × 768 × 1 Output size = 1 –Squeeze 𝐵 × 768 × 1 𝐵 × 768 – –
+
+Membership inference classifier 
+
+Input 𝐵 × 3584 𝐵 × 3584 – –FC-1 𝐵 × 3584 𝐵 × 1024 – ReLU FC-2 𝐵 × 1024 𝐵 × 512 – ReLU FC-3 𝐵 × 512 𝐵 × 2 – –Softmax 𝐵 × 2 𝐵 × 2 – –
+
+Table 2. The details of the code generation benchmarks.                            
+
+> Benchmark Number Pass@1 Fine-tuning Pass@1 HumanEval-X(Python) 164 48.7/20.7/59.7/30.5 60.4/32.9/68.2/48.8 HumanEval-X(Java) 164 59.6/23.6/45.3/29.3 65.8/36.6/55.3/47.6 MBXP-Python 974 56.2/33.1/46.2/35.9 62.8/40.6/51.4/49.3 MBXP-Java 966 47.4/43.3/41.4/41.1 57.8/53.7/51.6/52.4 NaturalCodeBench-Python 70 22.9/1.4/1.4/1.4 28.6/5.7/8.6/7.1 NaturalCodeBench-Java 70 22.9/1.4/5.7/1.4 24.3/4.3/11.4/5.7 EvoCodeBench 275 1.8/0/1.4/1.0 5.6/2.9/3.3/2.9 ClassEval 100 24.0/14.0/15.0/15.0 34.0/21.0/27.0/22.0
+
+manually created class-level code generation tasks, designed to evaluate models’ understanding and generation of object-oriented Python programming structures. Among these benchmarks, HumanEval-X and MBXP offer multilingual versions. For consistency with other benchmarks and representativeness, we select Python and Java as the evaluation languages. The “Number” column in Table 2 indicates the total number of programming tasks in each benchmark. The “Pass@1” column reports the pass@1 accuracy of four models—Qwen2.5-Coder, CodeGemma, DeepSeek-Coder, and Phi-2—on each dataset. For instance, on HumanEval-Python, their pass@1 scores are 48.7%, 20.7%, 59.7%, and 30.5%, respectively. Across all eight benchmarks, pass@1 values range from 1.4% to 59.7%, illustrating the wide variation in task difficulty. The “Fine-tuning Pass@1” column presents the performance of these models after fine-tuning on the benchmark datasets. It is evident that fine-tuning (i.e., with benchmark data leakage) substantially inflates the models’ performance, underscoring the impact of data leakage on evaluation results. 
+
+4.4 Baselines 
+
+As introduced in Section 2 (Related Work), there are several MIA methods in the code domain. For baseline comparison, we select three recent methods: DetectLeak [70] (proposed in 2025), and Gotcha [56] and CodeMI [47] (both proposed in 2024) as our baselines. DetectLeak is specifically designed as an MIA method for code generation benchmarks, while both CodeMI and Gotcha are MIA approaches originally developed for enabling LLMs to perform code completion to investigate whether a code snippet exists in the LLMs’ training set. We adopt their methods as baselines,  
+
+> ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026. 1:12 Dongdong Zhao et al.
+
+simply modifying the task from code completion to providing LLMs with code generation prompts, allowing the LLMs to generate code. We exclude TraWiC [28] and Buzzer [65] from consideration because TraWiC’s masked token prediction approach and Buzzer’s code perturbation methodology render them incompatible with the code generation task. In our experimental setup, the test set consists of half membership samples; therefore, for the DetectLeak method, we designate the lower half of perplexity as membership samples. The parameter settings for Gotcha and CodeMI remain consistent with those in their original papers. In the field of machine/deep learning domains, although MIA research has been conducted since 2017 [42], most existing studies primarily focus on detecting whether samples are present in the training set of classification models, with a few addressing generative language models. These methods are not specifically designed for code models and are unsuitable for direct application to code generation tasks. Therefore, similar to Yang et al. [56], we adapt the existing approach proposed by Hisamoto et al. [15], which was originally developed for natural language models, to serve as our baseline. This method employs a feature-based classification approach, manually extracting various features from model outputs and ground truth to construct a membership inference classifier for machine translation tasks. We modify their feature set to incorporate our four expert features (all feature values are normalized using min-max scaling). Following their experimental setup, which utilized multiple classifiers, our study employs several classifiers, including support vector machine, naive Bayes, decision tree, multi-layer perceptron, Logistic Regression (LR), and Random Forest (RF). Due to space limitations, in Section 5 (Experimental Results), we present only the results of the two best-performing machine learning classifiers: LR and RF. The other machine learning baseline results are reported in Appendix. Additionally, we consider three deep neural network architectures—CNN, LSTM, and Transformer—allowing them to automatically extract features from code generated by the shadow model and reference solution code without providing expert features. Following existing work [44, 61], we also use grid search to tune the parameters of these machine learning classifiers. For the deep learning models (CNN, LSTM, and Transformer), the settings for epochs and learning rates are consistent with CGMIA. For all deep learning methods, we allocate 40% of the training set as the validation set to prevent overfitting. 
+
+4.5 Evaluation 
+
+We employ 𝑃𝑟𝑒𝑐𝑖𝑠𝑖𝑜𝑛 = 𝑇 𝑃 𝑇 𝑃 +𝐹 𝑃 , 𝑅𝑒𝑐𝑎𝑙𝑙 = 𝑇 𝑃 𝑇 𝑃 +𝐹 𝑁 , 𝑀𝐶𝐶 = 𝑇 𝑃 ×𝑇 𝑁 −𝐹 𝑃 ×𝐹 𝑁 √(𝑇 𝑃 +𝐹 𝑃 ) ( 𝑇 𝑃 +𝐹 𝑁 ) ( 𝑇 𝑁 +𝐹 𝑃 ) ( 𝑇 𝑁 +𝐹 𝑁 ) as met-rics, where TP denotes the number of member data correctly identified as members, FP represents the number of non-member data incorrectly classified as members, FN refers to the number of member data incorrectly predicted as non-members, and TN corresponds to the number of non-member data correctly predicted as such. In addition to Precision and Recall, we adopt the Matthews Correlation Coefficient (MCC) as a balanced metric for evaluating binary classification performance. Unlike Precision and Recall, which each reflect only specific aspects of the confusion matrix, MCC jointly considers TP, TN, FP, and FN, thereby providing a more comprehensive assessment of overall detection quality. The value of MCC ranges from −1 to 1, where 1 indicates perfect prediction, 0 corresponds to performance equivalent to random guessing, and −1 indicates completely inverse prediction. Additionally, we employ the Area Under the ROC Curve (AUC), which is computed as the area under the Receiver Operating Characteristic (ROC) curve. AUC measures the model’s ability to distinguish between member and non-member samples across all possible classification thresholds, making it a threshold-independent evaluation metric. Thus, we utilize both MCC and AUC to assess the overall performance of our method from complementary perspectives under threshold-dependent and threshold-independent conditions.  
+
+> ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026. Keep Evaluation Fair: Detecting Data Leakage in Code Generation Benchmarks via Membership Inference Attacks 1:13
+
+We utilize the Wilcoxon signed-rank test [51] and Cliff’s 𝛿 [27] to assess the significance of the differences between our method and other baseline methods. To account for multiple comparisons, we apply the Benjamini-Hochberg (BH) procedure [12] to adjust the p-values. The null hypothesis of the Wilcoxon signed-rank test posits that there is no significant difference between the two methods, with a predefined significance level of 0.05 ( 𝛼 = 0.05). If the p-value after BH correction is less than 0.05, we reject the null hypothesis, indicating a statistically significant difference between the two approaches. In cases where the Wilcoxon signed-rank test reveals a significant difference, we employ Cliff’s 𝛿 to determine the magnitude of the difference. The effect size is categorized as negligible (0 < |Cliff’s 𝛿 | <0.147), small (0.147 ≤ | Cliff’s 𝛿 | <0.33), medium (0.33 ≤ | Cliff’s 𝛿 |
+
+<0.474), or large ( |Cliff’s 𝛿 | ≥ 0.474). For statistical testing, each benchmark is treated as a paired observation. Specifically, we first compute Precision, Recall, MCC, and AUC over all test samples within each benchmark, and then compare CGMIA with each baseline method using the resulting benchmark-level metric values across the eight benchmarks through the Wilcoxon signed-rank test and Cliff’s 𝛿 .
+
+5 Experimental Results 
+
+We organize the results by addressing the Research Questions (RQs), which are presented as the titles for each section. 
+
+5.1 RQ1: Does CGMIA outperform other MIA methods? 
+
+Consistent with Yang et al. [56], in RQ1, we set the target model and the shadow model as the same LLMs. For example, we use the Qwen2.5-Coder fine-tuned on 𝐷 bench1 as the target model, and then use the Qwen2.5-Coder fine-tuned on 𝐷 bench3 as the shadow model. We input 𝐷 bench3 and 
+
+𝐷 bench4 into the shadow model and collect the triplets (𝑥, ˆ𝑦, 𝑦 ) as training data for the membership inference classifier 𝐹 . We then utilize 𝐹 to predict whether the data in 𝐷 bench1 and 𝐷 bench2 are member data of the target model. In RQ3, we will use different shadow models to analyze the impact of the shadow model architecture on our CGMIA method. Table 3, Table 4, Table 5, and Table 6 present the Precision, Recall, MCC, and AUC of the MIA methods on the eight code generation benchmarks, respectively. In the tables, HP, HJ, MP, MJ, NP, NJ, EB, CE respectively represent the eight evaluation sets: HumanEval-X (Python), HumanEval-X (Java), MBXP-Python, MBXP-Java, NaturalCodeBench-Python, NaturalCodeBench-Java, EvoCodeBench, ClassEval; Go, DL, CI, Trans. respectively represent Gotcha, DetectLeak, CodeMI, Transformer; W/D/L indicates the number of datasets where our CGMIA method wins/draws/loses compared to baseline methods; Boldface indicates that the method achieves the best performance on this dataset. As shown in Table 3, our CGMIA method achieves the highest average Precision values of 0.89, 0.89, 0.92 and 0.82 across the eight benchmarks on the four models. Compared with the strongest baseline for each target model, CGMIA improves average Precision by 0.07, 0.05, 0.11, and 0.16 on Qwen2.5-Coder, CodeGemma, DeepSeek-Coder, and Phi-2, respectively. The results show statistically significant superiority over most baseline methods, except for comparisons with DetectLeak and LSTM across Qwen2.5-Coder, CodeGemma, and DeepSeek-Coder, as well as occasional cases with Transformer and random forest. Among all baseline methods, random forest and CNN exhibit the second-best performance following our method. Table 4 presents the Recall results across the four models. Our method achieves the highest Recall values of 0.89, 0.85, 0.83, and 0.84 across the eight benchmarks on the respective models. Compared with the strongest baseline for each target model, CGMIA improves average Recall by 0.11, 0.08, 0.06, and 0.11 on Qwen2.5-Coder, CodeGemma, DeepSeek-Coder, and Phi-2, respectively. Statistical analysis using p-values and Cliff’s 𝛿 demonstrates significant differences between our method and most baselines, with the exceptions of random forest and DetectLeak across Qwen2.5-Coder,  
+
+> ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026. 1:14 Dongdong Zhao et al.
+
+CodeGemma, and DeepSeek-Coder, Gotcha on CodeGemma, and logistic regression on Phi-2. LSTM and CNN achieve the highest Recall performance after our method. Tables 5 and 6 present the MCC and AUC results across the eight benchmarks on the four models, which serve as comprehensive metrics for overall performance evaluation. Our method achieves the highest average MCC values of 0.75, 0.81, 0.73, and 0.63, and the highest average AUC scores of 0.95, 0.94, 0.95, and 0.89 across the eight benchmarks on the four models. Compared with the strongest baseline for each target model, CGMIA improves average MCC by 0.17, 0.26, 0.18, and 0.21, and improves average AUC by 0.10, 0.09, 0.09, and 0.13 on Qwen2.5-Coder, CodeGemma, DeepSeek-Coder, and Phi-2, respectively. W/D/L shows our method outperforms the baselines on most benchmarks. Statistical analysis using p-values and Cliff’s 𝛿 also indicates significant differences between our method and the baseline methods for both MCC and AUC metrics in most cases. Among the baseline methods, random forest and CNN demonstrate the best MCC and AUC performance after our method. It is worth noting that, in this RQ, we follow the common MIA evaluation setting where member samples account for 50% of the evaluation set. Accordingly, for DetectLeak, which infers membership based on the perplexity of generated code and treats samples with lower perplexity as more likely to have been memorized, we classify the 50% samples with the lowest perplexity scores as members. However, in realistic deployment scenarios, the true member ratio is typically unknown in advance, making such threshold selection difficult in practice. Nevertheless, even under this favorable setting where the true member proportion is known, DetectLeak still performs substantially worse than CGMIA. Specifically, based on the average results across the eight benchmarks, CGMIA outperforms DetectLeak by 0.12–0.23 in Precision, 0.21–0.64 in Recall, 0.23–0.36 in MCC, and 0.18–0.58 in AUC across the four target models. In contrast to DetectLeak, CGMIA adopts a classifier-based design that does not require manually specifying a prevalence-dependent membership threshold, while also achieving consistently better detection performance. Therefore, since DetectLeak still substantially underperforms CGMIA even under the favorable setting where the true member proportion is known, we focus our discussion on CGMIA as the primary practical solution for benchmark leakage detection under unknown-prevalence settings, and do not further investigate calibration strategies or abstention mechanisms specifically designed for DetectLeak. In summary, across the four aforementioned tables, among the 128 total result sets (calculated as 8 baselines × 4 models × 4 metrics), 99 have p-values less than 0.05, while only 29 (23%) have p-values greater than or equal to 0.05. This confirms that our method’s performance improvements over baseline methods are statistically significant in the vast majority of cases. In addition, the reference solutions in the eight code generation benchmarks contain between 152 and 1347 tokens. The results in RQ1 show that CGMIA’s performance does not exhibit any clear correlation with reference code length, indicating that solution length has little to no effect on detection performance. 
+
+Answer to RQ1: CGMIA significantly outperforms other MIA methods for data leakage detection in code generation benchmarks in the vast majority of cases. 
+
+5.2 RQ2: How do the proposed expert features influence the performance of CGMIA? 
+
+We propose the four expert features, i.e., CodeBLEU, Edit Distance, Perplexity, and Test Pass Rate, and integrate them with semantic features extracted by CodeBERT for membership inference classifier training. Given the heterogeneous nature of these features and their varying impact on classification performance, we systematically analyze all 16 ( = 𝐶 14 + 𝐶 24 + 𝐶 34 + 𝐶 44 + 1) possible feature combinations (including the case with no expert features) to assess their effectiveness. We categorize these combinations into five levels based on the number of expert features included: 
+
+> ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026.
+
+Keep Evaluation Fair: Detecting Data Leakage in Code Generation Benchmarks via Membership Inference Attacks 1:15 
+
+Table 3. The Precision values of the methods. (a) Qwen2.5-Coder 
+
+Bench Go DL CI RF LR CNN LSTM Trans. Ours 
+
+HP 0.63 1.00 0.89 0.91 0.68 0.75 0.58 0.69 0.90 HJ 0.80 0.97 0.66 0.89 0.61 0.72 0.71 0.68 0.93 MP 0.67 0.81 0.80 0.75 0.75 0.69 0.56 0.60 0.84 
+
+MJ 0.71 0.67 0.63 0.65 0.57 0.66 0.60 0.63 0.88 
+
+NP 0.80 0.00 0.56 0.80 0.49 0.90 0.83 0.79 1.00 
+
+NJ 0.96 1.00 0.00 0.87 0.00 0.89 0.87 0.82 0.93 EB 0.72 0.92 0.73 0.89 0.53 0.77 0.86 0.69 0.79 CE 0.89 0.75 0.61 0.74 0.58 0.82 0.99 0.72 0.81 AVG 0.77 0.77 0.61 0.82 0.53 0.78 0.75 0.70 0.89 
+
+W/D/L 6/0/2 4/0/4 8/0/0 6/0/2 8/0/0 7/0/1 6/0/2 8/0/0 p-value 0.05 0.95 0.01 0.15 0.02 0.03 0.11 0.11 
+
+𝛿 0.59 0.09 0.84 0.47 1.00 0.66 0.53 0.94 
+
+(b) CodeGemma 
+
+Bench Go DL CI RF LR CNN LSTM Trans. Ours 
+
+HP 0.59 1.00 0.72 0.81 0.67 0.79 0.66 0.70 0.94 HJ 0.78 0.98 0.77 0.94 0.64 0.74 0.70 0.70 0.96 MP 0.65 0.90 0.73 0.81 0.68 0.68 0.66 0.63 0.86 MJ 0.71 0.81 0.65 0.77 0.60 0.66 0.60 0.64 0.89 
+
+NP 0.80 0.00 0.77 0.79 0.51 0.88 0.88 0.80 0.82 NJ 0.96 1.00 0.00 0.93 0.00 0.89 0.87 0.82 0.90 EB 0.72 0.87 0.83 0.89 0.53 0.78 0.91 0.71 0.85 CE 0.87 0.60 0.75 0.85 0.59 0.82 0.99 0.72 0.93 AVG 0.76 0.77 0.65 0.84 0.53 0.78 0.78 0.72 0.89 
+
+W/D/L 7/0/0 3/0/5 8/0/0 6/0/2 8/0/0 7/0/1 5/0/3 8/0/0 p-value 0.03 0.84 0.01 0.11 0.03 0.04 0.25 0.03 
+
+𝛿 0.69 0.03 0.97 0.47 1.00 0.75 0.41 0.97 
+
+(c) DeepSeek-Coder 
+
+Bench Go DL CI RF LR CNN LSTM Trans. Ours 
+
+HP 0.62 1.00 0.83 0.93 0.67 0.78 0.66 0.67 0.92 HJ 0.78 1.00 0.64 0.96 0.57 0.74 0.69 0.69 1.00 
+
+MP 0.64 0.84 0.78 0.77 0.69 0.69 0.62 0.63 0.85 
+
+MJ 0.71 0.73 0.63 0.70 0.59 0.67 0.66 0.63 0.89 
+
+NP 0.81 0.00 0.72 0.71 0.51 0.86 0.85 0.77 0.83 NJ 0.95 1.00 0.00 0.84 0.00 0.89 0.87 0.82 1.00 
+
+EB 0.72 0.88 0.73 0.81 0.55 0.76 0.87 0.69 0.84 CE 0.86 0.60 0.65 0.74 0.55 0.82 0.99 0.72 1.00 
+
+AVG 0.76 0.76 0.62 0.81 0.52 0.78 0.77 0.70 0.92 
+
+W/D/L 8/0/0 4/2/2 8/0/0 7/0/1 8/0/0 7/0/1 6/0/2 8/0/0 p-value 0.01 0.24 0.01 0.02 0.03 0.04 0.05 0.03 
+
+𝛿 0.75 0.23 1.00 0.63 1.00 0.81 0.59 1.00 
+
+(d) Phi-2 
+
+Bench Go DL CI RF LR CNN LSTM Trans. Ours 
+
+HP 0.57 0.53 0.50 0.55 0.76 0.62 0.48 0.53 0.96 
+
+HJ 0.58 0.59 0.67 0.50 0.69 0.62 0.56 0.58 0.90 
+
+MP 0.57 0.55 0.67 0.72 0.55 0.59 0.25 0.53 0.79 
+
+MJ 0.58 0.71 0.53 0.80 0.64 0.58 0.55 0.50 0.75 
+
+NP 0.63 0.58 0.45 0.50 0.69 0.60 0.64 0.56 0.65 
+
+NJ 0.60 0.58 0.45 0.50 0.69 0.60 0.64 0.56 0.65 EB 0.58 0.52 0.58 0.79 0.62 0.62 0.62 0.53 0.85 
+
+CE 0.72 0.65 0.57 0.62 0.65 0.67 0.87 0.48 0.80 AVG 0.61 0.59 0.56 0.64 0.66 0.62 0.59 0.50 0.82 
+
+W/D/L 8/0/0 8/0/0 8/0/0 7/0/1 7/0/1 8/0/0 7/0/1 8/0/0 p-value 0.00 0.00 0.00 0.02 0.00 0.00 0.02 0.00 
+
+𝛿 0.21 0.23 0.26 0.18 0.16 0.20 0.23 0.32 
+
+Table 4. The Recall values of the methods. (a) Qwen2.5-Coder 
+
+Bench Go DL CI RF LR CNN LSTM Trans. Ours 
+
+HP 0.65 0.55 0.38 0.60 0.69 0.74 0.55 0.69 0.90 
+
+HJ 0.78 1.00 0.73 0.99 0.83 0.72 0.59 0.67 0.84 MP 0.68 0.74 0.46 0.77 0.61 0.69 0.51 0.60 0.88 
+
+MJ 0.70 0.98 0.48 0.97 0.60 0.65 0.54 0.62 0.85 NP 0.82 0.00 0.59 0.19 0.80 0.89 0.81 0.78 0.89 
+
+NJ 0.96 0.38 0.00 0.71 0.00 0.88 0.85 0.82 1.00 
+
+EB 0.74 0.86 0.50 0.79 0.75 0.76 0.86 0.69 0.81 CE 0.94 0.92 0.62 0.82 0.92 0.81 0.99 0.72 0.93 AVG 0.78 0.68 0.47 0.73 0.65 0.77 0.71 0.70 0.89 
+
+W/D/L 7/0/1 5/0/3 8/0/0 6/0/2 8/0/0 7/0/1 6/0/2 8/0/0 p-value 0.02 0.31 0.01 0.25 0.02 0.04 0.04 0.02 
+
+𝛿 0.53 0.27 1.00 0.53 0.78 0.72 0.63 0.97 
+
+(b) CodeGemma 
+
+Bench Go DL CI RF LR CNN LSTM Trans. Ours 
+
+HP 0.55 0.02 0.34 0.18 0.61 0.78 0.54 0.70 0.89 
+
+HJ 0.73 0.88 0.64 0.92 0.75 0.71 0.59 0.69 0.84 MP 0.66 0.27 0.38 0.48 0.55 0.67 0.50 0.63 0.87 
+
+MJ 0.72 0.84 0.51 0.84 0.67 0.66 0.53 0.64 0.85 
+
+NP 0.71 0.00 0.28 0.12 0.75 0.88 0.88 0.80 0.82 NJ 0.97 0.23 0.00 0.42 0.00 0.88 0.85 0.82 0.89 EB 0.66 0.98 0.23 0.92 0.64 0.76 0.91 0.71 0.85 CE 0.92 1.00 0.52 0.96 0.93 0.81 0.99 0.72 0.76 AVG 0.74 0.53 0.36 0.61 0.61 0.77 0.72 0.71 0.85 
+
+W/D/L 6/0/2 5/0/3 8/0/0 5/0/3 7/0/1 6/0/2 5/0/3 8/0/0 p-value 0.11 0.25 0.01 0.25 0.04 0.01 0.25 0.02 
+
+𝛿 0.50 0.22 1.00 0.22 0.75 0.56 0.19 0.94 
+
+(c) DeepSeek-Coder 
+
+Bench Go DL CI RF LR CNN LSTM Trans. Ours 
+
+HP 0.63 0.44 0.50 0.51 0.59 0.78 0.55 0.67 0.76 HJ 0.73 0.99 0.59 0.99 0.71 0.72 0.58 0.67 0.82 MP 0.66 0.92 0.43 0.94 0.62 0.69 0.50 0.63 0.88 MJ 0.73 0.98 0.51 0.98 0.64 0.67 0.54 0.62 0.86 NP 0.75 0.00 0.34 0.17 0.80 0.86 0.84 0.77 0.77 NJ 0.97 0.05 0.00 0.18 0.00 0.88 0.85 0.82 0.93 EB 0.72 0.60 0.21 0.55 0.62 0.75 0.87 0.69 0.81 CE 0.91 0.91 0.28 0.86 0.75 0.81 0.99 0.72 0.78 AVG 0.76 0.61 0.36 0.65 0.59 0.77 0.72 0.70 0.83 
+
+W/D/L 6/0/2 4/0/4 8/0/0 4/0/4 7/0/1 5/0/3 5/0/3 8/0/0 p-value 0.02 0.31 0.01 0.31 0.01 0.02 0.04 0.01 
+
+𝛿 0.53 0.27 1.00 0.09 0.78 0.72 0.63 0.97 
+
+(d) Phi-2 
+
+Bench Go DL CI RF LR CNN LSTM Trans. Ours 
+
+HP 0.53 0.07 0.25 0.19 0.86 0.60 0.50 0.53 0.83 HJ 0.52 0.18 0.64 0.00 0.89 0.61 0.54 0.57 0.82 MP 0.58 0.11 0.47 0.66 0.86 0.59 0.50 0.53 0.82 MJ 0.60 0.49 0.50 0.83 0.67 0.58 0.52 0.50 0.93 
+
+NP 0.51 0.23 0.42 0.00 0.75 0.59 0.63 0.54 0.92 
+
+NJ 0.52 0.16 0.17 0.4 0.62 0.63 0.74 0.50 0.83 
+
+EB 0.58 0.04 0.47 0.82 0.49 0.60 0.62 0.51 0.82 
+
+CE 0.76 0.30 0.76 0.72 0.68 0.67 0.87 0.49 0.77 AVG 0.57 0.20 0.46 0.45 0.73 0.61 0.61 0.52 0.84 
+
+W/D/L 8/0/0 8/0/0 8/0/0 7/1/0 5/0/3 8/0/0 7/0/1 8/0/0 p-value 0.01 0.00 0.00 0.02 0.07 0.00 0.01 0.00 
+
+𝛿 0.27 0.64 0.38 0.39 0.11 0.23 0.23 0.32 
+
+Level-0 includes no expert features (semantic features only); Level-1 includes combinations with one feature; Level-2 with two; Level-3 with three; and Level-4 with all four expert features. For each level, we report the best-performing combination based on the average results across eight code 
+
+ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026. 1:16 Dongdong Zhao et al. 
+
+Table 5. The MCC values of the methods. (a) Qwen2.5-Coder 
+
+Bench Go DL CI RF LR CNN LSTM Trans. Ours 
+
+HP 0.17 0.10 0.24 0.59 0.31 0.57 0.15 0.40 0.77 
+
+HJ 0.53 0.87 0.45 0.88 0.33 0.44 0.26 0.39 0.80 MP 0.30 0.34 0.27 0.52 0.29 0.34 0.04 0.25 0.71 
+
+MJ 0.42 0.65 0.24 0.53 0.23 0.32 0.10 0.28 0.75 
+
+NP 0.54 0.00 0.26 0.23 0.04 0.76 0.75 0.60 0.68 NJ 0.93 0.36 0.00 0.62 0.00 0.77 0.72 0.64 0.91 EB 0.40 0.84 0.27 0.70 0.09 0.54 0.82 0.42 0.69 CE 0.78 0.45 0.36 0.53 0.35 0.64 0.97 0.44 0.67 AVG 0.51 0.45 0.26 0.58 0.20 0.55 0.48 0.43 0.75 
+
+W/D/L 6/0/2 6/0/2 8/0/0 6/0/2 8/0/0 7/0/1 5/0/3 8/0/0 p-value 0.04 0.25 0.01 0.04 0.02 0.03 0.05 0.03 
+
+𝛿 0.59 0.53 1.00 0.78 1.00 0.63 0.59 0.97 
+
+(b) CodeGemma 
+
+Bench Go DL CI RF LR CNN LSTM Trans. Ours 
+
+HP 0.17 0.10 0.10 0.22 0.03 0.15 0.40 0.57 0.79 
+
+HJ 0.53 0.87 0.42 0.86 0.38 0.26 0.39 0.44 0.78 MP 0.30 0.34 0.36 0.40 0.23 0.04 0.25 0.34 0.76 
+
+MJ 0.42 0.65 0.23 0.59 0.20 0.10 0.28 0.32 0.69 
+
+NP 0.54 0.00 0.27 0.17 0.09 0.75 0.60 0.76 0.91 
+
+NJ 0.93 0.36 0.15 0.46 0.04 0.72 0.64 0.77 1.00 
+
+EB 0.40 0.84 0.21 0.81 0.12 0.82 0.42 0.54 0.78 CE 0.78 0.45 0.37 0.80 0.15 0.97 0.44 0.64 0.75 AVG 0.51 0.45 0.26 0.54 0.16 0.48 0.43 0.55 0.81 
+
+W/D/L 7/0/1 6/0/2 8/0/0 5/0/3 8/0/0 6/0/2 8/0/0 8/0/0 p-value 0.04 0.05 0.01 0.11 0.02 0.03 0.15 0.03 
+
+𝛿 0.56 0.56 1.00 0.34 1.00 0.69 0.28 1.00 
+
+(c) DeepSeek-Coder 
+
+Bench Go DL CI RF LR CNN LSTM Trans. Ours 
+
+HP 0.23 0.53 0.43 0.53 0.30 0.56 0.18 0.33 0.70 
+
+HJ 0.53 0.99 0.25 0.96 0.18 0.47 0.24 0.36 0.79 MP 0.29 0.74 0.34 0.69 0.35 0.37 0.05 0.26 0.71 
+
+MJ 0.43 0.66 0.22 0.63 0.20 0.34 0.16 0.26 0.75 
+
+NP 0.57 0.00 0.25 0.16 0.04 0.72 0.69 0.54 0.56 NJ 0.92 0.16 0.00 0.24 0.00 0.77 0.72 0.64 0.91 EB 0.44 0.55 0.19 0.44 0.11 0.51 0.73 0.39 0.64 CE 0.77 0.35 0.15 0.57 0.14 0.64 0.97 0.44 0.80 AVG 0.52 0.50 0.23 0.53 0.16 0.55 0.47 0.40 0.73 
+
+W/D/L 6/0/2 6/0/2 8/0/0 7/0/1 8/0/0 7/0/1 5/0/3 8/0/0 p-value 0.04 0.11 0.01 0.05 0.02 0.05 0.11 0.03 
+
+𝛿 0.56 0.56 1.00 0.63 1.00 0.66 0.44 0.94 
+
+(d) Phi-2 
+
+Bench Go DL CI RF LR CNN LSTM Trans. Ours 
+
+HP 0.13 0.19 0.00 0.24 0.27 0.23 0.02 0.06 0.79 
+
+HJ 0.15 0.32 0.32 0.00 0.39 0.23 0.10 0.16 0.77 
+
+MP 0.15 0.24 0.25 0.47 0.48 0.18 0.02 0.05 0.61 
+
+MJ 0.17 0.47 0.05 0.64 0.49 0.15 0.06 0.00 0.63 NP 0.20 0.23 0.08 0.00 0.42 0.19 0.27 0.10 0.59 
+
+NJ 0.16 0.30 0.00 0.38 0.46 0.27 0.49 0.00 0.54 
+
+EB 0.17 0.15 0.14 0.64 0.42 0.21 0.24 0.04 0.53 CE 0.47 0.42 0.19 0.37 0.44 0.34 0.74 0.03 0.55 AVG 0.20 0.29 0.11 0.34 0.42 0.22 0.23 0.05 0.63 
+
+W/D/L 8/0/0 8/0/0 8/0/0 6/0/2 8/0/0 8/0/0 7/0/1 8/0/0 p-value 0.00 0.00 0.01 0.04 0.01 0.00 0.01 0.00 
+
+𝛿 0.43 0.34 0.52 0.29 0.21 0.40 0.40 0.58 
+
+Table 6. The AUC values of the methods. (a) Qwen2.5-Coder 
+
+Bench Go DL CI RF LR CNN LSTM Trans. Ours 
+
+HP 0.68 0.78 0.75 0.90 0.48 0.85 0.61 0.74 0.95 
+
+HJ 0.88 0.99 0.74 0.95 0.72 0.79 0.64 0.73 0.94 MP 0.74 0.78 0.73 0.85 0.64 0.74 0.52 0.65 0.92 
+
+MJ 0.77 0.75 0.63 0.86 0.60 0.71 0.55 0.69 0.93 
+
+NP 0.89 0.50 0.63 0.62 0.55 0.94 0.94 0.87 1.00 
+
+NJ 0.98 0.69 0.35 0.75 0.55 0.98 0.97 0.90 1.00 
+
+EB 0.80 0.89 0.66 0.92 0.64 0.87 0.95 0.79 0.93 CE 0.97 0.81 0.70 0.91 0.63 0.93 1.00 0.80 0.91 AVG 0.84 0.77 0.65 0.85 0.60 0.85 0.77 0.77 0.95 
+
+W/D/L 7/0/1 7/0/1 8/0/0 6/0/2 8/0/0 7/0/1 6/0/2 8/0/0 p-value 0.03 0.04 0.01 0.08 0.02 0.03 0.08 0.02 
+
+𝛿 0.63 0.81 1.00 0.75 1.00 0.63 0.28 1.00 
+
+(b) CodeGemma 
+
+Bench Go DL CI RF LR CNN LSTM Trans. Ours 
+
+HP 0.63 0.51 0.72 0.81 0.73 0.85 0.57 0.76 0.95 
+
+HJ 0.83 0.93 0.76 0.98 0.76 0.81 0.64 0.75 0.98 
+
+MP 0.71 0.62 0.67 0.84 0.68 0.71 0.49 0.68 0.91 
+
+MJ 0.78 0.82 0.65 0.88 0.65 0.73 0.54 0.69 0.94 
+
+NP 0.86 0.50 0.61 0.62 0.62 0.93 0.95 0.87 0.97 
+
+NJ 0.99 0.61 0.35 0.68 0.35 0.98 0.97 0.90 0.99 
+
+EB 0.77 0.92 0.61 0.96 0.61 0.87 0.97 0.78 0.92 CE 0.95 0.67 0.76 0.98 0.81 0.93 1.00 0.80 0.89 AVG 0.81 0.70 0.64 0.84 0.65 0.85 0.77 0.78 0.94 
+
+W/D/L 7/0/1 7/1/0 8/0/0 5/1/2 8/0/0 7/0/1 6/0/2 8/0/0 p-value 0.03 0.00 0.01 0.19 0.03 0.04 0.07 0.03 
+
+𝛿 0.65 0.88 1.00 0.41 1.00 0.68 0.28 0.98 
+
+(c) DeepSeek-Coder 
+
+Bench Go DL CI RF LR CNN LSTM Trans. Ours 
+
+HP 0.68 0.72 0.75 0.81 0.72 0.85 0.60 0.74 0.94 
+
+HJ 0.85 1.00 0.67 0.97 0.67 0.82 0.64 0.77 0.96 MP 0.70 0.87 0.70 0.84 0.70 0.74 0.53 0.67 0.92 
+
+MJ 0.79 0.81 0.66 0.88 0.65 0.74 0.57 0.69 0.95 
+
+NP 0.88 0.50 0.60 0.62 0.61 0.94 0.94 0.85 0.94 
+
+NJ 0.99 0.52 0.35 0.68 0.35 0.98 0.97 0.90 1.00 
+
+EB 0.80 0.76 0.58 0.96 0.58 0.85 0.95 0.78 0.93 CE 0.95 0.65 0.67 0.98 0.65 0.93 1.00 0.80 0.94 AVG 0.83 0.73 0.62 0.85 0.62 0.86 0.77 0.77 0.95 
+
+W/D/L 7/0/1 7/0/1 8/0/0 5/0/3 8/0/0 7/1/0 5/1/2 8/0/0 p-value 0.03 0.04 0.01 0.19 0.02 0.04 0.15 0.03 
+
+𝛿 0.59 0.78 1.00 0.41 1.00 0.59 0.28 1.00 
+
+(d) Phi-2 
+
+Bench Go DL CI RF LR CNN LSTM Trans. Ours 
+
+HP 0.58 0.13 0.59 0.68 0.69 0.70 0.50 0.59 0.98 
+
+HJ 0.61 0.31 0.72 0.50 0.69 0.63 0.53 0.60 0.97 
+
+MP 0.60 0.20 0.65 0.83 0.67 0.63 0.51 0.53 0.89 
+
+MJ 0.61 0.63 0.58 0.87 0.74 0.61 0.51 0.52 0.87 
+
+NP 0.62 0.35 0.49 0.50 0.675 0.66 0.71 0.57 0.82 
+
+NJ 0.62 0.28 0.42 0.96 0.44 0.74 0.83 0.53 0.81 EB 0.63 0.08 0.61 0.95 0.79 0.64 0.71 0.55 0.89 CE 0.83 0.46 0.67 0.76 0.62 0.69 0.94 0.47 0.88 AVG 0.64 0.31 0.59 0.76 0.67 0.66 0.66 0.54 0.89 
+
+W/D/L 8/0/0 8/0/0 8/0/0 5/1/2 8/0/0 8/0/0 6/0/2 8/0/0 p-value 0.01 0.00 0.00 0.12 0.00 0.01 0.01 0.01 
+
+𝛿 0.25 0.58 0.29 0.13 0.22 0.22 0.23 0.34 
+
+generation benchmarks in Figure 2. These combinations are as follows: Level-1: Perplexity ; Level-2: 
+
+Perplexity + Test Pass Rate ; Level-3b: Perplexity + Test Pass Rate + CodeBLEU ; Level-4: Perplexity +
+
+Test Pass Rate + CodeBLEU + Edit Distance . While most code generation benchmarks provide test 
+
+ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026. Keep Evaluation Fair: Detecting Data Leakage in Code Generation Benchmarks via Membership Inference Attacks 1:17 
+
+Fig. 2. The performance of CGMIA under varying numbers of expert features. 
+
+Fig. 3. The impact of different fine-tuning epochs of target models on the performance of CGMIA. 
+
+(a) Using Qwen2.5-Coder as the target model (b) Using CodeGemma as the target model 
+
+(c) Using DeepSeek-Coder as the target model (d) Using Phi-2 as the target model Fig. 4. The impact of different shadow models on the data leakage detection performance of CGMIA. 
+
+cases for calculating Test Pass Rate, a small minority do not include such test cases [9]. Thus, for Level-3 (which uses three expert features), we additionally define a variant—Level-3a, where the Test Pass Rate feature is excluded. This variant is designed to evaluate the CGMIA’s robustness when Test Pass Rate is unavailable due to missing benchmark test cases. By contrast, Level-3b (Perplexity + Test Pass Rate + CodeBLEU ) represents the best-performing combination among all three-feature subsets of expert features. Additionally, the performance of Gotcha is included in Figure 2, displayed as scatter points on the far right of each subplot. This setup enables a clear comparison between Gotcha and Level-0, where CGMIA relies solely on semantic features. Experimental results show that as the number of expert features increases, our CGMIA method achieves progressively better performance across all four metrics. Using all expert features yields the highest scores across all models, with a single exception where the Recall on the DeepSeek-Coder model is marginally higher at Level-2. These findings demonstrate that each expert feature provides complementary benefits and that combining them enhances the effectiveness of our  
+
+> ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026. 1:18 Dongdong Zhao et al.
+
+CGMIA method. Furthermore, our results for Level-3a and Level-4 indicate that while Level-4 outperforms Level-3a, the performance difference between them is relatively small, with the gap not exceeding 0.05 across all metrics. This indicates that CGMIA remains effective even when Test Pass Rate is unavailable, thereby demonstrating the robustness of our feature design in the absence of test case-dependent metrics. Additionally, comparative results between Level-0 and Gotcha reveal that Level-0 consistently outperforms Gotcha across all four metrics. This superiority can be attributed to key limitations in Gotcha’s design: Gotcha underperforms in both feature extraction and model construction, as it simply feeds extracted features directly into a binary classifier without the classifier participating in the network training process. 
+
+Answer to RQ2: Each expert feature contributes to enhancing CGMIA’s performance. 
+
+5.3 RQ3: What are the factors affecting the data leakage detection of CGMIA? 
+
+In this RQ, we examine the robustness of CGMIA from two perspectives. First, we vary the number of fine-tuning epochs of the target model to evaluate whether CGMIA is sensitive to the leakage simulation strength. Second, we study shadow-target model mismatch, where the shadow model and the target model come from different model families, to evaluate whether CGMIA remains effective in a more realistic black-box setting. 
+
+The fine-tuning epochs of target models. Prior research [58] notes that membership leakage risk may rise with more epochs. In RQ1, we fine-tune each target model for 10 epochs. To examine whether CGMIA depends on this specific setting, we fine-tune target models for 5, 6, 7, ..., and 15 epochs. Each point on the line chart in Figure 3 represents the average value of the CGMIA method across these eight code generation benchmarks. The results indicate that the four metrics remain relatively stable with only minor fluctuations. We use the Wilcoxon signed-rank test to check for significant differences in CGMIA’s performance on 8 benchmarks between 10 epochs and other counts, finding no significant difference. These results indicate that CGMIA is not overly sensitive to the exact number of fine-tuning epochs used in our leakage simulation. In other words, CGMIA can still identify membership signals even when the target model is fine-tuned for fewer epochs. 
+
+The shadow models. In RQ1, we use the same LLMs for both the target and shadow models. For example, when Qwen2.5-Coder is used as the target model, Qwen2.5-Coder is also used as the shadow model. However, in practical black-box scenarios, the attacker usually does not know the exact architecture of the target LLM. Therefore, this same-model setting represents a relatively favorable evaluation setting, and it is important to further examine CGMIA under shadow-target architectural mismatch. For this RQ, we analyze the impact on our CGMIA method by using shadow models with different architectures from the target model. For example, in Figure 4a, Qwen2.5-Coder serves as the target model, while Qwen2.5-Coder, CodeGemma, DeepSeek-Coder, and Phi-2 are used as shadow models. Each bar of Figure 4 shows the average value of the CGMIA method across eight code generation benchmarks. An asterisk (*) after the average indicates a significant difference between the results of using an LLM with a different architecture as the shadow model and those of using an LLM with the same architecture as the shadow model across these eight benchmarks. Figure 4 shows that CGMIA exhibits a moderate performance decline when using shadow models with different architectures. Specifically, MCC decreases statistically significantly, while Precision, Recall, and AUC only show non-significant drops in most cases. Even so, CGMIA remains highly effective, with key metrics maintaining strong ranges: Precision 0.73–0.81, Recall 0.68–0.77, AUC 0.81–0.87, and MCC 0.41–0.57, indicating that CGMIA still provides useful detection results under shadow-target mismatch. Under the controlled evaluation protocol, the Precision values indicate  
+
+> ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026. Keep Evaluation Fair: Detecting Data Leakage in Code Generation Benchmarks via Membership Inference Attacks 1:19
+
+that a considerable proportion of samples predicted as leaked are correctly identified, while the Recall values show that CGMIA can still identify many member samples. The AUC values further indicate that CGMIA maintains reasonable overall discrimination ability even when the shadow model differs from the target model. This also suggests that the manually designed expert features and CodeBERT-based semantic features can still provide robust membership signals for CGMIA, enabling it to maintain good detection performance even when the target and shadow models have different architectures. Additionally, Table 8 presents the average values of the top two performing baselines, random forest and Gotcha, across eight benchmarks when the target model and shadow model differ. In Table 8, C denotes CodeGemma, Q denotes Qwen2.5-Coder, D denotes DeepSeek-Coder, and P denotes Phi-2. For example, cell “0.77/0.65” indicates that using CodeGemma as the shadow model and Qwen2.5-Coder as the target model, random forest and Gotcha achieve average precision values of 0.77 and 0.65 on the eight benchmarks, respectively. Asterisks (*) in Table 8 denote cases where our CGMIA method significantly outperforms random forest and Gotcha. Comparing the results in Figure 4 and Table 8, we observe that our CGMIA method still achieves higher average values than random forest and Gotcha across all eight benchmarks. In some cases, CGMIA significantly outperforms random forest and Gotcha. For instance, when using CodeGemma as the shadow model and Qwen2.5-Coder as the target model, CGMIA achieves an AUC value of 0.87, which is significantly higher than Gotcha’s AUC of 0.70. This comparison shows that the advantage of CGMIA is still observed in the mismatched shadow-model setting. Random forest relies on expert features, while Gotcha mainly relies on semantic embeddings. CGMIA combines both types of features, and the results are consistent with the expectation that integrating expert and semantic information can improve leakage detection performance under architectural mismatch. 
+
+Answer to RQ3: The number of fine-tuning epochs in target models has little impact on data leakage detection performance. While the choice of shadow model impacts CGMIA’s performance, CGMIA still retains strong performance, consistently showing practical reliability and usability. 
+
+5.4 RQ4: Can ensemble learning mitigate the performance degradation of CGMIA caused by architectural mismatch between shadow and target models? 
+
+Figure 4 in RQ3 reveals that selecting different shadow models for a given target model leads to varying CGMIA performance outcomes. For instance, when Qwen 2.5-Coder is the target model, DeepSeek-Coder (as the shadow model) yields the lowest MCC and AUC values, while CodeGemma achieves the highest; when DeepSeek-Coder is the target, Phi-2 results in the lowest MCC and AUC, whereas CodeGemma delivers the highest; for CodeGemma as the target, Qwen 2.5-Coder produces the lowest MCC and AUC, while Phi-2 achieves the highest; and when Phi-2 is the target, CodeGemma yields the lowest MCC and AUC, with Qwen 2.5-Coder achieving the highest. Overall, no consistent pattern emerges for choosing the optimal or suboptimal shadow models. To address this challenge, we propose an ensemble learning strategy that integrates three of the four models as shadow models, with the remaining as the target. Each shadow model outputs a binary prediction (1 for leakage, 0 for no leakage). We assign weights to the shadow models based on their MCC scores on validation sets, normalizing these scores so their sum equals 1. The final decision is made by weighted voting: each prediction is multiplied by its weight, and the sum determines the outcome. If the total score exceeds 1, the sample is classified as leaked; otherwise, it is non-leaked. Table 9 presents the average performance of the ensemble learning strategy across the eight benchmarks. For instance, the notation “C/D/P →Q” denotes an ensemble of three shadow models (CodeGemma, DeepSeek-Coder, Phi-2) employed to detect membership leakage in the target model 
+
+> ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026.
+
+1:20 Dongdong Zhao et al. 
+
+Table 7. The performance of CGMIA and baselines on StarCoder. 
+
+(a) Precision Bench Go DL CI RF LR CNN LSTM Trans. Ours                                                                                  
+
+> HP 0.62 0.53 0.59 0.60 0.55 0.59 0.51 0.51 0.78
+> HJ 0.64 1.00 0.51 0.53 0.53 0.63 0.54 0.52 0.63 MP 0.55 0.54 0.67 0.66 0.64 0.58 0.53 0.56 0.71
+> MJ 0.63 0.28 0.58 0.58 0.56 0.60 0.76 0.54 0.66 NP 0.57 0.00 0.50 1.00 0.86 0.68 0.67 0.56 0.77 NJ 0.63 0.00 0.58 0.56 0.53 0.67 0.68 0.23 0.61 EB 0.58 0.00 0.44 0.36 0.40 0.64 0.62 0.54 0.67
+> CE 0.72 0.58 0.48 0.53 0.56 0.69 0.90 0.59 0.58 AVG 0.62 0.37 0.54 0.60 0.58 0.64 0.65 0.51 0.67
+
+(b) Recall Bench Go DL CI RF LR CNN LSTM Trans. Ours                                                                                  
+
+> HP 0.66 0.07 0.61 0.54 0.57 0.59 0.50 0.51 0.77
+> HJ 0.57 0.02 0.79 0.71 0.86 0.60 0.51 0.52 0.79 MP 0.56 0.42 0.21 0.24 0.24 0.57 0.51 0.56 0.57 MJ 0.62 0.01 0.73 0.75 0.83 0.60 0.51 0.54 0.63 NP 0.51 0.00 0.08 0.50 0.50 0.58 0.67 0.53 0.57 NJ 0.51 0.00 0.92 0.83 0.83 0.62 0.69 0.50 0.71 EB 0.58 0.00 0.34 0.21 0.30 0.59 0.61 0.53 0.52 CE 0.64 0.24 0.82 0.94 0.82 0.67 0.89 0.55 0.66 AVG 0.58 0.09 0.56 0.59 0.62 0.60 0.61 0.53 0.65
+
+(c) MCC Bench Go DL CI RF LR CNN LSTM Trans. Ours                                                                                  
+
+> HP 0.25 0.01 0.18 0.18 0.11 0.19 0.01 0.02 0.55
+> HJ 0.26 0.10 0.04 0.08 0.13 0.22 0.03 0.04 0.34
+> MP 0.10 0.07 0.14 0.15 0.14 0.15 0.04 0.12 0.34
+> MJ 0.26 -0.05 0.21 0.20 0.20 0.21 0.09 0.08 0.30
+> NP 0.13 0.00 0.00 0.58 0.46 0.25 0.35 0.08 0.41 NJ 0.23 -0.09 0.31 0.19 0.10 0.29 0.37 0.00 0.24 EB 0.16 0.00 -0.08 -0.18 -0.14 0.23 0.24 0.07 0.28
+> CE 0.38 0.09 -0.08 0.18 0.20 0.35 0.79 0.14 0.22 AVG 0.22 0.02 0.09 0.17 0.15 0.24 0.24 0.07 0.33
+
+(d) AUC Bench Go DL CI RF LR CNN LSTM Trans. Ours                                                                                  
+
+> HP 0.66 0.53 0.56 0.61 0.57 0.66 0.52 0.55 0.82
+> HJ 0.68 0.59 0.57 0.58 0.61 0.66 0.53 0.55 0.75
+> MP 0.58 0.53 0.57 0.59 0.60 0.60 0.52 0.57 0.74
+> MJ 0.67 0.47 0.66 0.64 0.67 0.65 0.51 0.55 0.71
+> NP 0.61 0.54 0.72 0.75 0.75 0.62 0.72 0.59 0.77
+> NJ 0.66 0.57 0.72 0.60 0.70 0.74 0.80 0.63 0.72 EB 0.61 0.55 0.44 0.41 0.42 0.67 0.69 0.52 0.70
+> CE 0.78 0.56 0.53 0.59 0.56 0.73 0.98 0.62 0.67 AVG 0.66 0.54 0.60 0.60 0.61 0.67 0.66 0.57 0.73
+
+Qwen 2.5-Coder. Specifically, the first column (labeled “D →Q”) shows the performance when DeepSeek-Coder is used alone as the shadow model—this combination yields the worst MCC and AUC results for Qwen 2.5-Coder detection. Conversely, the second column (labeled “C →Q”) demonstrates that using CodeGemma alone achieves the best MCC and AUC for the same target model. Experimental results demonstrate that the ensemble learning strategy outperforms the worst-performing single shadow model in nearly all cases, except when CodeGemma is the target model, where the ensemble’s Recall value (0.72) is slightly lower than that of Qwen 2.5-Coder alone as the shadow model. Moreover, among the 16 total cases (4 target models × 4 metrics), the ensemble even surpasses the best-performing single shadow model in 10 cases (62.5%). These results show that the ensemble strategy improves robustness under unknown target architectures. Since the best single shadow model cannot be identified in advance in the black-box setting, the main value of the ensemble is to reduce the worst-case risk of selecting a poorly matched shadow model. Although the ensemble does not always outperform the best single shadow model, it consistently performs better than the worst single shadow model in most cases. This makes the ensemble strategy a more reliable choice when the attacker has no architectural knowledge of the target model. 
+
+Answer to RQ4: Our proposed ensemble strategy mitigates CGMIA’s performance degradation from shadow-target architectural mismatch, and though not always outperforming the optimal single shadow model, it consistently outperforms the worst single shadow model—serving as a more reliable alternative. 
+
+5.5 RQ5: Can CGMIA work in StarCoder-based contamination-checkable and detected known-leakage settings? 
+
+In our main experiments, we use four open-source code LLMs, including Qwen2.5-Coder, CodeGemma, DeepSeek-Coder, and Phi-2, and construct simulated benchmark leakage settings by applying LoRA 
+
+ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026. Keep Evaluation Fair: Detecting Data Leakage in Code Generation Benchmarks via Membership Inference Attacks 1:21 
+
+Fig. 5. The performance of CGMIA on detecting known leaked APPS samples in StarCoder’s training data. Table 8. The performance of random forest and Gotcha with different LLMs as target and shadow models.                                                             
+
+> Metrics C→QD→QP→QQ→CD→CP→CQ→DC→DP→DC→PD→PQ→PPrecision 0.77/0.65* 0.72/0.65 0.58/0.55* 0.78/0.66 0.69/0.66 0.62/0.57 0.74/0.66* 0.77/0.65* 0.59/0.56* 0.78/0.56* 0.76/0.56 0.76/0.55
+> Recall 0.74/0.65 0.57*/0.65 0.76/0.63 0.55/0.64 0.39*/0.62 0.69*/0.52 0.61/0.64 0.63/0.64 0.68/0.57 0.56/0.51 0.68*/0.50 0.54/0.49
+> MCC 0.56/0.30* 0.44/0.30* 0.76/0.63 0.47/0.31 0.39/0.30* 0.69*/0.52 0.46/0.31 0.53/0.29* 0.68/0.57 0.56/0.51 0.68*/0.50 0.54/0.49
+> AUC 0.81/0.70* 0.76/0.70 0.60/0.57* 0.79/0.70 0.72/0.70 0.65/0.59 0.78/0.71 0.82/0.70* 0.60/0.58 0.74/0.58* 0.77/0.57 0.73/0.57
+
+fine-tuning on the selected eight benchmarks: HumanEval-X(Python), HumanEval-X(Java), MBXP-Python, MBXP-Java, NaturalCodeBench-Python, NaturalCodeBench-Java, EvoCode-Bench, and ClassEval. However, the technical reports of these models do not explicitly state whether all eight benchmarks used in this study were comprehensively decontaminated from their pre-training corpora. Therefore, it remains possible that some benchmark samples may have already appeared during pre-training, which could introduce contamination-induced bias and add noise to the reported measurements. To further reduce this potential threat to validity, we additionally extend our experiments to StarCoder models, for which the Data Portraits [30] tool enables approximate verification of whether benchmark samples are present in the pre-training corpus. Data Portraits records training data using Bloom-filter-based sketches constructed from hashed strided 𝑛 -grams and supports membership-style checking by testing whether query 𝑛 -grams appear in the stored sketches [30]. Before constructing the controlled leakage setting, we first use the Data Portraits interface for the StarCoder-3B training corpus to examine all eight selected benchmarks and do not observe evidence of benchmark contamination. Based on this pre-check, we then construct controlled leakage settings on StarCoder-3B following the same experimental protocol as RQ1, where StarCoder-3B serves as both the target model and the shadow model for evaluating CGMIA. Table 7 reports the Precision, Recall, MCC, and AUC results of CGMIA and all baseline methods across the eight code generation benchmarks. The benchmark and baseline abbreviations are consistent with those used in RQ1, and boldface indicates the best-performing method for each benchmark. As shown in Table 7, CGMIA achieves the best average performance among all methods across all four evaluation metrics, obtaining a Precision of 0.67, Recall of 0.65, MCC of 0.33, and AUC of 0.73. Compared with the strongest baseline on each metric, CGMIA achieves absolute improvements of 0.02 in Precision, 0.03 in Recall, 0.09 in MCC, and 0.06 in AUC. Furthermore, CGMIA achieves the best MCC on five out of the eight benchmarks and the best AUC on six out of the eight benchmarks, indicating that CGMIA still maintains strong leakage detection capability on StarCoder-3B after Data Portraits-based contamination checking. Similar to prior setups [47, 56], our main experiments focus on simulated benchmark leakage, where LLMs are fine-tuned on subsets of benchmark data and the resulting fine-tuned models are treated as target models. To further evaluate CGMIA under a more realistic pre-training leakage scenario, we additionally conduct experiments on StarCoder-7B. Zhou et al. [70] confirmed that the pre-training corpus of StarCoder-7B contains 108 leaked samples from the APPS benchmark, making it a natural and practical target model for evaluating benchmark leakage detection in real-world settings. To construct the test set, we include two groups of samples. The first group consists  
+
+> ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026. 1:22 Dongdong Zhao et al.
+
+Table 9. The performance of CGMIA using the proposed ensemble learning strategy.                                                             
+
+> Metrics C/D/P →QD→QC→QC/P/Q →DP→DC→DD/Q/P →CQ→CP→CC/D/Q →PC→PQ→PPrecision 0.74 0.73 0.81 0.84 0.71 0.79 0.77 0.73 0.74 0.78 0.71 0.69
+> Recall 0.82 0.73 0.77 0.83 0.64 0.77 0.72 0.74 0.62 0.71 0.67 0.78 MCC 0.49 0.45 0.57 0.67 0.44 0.57 0.50 0.45 0.49 0.48 0.41 0.43
+> AUC 0.81 0.81 0.87 0.9 0.86 0.87 0.82 0.81 0.90 0.80 0.72 0.80
+
+of the 108 known leaked APPS samples identified by Zhou et al. [70] as appearing in StarCoder-7B’s pre-training data. The second group consists of 108 APPS samples randomly selected from the remaining APPS dataset after excluding the known leaked samples, which are treated as samples with unconfirmed leakage status. We then query StarCoder-7B to generate outputs for all samples in the test set. To construct the shadow-model training data, we randomly select 108 samples from the remaining APPS dataset as member samples, representing data observed during shadow-model training, and another 108 samples as non-member samples, representing unseen data. This process is repeated five times to mitigate the influence of data randomness. Figure 5 displays the average results of CGMIA’s detection performance, employing four indi-vidual shadow models and an ensemble learning strategy. The results suggest that CGMIA can effectively recover known leaked benchmark samples in this realistic pre-training leakage scenario. Individual shadow models achieve Precision between 0.59 and 0.64, Recall between 0.65 and 0.69, MCC between 0.41 and 0.47, and AUC between 0.62 and 0.65. Notably, the Recall values indicate that CGMIA identifies 65%–69% of the 108 known leaked APPS samples in StarCoder’s training data, demonstrating its practical utility. Moreover, the ensemble learning strategy achieves the highest Recall compared to all individual shadow models. However, since the remaining APPS samples cannot be strictly guaranteed to be free from undiscovered leakage, the reported Precision, MCC, and AUC results may still be affected by potential label noise in the samples with unconfirmed leakage status. Therefore, the results in this RQ should primarily be interpreted as evaluating CGMIA’s ability to recover known leaked benchmark samples in a realistic pre-training leakage scenario. 
+
+Answer to RQ5: CGMIA remains effective in both contamination-checkable and real-world known-leakage settings on StarCoder models, and can successfully recover a substantial propor-tion of detecting known leaked benchmark samples. 
+
+5.6 RQ6: Is CGMIA effective under imbalanced member sample ratios? 
+
+In our previous experiments, we follow the common evaluation protocol adopted in prior MIA studies, including Shokri et al. [42], Buzzer [65], and Hu et al. [17], where member samples account for 50% of the overall evaluation set. However, in practical benchmark leakage detection scenarios, leaked samples may constitute only a small fraction of all evaluated samples. Therefore, in this RQ, we further evaluate CGMIA under more imbalanced settings, where the proportions of member samples are reduced to 20%, 30%, and 40%. We do not consider even lower member proportions because some benchmark datasets used in our study contain relatively limited numbers of samples. For example, NaturalCodeBench contains only 70 samples and HumanEval contains 164 samples. Under extremely low-prevalence settings, the number of member samples would become too small to support stable and statistically meaningful evaluation results. Figure 6 presents the Precision-Recall (PR) curves of CGMIA under these settings, where recall is shown on the x-axis and precision on the y-axis. The black dashed horizontal line in each subplot denotes the naive random classifier baseline, whose precision value is equal to the proportion of member samples in the dataset.  
+
+> ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026. Keep Evaluation Fair: Detecting Data Leakage in Code Generation Benchmarks via Membership Inference Attacks 1:23
+> Fig. 6. The precision-recall curves of CGMIA under different member ratios.
+
+As shown in Figure 6, the detection performance of CGMIA generally declines as the member ratio decreases. This trend is expected because precision is sensitive to the prevalence of positive samples: when leaked samples become scarcer, achieving higher recall typically introduces more false positives, resulting in a more noticeable reduction in precision. Nevertheless, CGMIA still maintains meaningful discriminative capability across all evaluated ratios, as all PR curves remain substantially above their corresponding random-guess baselines. In particular, when the member ratio is 30% or 40%, Qwen2.5-Coder, CodeGemma, and DeepSeek-Coder maintain relatively high precision across a wide recall range. By contrast, Phi-2 exhibits comparatively weaker performance under these settings, likely due to its relatively limited code generation capability compared with the other target models. Even under the more challenging 20% member-ratio setting, the PR curves of all evaluated models still remain substantially above the random-guess baseline, indicating that CGMIA continues to provide informative leakage detection signals under imbalanced settings. 
+
+Answer to RQ6: CGMIA remains effective under imbalanced member-ratio settings and consis-tently achieves substantially better performance than random guessing. 
+
+5.7 Case Study 
+
+Figure 7 shows two examples from EvoCodeBench and MBXP-Python, with input prompts, reference solutions, and DeepSeek-Coder outputs before/after fine-tuning. Prior to fine-tuning, DeepSeek-Coder fails to produce correct solutions for both samples. After fine-tuning on one-quarter of the samples from these two benchmarks (including the two target samples, i.e., under data leakage conditions), the fine-tuned DeepSeek-Coder still generates incorrect code for the EvoCodeBench sample but successfully produces correct code for the MBXP-Python sample.  
+
+> ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026. 1:24 Dongdong Zhao et al.
+> Fig. 7. Samples that are successfully detected as leaked by our CGMIA method but not by baseline methods.
+
+Compared to the pre-fine-tuning outputs, the code generated by the fine-tuned model more closely resembles the reference solutions. This observation provides an intuitive explanation of why membership inference can be effective for benchmark leakage detection. Once a benchmark sample has been exposed during training, the model does not always reproduce the reference solution exactly, but its generation behavior may become closer to the reference solution in terms of implementation logic, semantic structure, or functional behavior. Nevertheless, some discrepancies remain between the fine-tuned outputs and the references. Specifically, for the EvoCodeBench case, differences occur in lines 2 and 4; for the MBXP-Python case, the model replaces the variable name “fact” (used in the reference) with “fac” and introduces an additional conditional check in the generated code (lines 2–3). These two examples indicate that leakage signals in code generation are not limited to exact textual memorization. Instead, they may appear as partial similarity to the reference solution, improved functional correctness, or semantic closeness to the expected implementation. Importantly, both samples are correctly identified as data leakage cases by our proposed CGMIA method. Among baseline approaches, only Gotcha successfully detects the EvoCodeBench sample, while all other baselines fail. For the MBXP-Python sample, none of the baseline methods detect the leakage. DetectLeak fails because it relies only on perplexity. When perplexity scores of the two generated code snippets are sorted in ascending order, these two samples do not fall into the lower-perplexity range used by DetectLeak to identify leaked samples, causing DetectLeak to misclassify these samples as non-leaked. This suggests that perplexity alone is insufficient, because a leaked sample may still have relatively high perplexity when the generated code contains uncommon implementation patterns or differs from the reference solution. Although machine learning classifiers leverage four features (CodeBLEU, edit distance, perplexity, and test pass rate), the MBXP-Python sample has a test pass rate of 1 (a signal that should indicate  
+
+> ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026. Keep Evaluation Fair: Detecting Data Leakage in Code Generation Benchmarks via Membership Inference Attacks 1:25
+
+data leakage). However, due to the relatively low similarity between its generated code and the reference solution, combined with a high perplexity score, the classifier still incorrectly labels the sample as non-leaked. This case shows that simply using expert features in a shallow classifier may be insufficient when different features provide inconsistent evidence. Baseline methods such as CNN, LSTM, and Transformer also miss these two leakage cases, and Gotcha specifically misses the MBXP-Python sample’s leakage: they overemphasize semantic features while ignoring expert features—particularly the critical “test pass rate” signal of the MBXP-Python sample. In contrast, CGMIA accurately identifies leakage in both samples because it integrates semantic embeddings with expert features. The semantic features capture the behavioral similarity between the generated code and the reference solution, while the expert features capture different observable effects of leakage, including reference similarity, likelihood familiarity, and functional correctness. Therefore, CGMIA does not depend on a single leakage signal being strong in all cases. For the EvoCodeBench sample, even though the generated code is still incorrect, the increased similarity to the reference solution provides useful evidence. For the MBXP-Python sample, even though the generated code is not textually identical to the reference solution, the successful test execution and semantic closeness provide complementary evidence. These cases help explain why CGMIA can work better than existing methods: benchmark leakage in code generation may leave multiple weak but complementary traces, and CGMIA is able to jointly capture these traces through the combination of expert features and semantic features. 
+
+6 Threats of validity 
+
+(1) We conduct our experiments with two NVIDIA 4090 GPUs. Due to these hardware constraints, we limit our evaluation to smaller-scale models for fine-tuning as both target and shadow models. Consequently, the effectiveness of CGMIA on larger models with substantially more parameters remains uncertain and requires further investigation. (2) We select only four expert-designed features in addition to semantic embeddings for mem-bership inference. Other relevant features may exist that improve detection accuracy. Exploring additional or alternative features is an important direction for future research. (3) CGMIA relies on the key assumption that leaked training samples closely align with the reference solutions in code generation benchmarks. It specifically targets the scenario of uninten-tional data leakage in LLMs, typically involving the leakage of complete code segments. This aligns with findings from Zhou et al. [70], who note that LLMs primarily exhibit such unintentional data leakage. However, if an adversary deliberately modifies or rewrites reference code before training or fine-tuning the target LLM, CGMIA may fail to detect such deliberate leakage. Addressing this type of deliberate evasion tactic requires dedicated methodologies, which we reserve as future work. (4) Our main experiments simulate leakage by applying LoRA fine-tuning on benchmark subsets, rather than faithfully reproducing incidental contamination in large-scale pre-training corpora. Compared with natural pre-training contamination, this controlled setup may induce stronger and more concentrated memorization signals because benchmark samples receive more direct exposure and are optimized through a different training process. As a result, membership inference may become easier, and the reported performance may be optimistic with respect to real-world pre-training leakage. We adopt this design because it provides a controllable and reproducible MIA evaluation setting with known member and non-member labels, which are typically unavailable for closed-source or partially disclosed LLMs. Moreover, this practice is consistent with prior shadow-model-based MIA studies in the code domain, such as Gotcha [56], CodeMI [47], and AdvPrompt-MIA [21], which commonly rely on controllable retraining or fine-tuning to construct labeled attack datasets for quantitative evaluation. Therefore, the primary goal of our experiments is  
+
+> ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026. 1:26 Dongdong Zhao et al.
+
+to enable controlled and comparable evaluation of different leakage detection methods. In addition, the StarCoder/APPS experiment in Section 5.5 provides preliminary evidence under a known real leakage scenario. Since publicly verifiable cases of real pre-training contamination remain limited, evaluating CGMIA under broader real-world leakage settings remains important future work. (5) Although our main experiments follow the balanced member/non-member setting commonly adopted in prior MIA studies, real-world benchmark leakage detection scenarios may involve much lower and unknown leakage prevalence. We address this issue in RQ6 by further conducting PR-curve analysis under different member ratios. The results show that CGMIA still maintains strong detection performance when the member proportion is reduced to 20%, 30%, and 40%. Moreover, unlike threshold-dependent methods such as DetectLeak, which suffer from threshold sensitivity due to prevalence-dependent threshold selection, CGMIA does not require manually specifying a membership threshold, making it more practical under unknown-prevalence settings. (6) CGMIA assumes a score-access black-box interface rather than a strict text-only interface. Specifically, the perplexity feature requires token-level output scores such as log-probabilities. Although such score information is available in many practical LLM systems, including commercial models such as OpenAI GPT and Gemini, as well as open-weight models deployed through modern inference frameworks, it is not guaranteed to be accessible in all commercial black-box LLM services. Therefore, the current version of CGMIA is applicable to score-access black-box settings, but not directly to strict text-only APIs that return only generated code. (7) In CGMIA, CodeBERT-based semantic representation may still introduce risks for long code sequences. To avoid direct truncation, we adopt a sliding-window encoding strategy with average pooling for code longer than CodeBERT’s maximum input length. However, this strategy may still lose fine-grained long-range dependencies or dilute localized memorization signals when multiple chunks are averaged into a single representation. As a result, the semantic features of very long generated programs or reference solutions may be less precise. Future work could explore long-context code encoders or structure-aware representations to better capture long-code semantics. (8) In RQ5, the evaluation on StarCoder-7B may still be affected by label uncertainty in the negative samples. Although Zhou et al. [70] confirmed 108 detecting leaked APPS samples in the StarCoder-7B pre-training corpus, the remaining APPS samples cannot be strictly guaranteed to be free from undiscovered leakage. Therefore, the samples used as negatives in our evaluation are more accurately treated as samples with unconfirmed leakage status rather than verified non-leaked samples. As a result, the reported Precision, MCC, and AUC values may still be influenced by potential label noise in the evaluation set. To mitigate over-interpretation, we primarily frame RQ5 as evaluating CGMIA’s ability to recover detecting known leaked benchmark samples under a realistic pre-training leakage scenario, with particular emphasis on Recall for the confirmed leaked subset. Future work could further improve negative-sample verification through stronger contamination-detection heuristics or more direct access to pre-training corpus snapshots when available. 
+
+7 Conclusion 
+
+We propose CGMIA, an MIA method designed to detect potential data leakage in code generation benchmarks. CGMIA employs a shadow modeling strategy to generate labeled training data distinguishing members from non-members. It then extracts both expert features and semantic features from the data to build a classifier. Extensive experiments confirm that CGMIA not only outperforms existing MIA methods but also demonstrates strong practical effectiveness. This work not only advances methodologies for detecting leakage in code generation benchmarks but also 
+
+> ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026.
+
+Keep Evaluation Fair: Detecting Data Leakage in Code Generation Benchmarks via Membership Inference Attacks 1:27 
+
+highlights the value of integrating heterogeneous features, paving the way for future research into detecting data leakage in other types of benchmarks. 
+
+8 Data Availability 
+
+The benchmark data configurations, experimental code, and replication materials used in this study are publicly available at https://github.com/Ricardo-J-Chen/CGMIA. The repository serves as the online appendix for this paper and contains the benchmark data files, prompt templates, LoRA fine-tuning and code-generation scripts (e.g., finetune/fintune.py and finetune/generate/generate_all.py ), feature-extraction and membership inference scripts, CGMIA and baseline attack implementations (e.g., MIA/cgmia.py , MIA/gotcha.py , and MIA/detectLeak.py ), ablation-study and ensemble-learning scripts (e.g., MIA/ablation.py and MIA/Ensemble_learning.py ), and the data-generation scripts for the tables and figures reported in the manuscript. All tables and figures reported in the manuscript can be reproduced using the code and materials provided in the repository. 
+
+9 Acknowledgments 
+
+This research was supported by the National Natural Science Foundation of China under Grant No. 62502440 and the Zhejiang Provincial Natural Science Foundation of China under Grant No. LQN26F020003. 
+
+References 
+
+[1] Tumu Akshar, Vikram Singh, NL Bhanu Murthy, Aneesh Krishna, and Lov Kumar. 2024. A Codebert Based Empirical Framework for Evaluating Classification-Enabled Vulnerability Prediction Models. In Proceedings of the 17th Innovations in Software Engineering Conference . 1–11. [2] Ali Al-Kaswan, Maliheh Izadi, and Arie Van Deursen. 2024. Traces of memorisation in large language models for code. In Proceedings of the IEEE/ACM 46th International Conference on Software Engineering . 1–12. [3] Ben Athiwaratkun, Sanjay Krishna Gouda, Zijian Wang, Xiaopeng Li, Yuchen Tian, Ming Tan, Wasi Uddin Ahmad, Shiqi Wang, Qing Sun, Mingyue Shang, et al. 2022. Multi-lingual evaluation of code generation models. arXiv preprint arXiv:2210.14868 (2022). [4] Simone Balloccu, Patrícia Schmidtová, Mateusz Lango, and Ondřej Dušek. 2024. Leak, cheat, repeat: Data contamination and evaluation malpractices in closed-source LLMs. arXiv preprint arXiv:2402.03927 (2024). [5] Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, Henrique Ponde De Oliveira Pinto, Jared Kaplan, Harri Edwards, Yuri Burda, Nicholas Joseph, Greg Brockman, et al. 2021. Evaluating large language models trained on code. arXiv preprint arXiv:2107.03374 (2021). [6] Badhan Chandra Das, M Hadi Amini, and Yanzhao Wu. 2025. Security and privacy challenges of large language models: A survey. Comput. Surveys 57, 6 (2025), 1–39. [7] Angus Dempster, Petitjean François, and Geoffrey I Webb. 2020. ROCKET: exceptionally fast and accurate time series classification using random convolutional kernels. Data Mining and Knowledge Discovery 34, 5 (2020), 1454–1495. [8] Xueying Du, Mingwei Liu, Kaixin Wang, Hanlin Wang, Junwei Liu, Yixuan Chen, Jiayi Feng, Chaofeng Sha, Xin Peng, and Yiling Lou. 2024. Evaluating large language models in class-level code generation. In Proceedings of the IEEE/ACM 46th International Conference on Software Engineering . 1–13. [9] Jia Feng, Jiachen Liu, Cuiyun Gao, Chun Yong Chong, Chaozheng Wang, Shan Gao, and Xin Xia. 2024. Complexcodeeval: A benchmark for evaluating large code models on more complex code. In Proceedings of the 39th IEEE/ACM International Conference on Automated Software Engineering . 1895–1906. [10] ggml-org. 2026. llama.cpp Server Documentation. https://github.com/ggml-org/llama.cpp/blob/master/tools/server/ README.md. Accessed: 2026-05-12. [11] Google Cloud. 2026. Generate content with the Gemini API in Vertex AI. https://docs.cloud.google.com/vertex-ai/generative-ai/docs/model-reference/inference. Accessed: 2026-05-07. [12] Winston Haynes. 2013. Benjamini–Hochberg Method . Springer New York, New York, NY, 78–78. [13] Dan Hendrycks, Steven Basart, Saurav Kadavath, Mantas Mazeika, Akul Arora, Ethan Guo, Collin Burns, Samir Puranik, Horace He, Dawn Song, et al. 2021. Measuring coding challenge competence with apps. arXiv preprint arXiv:2105.09938 
+
+(2021). [14] Seira Hidano, Takao Murakami, and Yusuke Kawamoto. 2021. TransMIA: membership inference attacks using transfer shadow training. In 2021 International Joint Conference on Neural Networks (IJCNN) . IEEE, 1–10. ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026. 1:28 Dongdong Zhao et al. 
+
+[15] Sorami Hisamoto, Matt Post, and Kevin Duh. 2020. Membership inference attacks on sequence-to-sequence models: Is my data in your machine translation system? Transactions of the Association for Computational Linguistics 8 (2020), 49–63. [16] Xinyi Hou, Yanjie Zhao, Yue Liu, Zhou Yang, Kailong Wang, Li Li, Xiapu Luo, David Lo, John Grundy, and Haoyu Wang. 2024. Large language models for software engineering: A systematic literature review. ACM Transactions on Software Engineering and Methodology 33, 8 (2024), 1–79. [17] Hongsheng Hu, Zoran Salcic, Lichao Sun, Gillian Dobbie, Philip S Yu, and Xuyun Zhang. 2022. Membership inference attacks on machine learning: A survey. ACM Computing Surveys (CSUR) 54, 11s (2022), 1–37. [18] Junjie Huang, Chenglong Wang, Jipeng Zhang, Cong Yan, Haotian Cui, Jeevana Priya Inala, Colin Clement, Nan Duan, and Jianfeng Gao. 2022. Execution-based evaluation for data science code generation models. arXiv preprint arXiv:2211.09374 (2022). [19] Fred Jelinek, Robert L Mercer, Lalit R Bahl, and James K Baker. 1977. Perplexity—a measure of the difficulty of speech recognition tasks. The Journal of the Acoustical Society of America 62, S1 (1977), S63–S63. [20] Juyong Jiang, Fan Wang, Jiasi Shen, Sungju Kim, and Sunghun Kim. 2024. A survey on large language models for code generation. arXiv preprint arXiv:2406.00515 (2024). [21] Yuan Jiang, Zehao Li, Shan Huang, Christoph Treude, Xiaohong Su, and Tiantian Wang. 2025. Effective code membership inference for code completion models via adversarial prompts. arXiv preprint arXiv:2511.15107 (2025). [22] Yuan Jiang, Yujian Zhang, Xiaohong Su, Christoph Treude, and Tiantian Wang. 2024. StagedVulBERT: Multi-Granular Vulnerability Detection with a Novel Pre-trained Code Model. IEEE Transactions on Software Engineering (2024). [23] Bonan Kou, Shengmai Chen, Zhijie Wang, Lei Ma, and Tianyi Zhang. 2024. Do large language models pay similar attention like human programmers when generating code? Proceedings of the ACM on Software Engineering 1, FSE (2024), 2261–2284. [24] Triet Huynh Minh Le, M Ali Babar, and Tung Hoang Thai. 2024. Software vulnerability prediction in low-resource languages: An empirical study of codebert and chatgpt. In Proceedings of the 28th International Conference on Evaluation and Assessment in Software Engineering . 679–685. [25] Jia Li, Ge Li, Xuanming Zhang, Yunfei Zhao, Yihong Dong, Zhi Jin, Binhua Li, Fei Huang, and Yongbin Li. 2024. Evocodebench: An evolving code generation benchmark with domain-specific evaluations. Advances in Neural Information Processing Systems 37 (2024), 57619–57641. [26] Ruofan Lu, Yintong Huo, Meng Zhang, Yichen Li, and Michael R Lyu. 2025. Next Edit Prediction: Learning to Predict Code Edits from Context and Interaction History. arXiv preprint arXiv:2508.10074 (2025). [27] Guillermo Macbeth, Eugenia Razumiejczyk, and Rubén Daniel Ledesma. 2011. Cliff’s Delta Calculator: A non-parametric effect size program for two groups of observations. Universitas Psychologica 10, 2 (2011), 545–555. [28] Vahid Majdinasab, Amin Nikanjam, and Foutse Khomh. 2024. Trained without my consent: Detecting code inclusion in language models trained on code. arXiv preprint arXiv:2402.09299 (2024). [29] Sebastien Bubeck Caio César Teodoro Mendes Marah Abdin, Jyoti Aneja. [n. d.]. . [30] Marc Marone and Benjamin Van Durme. 2023. Data Portraits: Recording Foundation Model Training Data. In Thirty-seventh Conference on Neural Information Processing Systems Datasets and Benchmarks Track . https://arxiv.org/abs/ 2303.03919 [31] Alexandre Matton, Tom Sherborne, Dennis Aumiller, Elena Tommasone, Milad Alizadeh, Jingyi He, Raymond Ma, Maxime Voisin, Ellen Gilsenan-McMahon, and Matthias Gallé. 2024. On leakage of code generation evaluation datasets. 
+
+arXiv preprint arXiv:2407.07565 (2024). [32] Shervin Minaee, Tomas Mikolov, Narjes Nikzad, Meysam Chenaghlu, Richard Socher, Xavier Amatriain, and Jianfeng Gao. 2024. Large language models: A survey. arXiv preprint arXiv:2402.06196 (2024). [33] Fangwen Mu, Lin Shi, Song Wang, Zhuohao Yu, Binquan Zhang, ChenXue Wang, Shichao Liu, and Qing Wang. 2024. Clarifygpt: A framework for enhancing llm-based code generation via requirements clarification. Proceedings of the ACM on Software Engineering 1, FSE (2024), 2332–2354. [34] Chao Ni, Wei Wang, Kaiwen Yang, Xin Xia, Kui Liu, and David Lo. 2022. The best of both worlds: integrating semantic features with expert features for defect prediction and localization. In Proceedings of the 30th ACM Joint European Software Engineering Conference and Symposium on the Foundations of Software Engineering . 672–683. [35] NVIDIA. 2025. TensorRT-LLM API Reference. https://nvidia.github.io/TensorRT-LLM/0.21.0/llm-api/reference.html. Accessed: 2026-05-12. [36] OpenAI. 2023. Using logprobs. https://developers.openai.com/cookbook/examples/using_logprobs. Accessed: 2026-05-07. [37] Ali Rahimi and Benjamin Recht. 2007. Random features for large-scale kernel machines. Advances in neural information processing systems 20 (2007). [38] Shuo Ren, Daya Guo, Shuai Lu, Long Zhou, Shujie Liu, Duyu Tang, Neel Sundaresan, Ming Zhou, Ambrosio Blanco, and Shuai Ma. 2020. Codebleu: a method for automatic evaluation of code synthesis. arXiv preprint arXiv:2009.10297 
+
+ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026. Keep Evaluation Fair: Detecting Data Leakage in Code Generation Benchmarks via Membership Inference Attacks 1:29 
+
+(2020). [39] Martin Riddell, Ansong Ni, and Arman Cohan. 2024. Quantifying contamination in evaluating code generation capabilities of language models. arXiv preprint arXiv:2403.04811 (2024). [40] Fabio Salerno, Ali Al-Kaswan, and Maliheh Izadi. 2025. How much do code language models remember? an investigation on data extraction attacks before and after fine-tuning. In 2025 IEEE/ACM 22nd International Conference on Mining Software Repositories (MSR) . IEEE, 465–477. [41] Weijia Shi, Anirudh Ajith, Mengzhou Xia, Yangsibo Huang, Daogao Liu, Terra Blevins, Danqi Chen, and Luke Zettlemoyer. 2023. Detecting pretraining data from large language models. arXiv preprint arXiv:2310.16789 (2023). [42] Reza Shokri, Marco Stronati, Congzheng Song, and Vitaly Shmatikov. 2017. Membership inference attacks against machine learning models. In 2017 IEEE symposium on security and privacy (SP) . IEEE, 3–18. [43] Zhihong Sun, Yao Wan, Jia Li, Hongyu Zhang, Zhi Jin, Ge Li, and Chen Lyu. 2024. Sifting through the chaff: On utilizing execution feedback for ranking the generated code candidates. In Proceedings of the 39th IEEE/ACM International Conference on Automated Software Engineering . 229–241. [44] Chakkrit Tantithamthavorn, Shane McIntosh, Ahmed E Hassan, and Kenichi Matsumoto. 2018. The impact of automated parameter optimization on defect prediction models. IEEE Transactions on Software Engineering 45, 7 (2018), 683–711. [45] CodeGemma Team, Heri Zhao, Jeffrey Hui, Joshua Howland, Nam Nguyen, Siqi Zuo, Andrea Hu, Christopher A Choquette-Choo, Jingyue Shen, Joe Kelley, et al. 2024. Codegemma: Open code models based on gemma. arXiv preprint arXiv:2406.11409 (2024). [46] vLLM Team. 2026. OpenAI-Compatible Server. https://docs.vllm.ai/en/latest/serving/openai_compatible_server/. Accessed: 2026-05-07. [47] Yao Wan, Guanghua Wan, Shijie Zhang, Hongyu Zhang, Yulei Sui, Pan Zhou, Hai Jin, and Lichao Sun. 2025. Does Your Neural Code Completion Model Use My Code? A Membership Inference Approach. ACM Transactions on Software Engineering and Methodology (2025). doi:10.1145/3742785 [48] Fali Wang, Zhiwei Zhang, Xianren Zhang, Zongyu Wu, Tzuhao Mo, Qiuhao Lu, Wanjing Wang, Rui Li, Junjie Xu, Xianfeng Tang, et al. 2025. A comprehensive survey of small language models in the era of large language models: Techniques, enhancements, applications, collaboration with llms, and trustworthiness. ACM Transactions on Intelligent Systems and Technology 16, 6 (2025), 1–87. [49] Zhiruo Wang, Shuyan Zhou, Daniel Fried, and Graham Neubig. 2022. Execution-based evaluation for open-domain code generation. arXiv preprint arXiv:2212.10481 (2022). [50] Zora Zhiruo Wang, Akari Asai, Xinyan Velocity Yu, Frank F Xu, Yiqing Xie, Graham Neubig, and Daniel Fried. 2024. Coderag-bench: Can retrieval augment code generation? arXiv preprint arXiv:2406.14497 (2024). [51] Robert F Woolson. 2005. Wilcoxon signed-rank test. Encyclopedia of biostatistics 8 (2005). [52] Ou Wu. 2025. Data Optimization for LLMs: A Survey. (2025). [53] Ruiyang Xu, Jialun Cao, Yaojie Lu, Ming Wen, Hongyu Lin, Xianpei Han, Ben He, Shing-Chi Cheung, and Le Sun. 2024. Cruxeval-x: A benchmark for multilingual code reasoning, understanding and execution. arXiv preprint arXiv:2408.13001 
+
+(2024). [54] Hongyang Yan, Shuhao Li, Yajie Wang, Yaoyuan Zhang, Kashif Sharif, Haibo Hu, and Yuanzhang Li. 2022. Membership inference attacks against deep learning models via logits distribution. IEEE Transactions on Dependable and Secure Computing 20, 5 (2022), 3799–3808. [55] John Yang, Carlos E Jimenez, Alexander Wettig, Kilian Lieret, Shunyu Yao, Karthik Narasimhan, and Ofir Press. 2024. Swe-agent: Agent-computer interfaces enable automated software engineering. Advances in Neural Information Processing Systems 37 (2024), 50528–50652. [56] Zhou Yang, Zhipeng Zhao, Chenyu Wang, Jieke Shi, Dongsun Kim, Donggyun Han, and David Lo. 2024. Gotcha! this model uses my code! evaluating membership leakage risks in code models. IEEE Transactions on Software Engineering 
+
+(2024). [57] Zhou Yang, Zhipeng Zhao, Chenyu Wang, Jieke Shi, Dongsun Kim, Donggyun Han, and David Lo. 2024. Unveiling memorization in code models. In Proceedings of the IEEE/ACM 46th International Conference on Software Engineering .1–13. [58] Samuel Yeom, Irene Giacomelli, Matt Fredrikson, and Somesh Jha. 2018. Privacy risk in machine learning: Analyzing the connection to overfitting. In 2018 IEEE 31st computer security foundations symposium (CSF) . IEEE, 268–282. [59] Hao Yu, Bo Shen, Dezhi Ran, Jiaxin Zhang, Qi Zhang, Yuchi Ma, Guangtai Liang, Ying Li, Qianxiang Wang, and Tao Xie. 2024. Codereval: A benchmark of pragmatic code generation with generative pre-trained models. In Proceedings of the 46th IEEE/ACM International Conference on Software Engineering . 1–12. [60] Xiao Yu, Haoxuan Chen, Lei Liu, Xing Hu, Jacky Wai Keung, and Xin Xia. 2025. RealisticCodeBench: Towards More Realistic Evaluation of Large Language Models for Code Generation. In 2025 40th IEEE/ACM International Conference on Automated Software Engineering (ASE) . IEEE, 3021–3033. ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026. 1:30 Dongdong Zhao et al. 
+
+[61] Xiao Yu, Heng Dai, Li Li, Xiaodong Gu, Jacky Wai Keung, Kwabena Ebo Bennin, Fuyang Li, and Jin Liu. 2023. Finding the best learning to rank algorithms for effort-aware defect prediction. Information and Software Technology 157 (2023), 107165. [62] Xiao Yu, Lei Liu, Xing Hu, Jacky Keung, Xin Xia, and David Lo. 2024. Practitioners’ expectations on automated test generation. In Proceedings of the 33rd ACM SIGSOFT International Symposium on Software Testing and Analysis .1618–1630. [63] Xiao Yu, Zexian Zhang, Feifei Niu, Xing Hu, Xin Xia, and John Grundy. 2024. What Makes a High-Quality Training Dataset for Large Language Models: A Practitioners’ Perspective. In Proceedings of the 39th IEEE/ACM International Conference on Automated Software Engineering . 656–668. [64] Li Yujian and Liu Bo. 2007. A normalized Levenshtein distance metric. IEEE transactions on pattern analysis and machine intelligence 29, 6 (2007), 1091–1095. [65] Sheng Zhang and Hui Li. 2023. Code Membership Inference for Detecting Unauthorized Data Use in Code Pre-trained Language Models. arXiv preprint arXiv:2312.07200 (2023). [66] Shudan Zhang, Hanlin Zhao, Xiao Liu, Qinkai Zheng, Zehan Qi, Xiaotao Gu, Yuxiao Dong, and Jie Tang. 2024. Naturalcodebench: Examining coding performance mismatch on humaneval and natural user queries. In Findings of the Association for Computational Linguistics ACL 2024 . 7907–7928. [67] Dewu Zheng, Yanlin Wang, Ensheng Shi, Hongyu Zhang, and Zibin Zheng. 2024. How well do llms generate code for different application domains? benchmark and evaluation. arXiv preprint arXiv:2412.18573 (2024). [68] Qinkai Zheng, Xiao Xia, Xu Zou, Yuxiao Dong, Shan Wang, Yufei Xue, Lei Shen, Zihan Wang, Andi Wang, Yang Li, et al. 2023. Codegeex: A pre-trained model for code generation with multilingual benchmarking on humaneval-x. In 
+
+Proceedings of the 29th ACM SIGKDD Conference on Knowledge Discovery and Data Mining . 5673–5684. [69] Xiaosen Zheng, Tianyu Pang, Chao Du, Qian Liu, Jing Jiang, and Min Lin. [n. d.]. Cheating Automatic LLM Benchmarks: Null Models Achieve High Win Rates. In Neurips Safe Generative AI Workshop 2024 .[70] Xin Zhou, Martin Weyssow, Ratnadira Widyasari, Ting Zhang, Junda He, Yunbo Lyu, Jianming Chang, Beiqi Zhang, Dan Huang, and David Lo. 2025. LessLeak-Bench: A First Investigation of Data Leakage in LLMs Across 83 Software Engineering Benchmarks. arXiv preprint arXiv:2502.06215 (2025). ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026. Keep Evaluation Fair: Detecting Data Leakage in Code Generation Benchmarks via Membership Inference Attacks 1:31 
+
+A Supplementary Machine Learning Baseline Results 
+
+This appendix provides supplementary Precision, Recall, MCC, and AUC results for traditional machine learning baselines (SVM, NB, DT, MLP), complementing the LR and RF results shown in the main text. 
+
+Table 10. The Precision results of other traditional machine learning baselines. 
+
+(a) Qwen2.5-Coder 
+
+Bench SVM NB DT MLP HP 0.52 0.84 0.70 0.70 
+
+HJ 0.50 0.68 0.67 0.63 MP 0.50 0.59 0.51 0.54 
+
+MJ 0.50 0.52 0.36 0.37 
+
+NP 0.50 0.50 – –NJ 0.50 1.00 0.70 0.70 
+
+EB 0.51 0.68 0.52 0.49 CE 0.50 0.52 0.41 0.35 AVG 0.50 0.67 0.55 0.54 
+
+(b) CodeGemma 
+
+Bench SVM NB DT MLP HP 0.50 0.43 0.70 0.00 HJ 0.50 0.68 0.70 0.80 MP 0.50 0.69 0.55 0.76 MJ 0.50 0.59 0.42 0.83 
+
+NP 0.55 – – –NJ 0.50 – 0.70 –EB 0.50 0.00 0.40 –CE 0.54 0.60 0.27 –AVG 0.51 0.50 0.53 0.60 
+
+(c) DeepSeek-Coder 
+
+Bench SVM NB DT MLP HP 0.68 0.93 0.70 0.79 HJ 0.51 0.65 0.70 1.00 
+
+MP 0.50 0.56 0.56 0.59 MJ 0.50 0.50 0.45 0.66 NP 0.50 – – 0.25 NJ 0.50 0.91 – 0.55 EB 0.49 0.51 0.70 0.49 CE 0.52 0.50 0.34 0.50 AVG 0.53 0.65 0.57 0.60 
+
+(d) Phi-2 
+
+Bench SVM NB DT MLP HP 0.68 0.80 0.80 0.80 
+
+HJ 0.56 0.70 0.73 0.80 
+
+MP 0.41 0.53 0.56 0.65 
+
+MJ 0.33 0.39 0.40 0.51 
+
+NP 0.32 0.40 0.51 0.62 
+
+NJ 0.41 0.41 0.59 0.62 
+
+EB 0.58 0.64 0.66 0.68 
+
+CE 0.44 0.42 0.51 0.48 AVG 0.47 0.54 0.60 0.65 
+
+Table 11. The Recall values of additional traditional machine learning baselines. 
+
+(a) Qwen2.5-Coder 
+
+Bench SVM NB DT MLP HP 0.70 0.63 0.50 0.57 HJ 0.70 0.70 1.00 1.00 MP 0.70 0.68 0.74 0.67 MJ 0.70 0.70 0.98 0.98 NP 0.70 0.70 0.00 0.00 NJ 0.70 0.53 0.42 0.75 EB 0.70 0.70 0.79 0.94 CE 0.35 0.64 0.88 1.00 
+
+AVG 0.66 0.66 0.66 0.74 
+
+(b) CodeGemma 
+
+Bench SVM NB DT MLP HP 0.70 0.11 0.11 0.00 HJ 0.70 0.61 1.00 0.43 MP 0.70 0.25 0.54 0.17 MJ 0.70 0.46 0.98 0.14 NP 0.70 0.00 0.00 0.00 NJ 0.70 0.00 0.25 0.00 EB 0.64 0.00 1.00 0.00 CE 0.11 0.35 1.00 0.00 AVG 0.62 0.22 0.61 0.09 
+
+(c) DeepSeek-Coder 
+
+Bench SVM NB DT MLP HP 0.70 0.59 0.43 0.38 HJ 0.70 0.70 1.00 0.70 MP 0.70 0.69 0.87 0.62 MJ 0.70 0.70 0.97 0.70 
+
+NP 0.53 0.30 0.00 0.13 NJ 0.70 0.53 0.00 0.70 
+
+EB 0.70 0.70 0.38 0.70 
+
+CE 0.58 0.70 0.82 0.70 
+
+AVG 0.66 0.54 0.56 0.55 
+
+(d) Phi-2 
+
+Bench SVM NB DT MLP HP 0.80 0.76 0.69 0.48 HJ 0.80 0.73 0.73 0.62 MP 0.77 0.71 0.63 0.48 MJ 0.80 0.78 0.76 0.72 NP 0.72 0.80 0.80 0.55 NJ 0.72 0.72 0.72 0.55 EB 0.69 0.57 0.48 0.12 CE 0.62 0.74 0.68 0.56 AVG 0.74 0.73 0.69 0.51 
+
+ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026. 1:32 Dongdong Zhao et al. 
+
+Table 12. The MCC values of additional traditional machine learning baselines. 
+
+(a) Qwen2.5-Coder 
+
+Bench SVM NB DT MLP HP 0.19 0.75 0.58 0.63 HJ 0.00 0.60 0.96 0.93 MP 0.00 0.40 0.56 0.56 
+
+MJ 0.00 0.17 0.54 0.55 
+
+NP 0.00 0.00 0.00 0.00 NJ 0.00 0.85 0.51 0.77 EB 0.15 0.61 0.62 0.70 
+
+CE 0.00 0.10 0.54 0.55 
+
+AVG 0.04 0.44 0.54 0.59 (b) CodeGemma 
+
+Bench SVM NB DT MLP HP 0.00 -0.05 0.24 -0.13 HJ 0.00 0.32 1.00 0.36 MP 0.00 0.18 0.47 0.19 MJ 0.00 0.15 0.64 0.20 NP 0.30 0.00 0.00 0.00 NJ 0.00 0.00 0.38 0.00 EB 0.04 -0.15 0.64 0.00 CE 0.06 0.13 0.37 0.00 AVG 0.05 0.07 0.47 0.08 
+
+(c) DeepSeek-Coder 
+
+Bench SVM NB DT MLP HP 0.60 0.82 0.52 0.51 HJ 0.13 0.55 1.00 1.00 
+
+MP 0.00 0.34 0.73 0.34 MJ 0.00 0.09 0.68 0.56 NP 0.00 0.00 0.00 -0.35 NJ 0.00 0.75 0.00 0.30 EB 0.00 0.18 0.49 0.00 CE 0.08 0.00 0.37 0.00 AVG 0.10 0.34 0.47 0.29 
+
+(d) Phi-2 
+
+Bench SVM NB DT MLP HP 0.67 0.76 0.70 0.52 HJ 0.52 0.62 0.66 0.63 MP 0.23 0.39 0.37 0.36 MJ 0.06 0.21 0.21 0.37 
+
+NP -0.07 0.25 0.44 0.39 NJ 0.18 0.18 0.48 0.39 EB 0.45 0.42 0.39 0.16 CE 0.17 0.22 0.34 0.21 AVG 0.28 0.38 0.45 0.38 
+
+Table 13. The AUC values of additional traditional machine learning baselines. 
+
+(a) Qwen2.5-Coder 
+
+Bench SVM NB DT MLP HP 0.79 0.65 0.60 0.66 
+
+HJ 0.80 0.64 0.70 0.70 
+
+MP 0.67 0.56 0.53 0.56 
+
+MJ 0.66 0.42 0.53 0.57 
+
+NP 0.56 0.26 0.20 0.34 
+
+NJ 0.61 0.67 0.62 0.67 
+
+EB 0.62 0.64 0.60 0.61 CE 0.54 0.40 0.51 0.46 AVG 0.66 0.53 0.54 0.57 (b) CodeGemma 
+
+Bench SVM NB DT MLP HP 0.50 0.49 0.38 0.51 HJ 0.50 0.68 0.70 0.66 MP 0.50 0.67 0.53 0.58 MJ 0.50 0.59 0.57 0.59 NP 0.50 0.59 0.20 0.50 NJ 0.50 0.51 0.66 0.50 EB 0.50 0.59 0.65 0.50 CE 0.50 0.52 0.46 0.50 AVG 0.50 0.58 0.52 0.54 
+
+(c) DeepSeek-Coder 
+
+Bench SVM NB DT MLP HP 0.95 0.97 0.69 0.85 HJ 0.99 0.91 1.00 1.00 
+
+MP 0.81 0.80 0.89 0.63 MJ 0.86 0.73 0.90 0.82 NP 0.62 0.51 0.50 0.38 NJ 0.93 0.98 0.50 0.58 EB 0.61 0.64 0.70 0.50 CE 0.61 0.44 0.77 0.50 AVG 0.80 0.75 0.74 0.66 
+
+(d) Phi-2 
+
+Bench SVM NB DT MLP HP 0.80 0.80 0.80 0.80 HJ 0.79 0.78 0.77 0.79 
+
+MP 0.68 0.67 0.64 0.67 MJ 0.67 0.55 0.58 0.67 
+
+NP 0.63 0.64 0.63 0.67 
+
+NJ 0.59 0.66 0.70 0.67 EB 0.71 0.67 0.65 0.68 CE 0.55 0.51 0.60 0.63 
+
+AVG 0.68 0.66 0.67 0.70 
+
+Received 20 February 2007; revised 12 March 2009; accepted 5 June 2009 
+
+ACM Trans. Softw. Eng. Methodol., Vol. 1, No. 1, Article 1. Publication date: May 2026.

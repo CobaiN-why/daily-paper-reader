@@ -48,7 +48,7 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-10</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-12</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
     <strong class="dpr-home-dashboard-count">共 17 篇</strong>
@@ -58,7 +58,7 @@
     <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-10 22:00:51 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-12 21:58:20 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日精选17篇AI论文，精读6篇、速读11篇，聚焦代码智能体与仓库级任务。最值得关注XAgent用执行引导定位修复GitHub Issue、跨仓库图检索辅助代码生成，均获9.0高分。建议普通读者优先浏览这两篇精读，再按需扫读速读中的智能体配置缺陷与仓库导航方向。</p>
+<p>2026-09-12 日报精选 17 篇（精读 6、速读 11），聚焦 LLM 智能体的迭代修复与提示注入防护。最值得看的是 9.0 分的《If It&#x27;s Not Buggy, Don&#x27;t Fix It》揭示 LLM 迭代修 bug 的动态，以及 8.0 分《Authority Is Not a String》提出的能力范围式防护框架。普通读者可先读这两篇精读，再按需速览代码基准数据泄漏检测等速读文章。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -81,7 +81,7 @@
     <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="XAgent: eXecution-guided Agentic AI for Effective Localization and Resolution of GitHub Issues">XAgent: eXecution-guided Agentic AI for Effective Localization and Resolution of GitHub Issues</span></li><li><span class="dpr-home-dashboard-paper-title" title="Beyond Repository Boundaries: Cross-Repository Graph Retrieval for Code Generation">Beyond Repository Boundaries: Cross-Repository Graph Retrieval for Code Generation</span></li><li><span class="dpr-home-dashboard-paper-title" title="Requirements After the First Edit: Mining Late Requirement Emergence and Rework in Real-World Coding-Agent Sessions">Requirements After the First Edit: Mining Late Requirement Emergence and Rework in Real-World Coding-Agent Sessions</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="If It&#x27;s Not Buggy, Don&#x27;t Fix It: On the Dynamics of Iterative Bug-fixing with LLMs">If It&#x27;s Not Buggy, Don&#x27;t Fix It: On the Dynamics of Iterative Bug-fixing with LLMs</span></li><li><span class="dpr-home-dashboard-paper-title" title="Authority Is Not a String: A Capability-Scoped Harness for Prompt-Injection-Resistant Coding Agents">Authority Is Not a String: A Capability-Scoped Harness for Prompt-Injection-Resistant Coding Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="A-JIT: Agentic Just-In-Time Software Construction">A-JIT: Agentic Just-In-Time Software Construction</span></li></ul>
   </div>
   <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>6</strong></span></div>
 </section>
@@ -94,7 +94,7 @@
     <strong class="dpr-home-dashboard-count">11 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Scanning the Harness: An Empirical Study of Supply-Chain Defects in AI Coding-Agent Configurations">Scanning the Harness: An Empirical Study of Supply-Chain Defects in AI Coding-Agent Configurations</span></li><li><span class="dpr-home-dashboard-paper-title" title="RepoNav: From Snippet Retrieval to File-Centered Repository Navigation for Code Agents">RepoNav: From Snippet Retrieval to File-Centered Repository Navigation for Code Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Talking to Itself While Coding: What Makes Comments Help Code Generation?">Talking to Itself While Coding: What Makes Comments Help Code Generation?</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="A Tool-Augmented, GPT-4 Chatbot for Real-Time Repository Data Analysis">A Tool-Augmented, GPT-4 Chatbot for Real-Time Repository Data Analysis</span></li><li><span class="dpr-home-dashboard-paper-title" title="Keep Evaluation Fair: Detecting Data Leakage in Code Generation Benchmarks via Membership Inference Attacks">Keep Evaluation Fair: Detecting Data Leakage in Code Generation Benchmarks via Membership Inference Attacks</span></li><li><span class="dpr-home-dashboard-paper-title" title="Towards Tackling Application Logic Flaws through Autonomous Formal-Logic Modeling and Automated Reasoning">Towards Tackling Application Logic Flaws through Autonomous Formal-Logic Modeling and Automated Reasoning</span></li></ul>
   </div>
   <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>11</strong></span></div>
 </section>
