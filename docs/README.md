@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-12</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-13</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 17 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 9 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>0</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>9</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-12 21:58:20 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-13 21:22:47 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>2026-09-12 日报精选 17 篇（精读 6、速读 11），聚焦 LLM 智能体的迭代修复与提示注入防护。最值得看的是 9.0 分的《If It&#x27;s Not Buggy, Don&#x27;t Fix It》揭示 LLM 迭代修 bug 的动态，以及 8.0 分《Authority Is Not a String》提出的能力范围式防护框架。普通读者可先读这两篇精读，再按需速览代码基准数据泄漏检测等速读文章。</p>
+<p>2026-09-13 日报：9篇全速读、0精读，重点扫过企业数据目录智能体、多智能体工作流与长上下文推理。</p>
+<p>最值得看的是7.0分的《Glyph》，聚焦企业数据目录的列描述与敏感本体标注；6.0分的《Inference-Time Graph Engineering》和《PARSER》则分别指向多智能体LLM工作流与长上下文智能体。</p>
+<p>普通读者可先从最高分Glyph入手，再按兴趣补看两篇6分速读，暂无需精读压力。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -78,12 +80,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">6 篇</strong>
+    <strong class="dpr-home-dashboard-count">0 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="If It&#x27;s Not Buggy, Don&#x27;t Fix It: On the Dynamics of Iterative Bug-fixing with LLMs">If It&#x27;s Not Buggy, Don&#x27;t Fix It: On the Dynamics of Iterative Bug-fixing with LLMs</span></li><li><span class="dpr-home-dashboard-paper-title" title="Authority Is Not a String: A Capability-Scoped Harness for Prompt-Injection-Resistant Coding Agents">Authority Is Not a String: A Capability-Scoped Harness for Prompt-Injection-Resistant Coding Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="A-JIT: Agentic Just-In-Time Software Construction">A-JIT: Agentic Just-In-Time Software Construction</span></li></ul>
+<p class="dpr-home-dashboard-empty">今日暂无推荐。</p>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>6</strong></span></div>
+
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -91,12 +93,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">11 篇</strong>
+    <strong class="dpr-home-dashboard-count">9 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="A Tool-Augmented, GPT-4 Chatbot for Real-Time Repository Data Analysis">A Tool-Augmented, GPT-4 Chatbot for Real-Time Repository Data Analysis</span></li><li><span class="dpr-home-dashboard-paper-title" title="Keep Evaluation Fair: Detecting Data Leakage in Code Generation Benchmarks via Membership Inference Attacks">Keep Evaluation Fair: Detecting Data Leakage in Code Generation Benchmarks via Membership Inference Attacks</span></li><li><span class="dpr-home-dashboard-paper-title" title="Towards Tackling Application Logic Flaws through Autonomous Formal-Logic Modeling and Automated Reasoning">Towards Tackling Application Logic Flaws through Autonomous Formal-Logic Modeling and Automated Reasoning</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Glyph: A Multi-Strategy Agentic System for Column Description and Sensitivity-Ontology Tagging of Enterprise Data Catalogs">Glyph: A Multi-Strategy Agentic System for Column Description and Sensitivity-Ontology Tagging of Enterprise Data Catalogs</span></li><li><span class="dpr-home-dashboard-paper-title" title="Inference-Time Graph Engineering for Multi-Agent LLM Workflows">Inference-Time Graph Engineering for Multi-Agent LLM Workflows</span></li><li><span class="dpr-home-dashboard-paper-title" title="PARSER: Read in Parallel, Reason in Depth for Long-Context LLM Agents">PARSER: Read in Parallel, Reason in Depth for Long-Context LLM Agents</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>11</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>9</strong></span></div>
 </section>
 </div>
 
