@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-13</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-14</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 9 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 14 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>0</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>9</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>8</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-13 21:22:47 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-14 22:34:56 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,9 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>2026-09-13 日报：9篇全速读、0精读，重点扫过企业数据目录智能体、多智能体工作流与长上下文推理。</p>
-<p>最值得看的是7.0分的《Glyph》，聚焦企业数据目录的列描述与敏感本体标注；6.0分的《Inference-Time Graph Engineering》和《PARSER》则分别指向多智能体LLM工作流与长上下文智能体。</p>
-<p>普通读者可先从最高分Glyph入手，再按兴趣补看两篇6分速读，暂无需精读压力。</p>
+<p>2026-09-14 日报精选 14 篇（精读 6 篇、速读 8 篇），聚焦大模型驱动的软件工程与代码智能。最值得关注两篇 9.0 分工作：一篇系统梳理 LLM 测试驱动开发的阶段、任务与智能体技能，另一篇提出置信度门控的转导式测试生成用于代码重排序；速读中《Skill Issue》对编码智能体的仓库技能优化经验也颇具实操价值。普通读者可先从这两篇 9 分综述与方法入手，再结合《Skill Issue》的教训清单，思考如何把测试生成与技能配置落到自己的编码智能体流程中。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -80,12 +78,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">0 篇</strong>
+    <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p class="dpr-home-dashboard-empty">今日暂无推荐。</p>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Test-Driven Approaches to Software Engineering with Large Language Models: A Survey of Phases, Tasks, and Agent Skills">Test-Driven Approaches to Software Engineering with Large Language Models: A Survey of Phases, Tasks, and Agent Skills</span></li><li><span class="dpr-home-dashboard-paper-title" title="Confidence-Gated Transductive Test Generation for Code Reranking">Confidence-Gated Transductive Test Generation for Code Reranking</span></li><li><span class="dpr-home-dashboard-paper-title" title="GraphAHA: Graph-Based Adaptive Search with Heterogeneous Actions for Test-Time Code Generation">GraphAHA: Graph-Based Adaptive Search with Heterogeneous Actions for Test-Time Code Generation</span></li></ul>
   </div>
-
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>6</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -93,12 +91,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">9 篇</strong>
+    <strong class="dpr-home-dashboard-count">8 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Glyph: A Multi-Strategy Agentic System for Column Description and Sensitivity-Ontology Tagging of Enterprise Data Catalogs">Glyph: A Multi-Strategy Agentic System for Column Description and Sensitivity-Ontology Tagging of Enterprise Data Catalogs</span></li><li><span class="dpr-home-dashboard-paper-title" title="Inference-Time Graph Engineering for Multi-Agent LLM Workflows">Inference-Time Graph Engineering for Multi-Agent LLM Workflows</span></li><li><span class="dpr-home-dashboard-paper-title" title="PARSER: Read in Parallel, Reason in Depth for Long-Context LLM Agents">PARSER: Read in Parallel, Reason in Depth for Long-Context LLM Agents</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Skill Issue: Lessons from Optimizing Repository SKILLs for Coding Agents">Skill Issue: Lessons from Optimizing Repository SKILLs for Coding Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="ParaRecover: A Process-Level Benchmark for Error Localization and Recovery in Parallel Tool-Use Agents">ParaRecover: A Process-Level Benchmark for Error Localization and Recovery in Parallel Tool-Use Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="A*-Thought-V2: Efficient Latent Reasoning via Geometric Dynamics of LLM">A*-Thought-V2: Efficient Latent Reasoning via Geometric Dynamics of LLM</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>9</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>8</strong></span></div>
 </section>
 </div>
 
