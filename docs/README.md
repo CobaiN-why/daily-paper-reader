@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-15</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-16</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 14 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 5 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>8</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>2</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>3</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-15 22:17:24 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-16 21:39:55 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,9 +69,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>2026-09-15 日报：14 篇论文中精读 6 篇、速读 8 篇，重点聚焦多智能体代码生成与 LLM 自动化测试。</p>
-<p>最值得看的是两篇 9.0 分工作：面向多智能体代码生成的难度感知拓扑选择，以及用 LLM 增强 NLP 库的自动化单元测试生成。</p>
-<p>普通读者可优先从这两篇入手，再结合 IWC-Bench 的测试视角，理解生成代码如何被更可靠地评估。</p>
+<p>今天日报共5篇（精读2、速读3），主线集中在LLM代码改造/自动修复与Agent能力、交互和失败修复。</p>
+<p>最值得看的是两篇8.0精读：LLM改造代码支持异常行为，以及自动程序修复代理的安全漏洞对抗测试；速读中7.0的Agent能力应遵循任务意图与上下文来源也值得留意。</p>
+<p>普通读者可先读这两篇精读，重点关注安全测试与异常场景，再用速读补齐Agent交互契约和失败修复视角。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -80,12 +80,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">6 篇</strong>
+    <strong class="dpr-home-dashboard-count">2 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Learning How Much to Collaborate: Difficulty-Aware Topology Selection for Multi-Agent Code Generation">Learning How Much to Collaborate: Difficulty-Aware Topology Selection for Multi-Agent Code Generation</span></li><li><span class="dpr-home-dashboard-paper-title" title="Enhancing Automated Unit Test Generation for NLP Libraries Using Large Language Models">Enhancing Automated Unit Test Generation for NLP Libraries Using Large Language Models</span></li><li><span class="dpr-home-dashboard-paper-title" title="MTAC-IFBench: Benchmarking Instruction-Following in Multi-Turn Agentic Coding">MTAC-IFBench: Benchmarking Instruction-Following in Multi-Turn Agentic Coding</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Retrofitting Code Using LLMs to Support Exceptional Behavior">Retrofitting Code Using LLMs to Support Exceptional Behavior</span></li><li><span class="dpr-home-dashboard-paper-title" title="Adversarial Testing of Automated Program Repair Agents for Security Vulnerabilities">Adversarial Testing of Automated Program Repair Agents for Security Vulnerabilities</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>6</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>2</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -93,12 +93,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">8 篇</strong>
+    <strong class="dpr-home-dashboard-count">3 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="IWC-Bench: Evaluating Web Application Generation from a Software Testing Perspective">IWC-Bench: Evaluating Web Application Generation from a Software Testing Perspective</span></li><li><span class="dpr-home-dashboard-paper-title" title="RobustSGPO: Search-Space Control for Agent Harness Evolution">RobustSGPO: Search-Space Control for Agent Harness Evolution</span></li><li><span class="dpr-home-dashboard-paper-title" title="From Review to Reuse: How Post-Task Workflow Can Support Human-AI Agent Interaction">From Review to Reuse: How Post-Task Workflow Can Support Human-AI Agent Interaction</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="LLM Agent Capabilities Should Follow Task Intent and Context Source">LLM Agent Capabilities Should Follow Task Intent and Context Source</span></li><li><span class="dpr-home-dashboard-paper-title" title="Agent-Integrated Software: Interaction Contracts and Continuous Assurance">Agent-Integrated Software: Interaction Contracts and Continuous Assurance</span></li><li><span class="dpr-home-dashboard-paper-title" title="RESKILL: Explicit Failure Attribution and Structured Repair for Interactive Language Agents">RESKILL: Explicit Failure Attribution and Structured Repair for Interactive Language Agents</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>8</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>3</strong></span></div>
 </section>
 </div>
 
