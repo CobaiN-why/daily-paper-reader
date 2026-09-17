@@ -4,24 +4,24 @@
     <a class="dpr-home-notice-tutorial" href="#/tutorial/README">使用教程 <span aria-hidden="true">›</span></a>
   </div>
   <div class="dpr-home-notice-entry">
+    <time class="dpr-home-notice-date" datetime="2026-09-09">09.09</time>
+    <div>
+      <strong class="dpr-home-notice-entry-title">90天/365天 arXiv 专题回溯</strong>
+      <span class="dpr-home-notice-entry-summary">支持分片召回、断点评审与分页查看，核心论文与待复核结果分开展示。DeepSeek 费用按实际用量计算，不下载全量 PDF。</span>
+    </div>
+  </div>
+  <div class="dpr-home-notice-entry">
+    <time class="dpr-home-notice-date" datetime="2026-09-09">09.09</time>
+    <div>
+      <strong class="dpr-home-notice-entry-title">ECCV 2026 已更新</strong>
+      <span class="dpr-home-notice-entry-summary">已收录 2,834 篇论文，摘要与 PDF 链接齐全，可按会议年份检索。EMNLP 2026 暂待可信官方数据开放。</span>
+    </div>
+  </div>
+  <div class="dpr-home-notice-entry">
     <time class="dpr-home-notice-date" datetime="2026-09-05">09.05</time>
     <div>
       <strong class="dpr-home-notice-entry-title">CVPR 2026 已更新</strong>
       <span class="dpr-home-notice-entry-summary">已收录 CVPR 2026 官方 Open Access 论文 4,042 篇，可在会议检索中查看。EMNLP 2026 预计于 10 月中下旬更新，具体以官方论文集开放时间为准。</span>
-    </div>
-  </div>
-  <div class="dpr-home-notice-entry">
-    <time class="dpr-home-notice-date" datetime="2026-08-28">08.28</time>
-    <div>
-      <strong class="dpr-home-notice-entry-title">区间日报可正常点开</strong>
-      <span class="dpr-home-notice-entry-summary">长时间窗日报会挂在结束日那天的日历格上，此前点击没有反应，现在可以正常展开查看。</span>
-    </div>
-  </div>
-  <div class="dpr-home-notice-entry">
-    <time class="dpr-home-notice-date" datetime="2026-07-20">07.20</time>
-    <div>
-      <strong class="dpr-home-notice-entry-title">反馈功能上线</strong>
-      <span class="dpr-home-notice-entry-summary">新增反馈功能，欢迎大家踊跃反馈各种建议，我们会第一时间查看并协调处理。</span>
     </div>
   </div>
   <div class="dpr-home-site-stats" data-dpr-site-stats hidden aria-live="polite">
@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-16</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-17</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 5 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 17 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>2</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>3</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-16 21:39:55 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-17 21:44:50 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,9 +69,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今天日报共5篇（精读2、速读3），主线集中在LLM代码改造/自动修复与Agent能力、交互和失败修复。</p>
-<p>最值得看的是两篇8.0精读：LLM改造代码支持异常行为，以及自动程序修复代理的安全漏洞对抗测试；速读中7.0的Agent能力应遵循任务意图与上下文来源也值得留意。</p>
-<p>普通读者可先读这两篇精读，重点关注安全测试与异常场景，再用速读补齐Agent交互契约和失败修复视角。</p>
+<p>今天从17篇里精读6篇、速读11篇，主线锁定“编程智能体”的训练与安全。</p>
+<p>最值得看的是两篇9分精读：把Qwen3 Coder 30B调教成CodeClash竞技场智能体，以及从异常编码智能体轨迹中学习执行护栏；速读还可关注低成本大模型算法编程、智能体生成程序可靠性和可验证SWE任务。</p>
+<p>普通读者建议先读这两篇9分文章，建立“能力提升+安全护栏”视角，再按需翻阅8分速读里的成本、可靠性与评测话题。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -80,12 +80,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">2 篇</strong>
+    <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Retrofitting Code Using LLMs to Support Exceptional Behavior">Retrofitting Code Using LLMs to Support Exceptional Behavior</span></li><li><span class="dpr-home-dashboard-paper-title" title="Adversarial Testing of Automated Program Repair Agents for Security Vulnerabilities">Adversarial Testing of Automated Program Repair Agents for Security Vulnerabilities</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Coaching Qwen3 Coder 30B to Think Like a CodeClash Arena Agent">Coaching Qwen3 Coder 30B to Think Like a CodeClash Arena Agent</span></li><li><span class="dpr-home-dashboard-paper-title" title="AgentGuard: Learning Execution Guardrails from Anomalous Coding-Agent Trajectories">AgentGuard: Learning Execution Guardrails from Anomalous Coding-Agent Trajectories</span></li><li><span class="dpr-home-dashboard-paper-title" title="RepoAtlas: Guiding Coding Agents via Evolving Multimodal Repository Views">RepoAtlas: Guiding Coding Agents via Evolving Multimodal Repository Views</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>2</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>6</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -93,12 +93,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">3 篇</strong>
+    <strong class="dpr-home-dashboard-count">11 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="LLM Agent Capabilities Should Follow Task Intent and Context Source">LLM Agent Capabilities Should Follow Task Intent and Context Source</span></li><li><span class="dpr-home-dashboard-paper-title" title="Agent-Integrated Software: Interaction Contracts and Continuous Assurance">Agent-Integrated Software: Interaction Contracts and Continuous Assurance</span></li><li><span class="dpr-home-dashboard-paper-title" title="RESKILL: Explicit Failure Attribution and Structured Repair for Interactive Language Agents">RESKILL: Explicit Failure Attribution and Structured Repair for Interactive Language Agents</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="An Empirical Evaluation of Cost-Efficient Large Language Models on Algorithmic Programming Tasks">An Empirical Evaluation of Cost-Efficient Large Language Models on Algorithmic Programming Tasks</span></li><li><span class="dpr-home-dashboard-paper-title" title="A Study of the Reliability of Agentic AI-Generated Programs">A Study of the Reliability of Agentic AI-Generated Programs</span></li><li><span class="dpr-home-dashboard-paper-title" title="ProgramDistill: From Interactive Web Apps to Verifiable Reference-Guided SWE Tasks">ProgramDistill: From Interactive Web Apps to Verifiable Reference-Guided SWE Tasks</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>3</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>11</strong></span></div>
 </section>
 </div>
 
