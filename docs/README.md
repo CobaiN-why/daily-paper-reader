@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-17</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-18</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 17 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 13 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>5</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>8</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-17 21:44:50 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-18 21:33:20 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,9 +69,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今天从17篇里精读6篇、速读11篇，主线锁定“编程智能体”的训练与安全。</p>
-<p>最值得看的是两篇9分精读：把Qwen3 Coder 30B调教成CodeClash竞技场智能体，以及从异常编码智能体轨迹中学习执行护栏；速读还可关注低成本大模型算法编程、智能体生成程序可靠性和可验证SWE任务。</p>
-<p>普通读者建议先读这两篇9分文章，建立“能力提升+安全护栏”视角，再按需翻阅8分速读里的成本、可靠性与评测话题。</p>
+<p>2026-09-18日报筛完13篇AI论文，精读5篇、速读8篇，重点锁定编码智能体的Harness设计与多智能体安全形式化。</p>
+<p>最值得看的是《An Empirical Study of Harness Design for Coding Agents》（9.0/10）和《MAGS: Multi-agent Auto-formalization Guarantees Safety for Agentic Outputs》（8.0/10），分别指向编码智能体工程优化与智能体输出安全。</p>
+<p>普通读者建议先读这两篇精读，速读可按兴趣关注AI agent资源与性能、知识图谱规模化理解、三语码混语言识别等方向。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -80,12 +80,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">6 篇</strong>
+    <strong class="dpr-home-dashboard-count">5 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Coaching Qwen3 Coder 30B to Think Like a CodeClash Arena Agent">Coaching Qwen3 Coder 30B to Think Like a CodeClash Arena Agent</span></li><li><span class="dpr-home-dashboard-paper-title" title="AgentGuard: Learning Execution Guardrails from Anomalous Coding-Agent Trajectories">AgentGuard: Learning Execution Guardrails from Anomalous Coding-Agent Trajectories</span></li><li><span class="dpr-home-dashboard-paper-title" title="RepoAtlas: Guiding Coding Agents via Evolving Multimodal Repository Views">RepoAtlas: Guiding Coding Agents via Evolving Multimodal Repository Views</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="An Empirical Study of Harness Design for Coding Agents">An Empirical Study of Harness Design for Coding Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="MAGS: Multi-agent Auto-formalization Guarantees Safety for Agentic Outputs">MAGS: Multi-agent Auto-formalization Guarantees Safety for Agentic Outputs</span></li><li><span class="dpr-home-dashboard-paper-title" title="Self Improvement via Fast Tree-search">Self Improvement via Fast Tree-search</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>6</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>5</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -93,12 +93,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">11 篇</strong>
+    <strong class="dpr-home-dashboard-count">8 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="An Empirical Evaluation of Cost-Efficient Large Language Models on Algorithmic Programming Tasks">An Empirical Evaluation of Cost-Efficient Large Language Models on Algorithmic Programming Tasks</span></li><li><span class="dpr-home-dashboard-paper-title" title="A Study of the Reliability of Agentic AI-Generated Programs">A Study of the Reliability of Agentic AI-Generated Programs</span></li><li><span class="dpr-home-dashboard-paper-title" title="ProgramDistill: From Interactive Web Apps to Verifiable Reference-Guided SWE Tasks">ProgramDistill: From Interactive Web Apps to Verifiable Reference-Guided SWE Tasks</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Not All AI Agents Are Equal: Characterizing Resource and Performance Dynamics">Not All AI Agents Are Equal: Characterizing Resource and Performance Dynamics</span></li><li><span class="dpr-home-dashboard-paper-title" title="Enabling Knowledge Graph Understanding at Scale with the EXplore Your Graphs ENgine (EXYGEN)">Enabling Knowledge Graph Understanding at Scale with the EXplore Your Graphs ENgine (EXYGEN)</span></li><li><span class="dpr-home-dashboard-paper-title" title="IndicTriMix: Developing Language Identification Datasets and Models for Tri-Language Code-Mixing">IndicTriMix: Developing Language Identification Datasets and Models for Tri-Language Code-Mixing</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>11</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>8</strong></span></div>
 </section>
 </div>
 
