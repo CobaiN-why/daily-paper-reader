@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-19</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-20</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 4 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 9 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>1</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>3</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>3</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>6</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-19 21:05:22 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-20 21:24:10 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日精读1篇、速读3篇，重点关注LLM代码生成与软件工程、知识图谱查询等方向。最值得看的是提示词中自然语言差异如何影响LLM自动代码生成（8.0分），其次是软件开发作为自适应社会技术系统的再思考（7.0分）。普通读者可先读精读篇，留意用母语或英文写提示词是否会影响生成代码质量。</p>
+<p>今日AI编码日报：9篇中精读3篇、速读6篇，两篇9.0分聚焦代码生成的可验证奖励校准评论家与自主编码代理的真实代码质量及合并后维护。</p>
+<p>最值得看的是ExecuCritic用校准评论家塑造提升代码生成，以及“并非所有代理都平等”对比五种自主编码代理在真实场景中的质量与维护差异。</p>
+<p>普通读者可先读这两篇9.0分精读，再速览DynSTEER、SpecLens和类型IV代码克隆检测等7.0分工作，把握代理评测与Verilog生成方向。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -78,12 +80,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">1 篇</strong>
+    <strong class="dpr-home-dashboard-count">3 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="A Study on the Impact of Natural Language Differences in Prompts on Automatic Code Generation Using LLMs">A Study on the Impact of Natural Language Differences in Prompts on Automatic Code Generation Using LLMs</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="ExecuCritic: Calibrated Critic Shaping for Code Generation with Verifiable Rewards">ExecuCritic: Calibrated Critic Shaping for Code Generation with Verifiable Rewards</span></li><li><span class="dpr-home-dashboard-paper-title" title="Not All Agents Are Equal: Code Quality and Post-Merge Maintenance Across Five Autonomous Coding Agents in the Wild">Not All Agents Are Equal: Code Quality and Post-Merge Maintenance Across Five Autonomous Coding Agents in the Wild</span></li><li><span class="dpr-home-dashboard-paper-title" title="Vulnerability Localization Benchmark: Measuring Agentic Security Analysis at Repository Scale">Vulnerability Localization Benchmark: Measuring Agentic Security Analysis at Repository Scale</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>3</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -91,12 +93,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">3 篇</strong>
+    <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Rethinking Software Development as a Self-Adaptive Socio-Technical System">Rethinking Software Development as a Self-Adaptive Socio-Technical System</span></li><li><span class="dpr-home-dashboard-paper-title" title="Natural Language Knowledge Graph Query Execution: Leveraging Controlled Semantics in the LLM Context Window">Natural Language Knowledge Graph Query Execution: Leveraging Controlled Semantics in the LLM Context Window</span></li><li><span class="dpr-home-dashboard-paper-title" title="A Scalable Framework for Automated NER Annotation Correction in Low-Resource Languages">A Scalable Framework for Automated NER Annotation Correction in Low-Resource Languages</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="DynSTEER: Dynamic Stage-wise Trajectory Evaluation and Execution-time Review for Agents">DynSTEER: Dynamic Stage-wise Trajectory Evaluation and Execution-time Review for Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="SpecLens: LLM-Based Verilog Generation with Specification-Derived Constraints via Behavioral Divergence">SpecLens: LLM-Based Verilog Generation with Specification-Derived Constraints via Behavioral Divergence</span></li><li><span class="dpr-home-dashboard-paper-title" title="Type-IV Code Clone Detection via Layer-Wise Non-Contrastive Representation Learning">Type-IV Code Clone Detection via Layer-Wise Non-Contrastive Representation Learning</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>3</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>6</strong></span></div>
 </section>
 </div>
 
