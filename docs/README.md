@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-20</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-21</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
     <strong class="dpr-home-dashboard-count">共 9 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>3</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>6</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>4</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>5</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-20 21:24:10 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-21 22:56:06 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,9 +69,10 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日AI编码日报：9篇中精读3篇、速读6篇，两篇9.0分聚焦代码生成的可验证奖励校准评论家与自主编码代理的真实代码质量及合并后维护。</p>
-<p>最值得看的是ExecuCritic用校准评论家塑造提升代码生成，以及“并非所有代理都平等”对比五种自主编码代理在真实场景中的质量与维护差异。</p>
-<p>普通读者可先读这两篇9.0分精读，再速览DynSTEER、SpecLens和类型IV代码克隆检测等7.0分工作，把握代理评测与Verilog生成方向。</p>
+<p>今日共生成 9 篇推荐（精读 4 篇，速读 5 篇）</p>
+<p>精读：《SWE-Proof: Can Language Models Resolve Real-World Issues with Machine-Checked Proofs?》（9.0/10）, 《Information-Gain Rewards over Diversity-Pruned Tests: GT-Anchored Verifier Co-Training for Reliable Code Generation》（9.0/10）</p>
+<p>速读：《CALICO: A Human-Centered, Codebook-Aligned System for Annotation》（6.0/10）, 《Smarter by the Moment: Environment-Driven Dynamic Policies for Continual LLM Improvement》（6.0/10）, 《Can We Do Interpretable NLI with Graphs Based on Atomic Propositions?》（6.0/10）</p>
+<p>这些结果覆盖了当下较热的方向，建议先看精读区论文的关键问题与方法。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -80,12 +81,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">3 篇</strong>
+    <strong class="dpr-home-dashboard-count">4 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="ExecuCritic: Calibrated Critic Shaping for Code Generation with Verifiable Rewards">ExecuCritic: Calibrated Critic Shaping for Code Generation with Verifiable Rewards</span></li><li><span class="dpr-home-dashboard-paper-title" title="Not All Agents Are Equal: Code Quality and Post-Merge Maintenance Across Five Autonomous Coding Agents in the Wild">Not All Agents Are Equal: Code Quality and Post-Merge Maintenance Across Five Autonomous Coding Agents in the Wild</span></li><li><span class="dpr-home-dashboard-paper-title" title="Vulnerability Localization Benchmark: Measuring Agentic Security Analysis at Repository Scale">Vulnerability Localization Benchmark: Measuring Agentic Security Analysis at Repository Scale</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="SWE-Proof: Can Language Models Resolve Real-World Issues with Machine-Checked Proofs?">SWE-Proof: Can Language Models Resolve Real-World Issues with Machine-Checked Proofs?</span></li><li><span class="dpr-home-dashboard-paper-title" title="Information-Gain Rewards over Diversity-Pruned Tests: GT-Anchored Verifier Co-Training for Reliable Code Generation">Information-Gain Rewards over Diversity-Pruned Tests: GT-Anchored Verifier Co-Training for Reliable Code Generation</span></li><li><span class="dpr-home-dashboard-paper-title" title="GameLogicBench: Evaluating Coding Agents on Runtime Game Logic with Tick-Level State Assertions">GameLogicBench: Evaluating Coding Agents on Runtime Game Logic with Tick-Level State Assertions</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>3</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>4</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -93,12 +94,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">6 篇</strong>
+    <strong class="dpr-home-dashboard-count">5 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="DynSTEER: Dynamic Stage-wise Trajectory Evaluation and Execution-time Review for Agents">DynSTEER: Dynamic Stage-wise Trajectory Evaluation and Execution-time Review for Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="SpecLens: LLM-Based Verilog Generation with Specification-Derived Constraints via Behavioral Divergence">SpecLens: LLM-Based Verilog Generation with Specification-Derived Constraints via Behavioral Divergence</span></li><li><span class="dpr-home-dashboard-paper-title" title="Type-IV Code Clone Detection via Layer-Wise Non-Contrastive Representation Learning">Type-IV Code Clone Detection via Layer-Wise Non-Contrastive Representation Learning</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="CALICO: A Human-Centered, Codebook-Aligned System for Annotation">CALICO: A Human-Centered, Codebook-Aligned System for Annotation</span></li><li><span class="dpr-home-dashboard-paper-title" title="Smarter by the Moment: Environment-Driven Dynamic Policies for Continual LLM Improvement">Smarter by the Moment: Environment-Driven Dynamic Policies for Continual LLM Improvement</span></li><li><span class="dpr-home-dashboard-paper-title" title="Can We Do Interpretable NLI with Graphs Based on Atomic Propositions?">Can We Do Interpretable NLI with Graphs Based on Atomic Propositions?</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>6</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>5</strong></span></div>
 </section>
 </div>
 

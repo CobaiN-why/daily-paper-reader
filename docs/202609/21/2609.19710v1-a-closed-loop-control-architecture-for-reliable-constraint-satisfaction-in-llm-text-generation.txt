@@ -1,0 +1,266 @@
+Title: A Closed-Loop Control Architecture for Reliable Constraint Satisfaction in LLM Text Generation
+
+URL Source: https://arxiv.org/pdf/2609.19710v1
+
+Published Time: Fri, 18 Sep 2026 00:47:34 GMT
+
+Number of Pages: 9
+
+Markdown Content:
+ICSEA 2026: The Twenty-First International Conference on Software Engineering Advances 
+
+# A Closed-Loop Control Architecture for Reliable Constraint Satisfaction in LLM Text Generation 
+
+Quan Zhou 
+
+Faculty of Information Technology and Communication Sciences Tampere University Tampere, Finland 
+
+quan.zhou@tuni.fi 
+
+Shahbaz Siddeeq *Faculty of Information Technology and Communication Sciences Tampere University Tampere, Finland 
+
+shahbaz.siddeeq@tuni.fi 
+
+Mika Saari 
+
+Faculty of Information Technology and Communication Sciences Tampere University Tampere, Finland 
+
+mika.saari@tuni.fi 
+
+Pekka Abrahamsson 
+
+Faculty of Information Technology and Communication Sciences Tampere University Tampere, Finland 
+
+pekka.abrahamsson@tuni.fi 
+
+Abstract —Software systems increasingly embed a large language model in features that must satisfy a numeric output constraint, that is, a requirement expressible as a number or an interval and checkable by code, such as a target word count or a target readability grade band. Because such a model is non-deterministic, is configured through natural-language instructions rather than a typed interface, and satisfies a stated requirement only approximately, a single prompt neither reliably meets the target nor preserves the source content. This paper presents and evaluates a closed-loop control architecture for this problem. It has five stages: generate, evaluate, adjust, archive, and analyze. The model is called only to write and to edit text, while deterministic code compares a composite readability value against a target band, rejects any edit that drops source entities, numbers, or keywords, and makes every accept decision. Over 114 single-shot generation jobs and 240 closed-loop runs on four commercial models, single-shot prompting met the target in 21.1 to 31.6 percent of cases and the closed loop in 92.5 to 98.8 percent, within two edit rounds on average and at a recall-based fidelity of 0.92 to 0.93; the two models common to both settings show the same effect. Because the controller optimizes the value on which success is scored, the result establishes reproducible control over a declared, computable metric and not validated human difficulty. The transferable practice is to declare the acceptance condition as code, bound the model to local edits, and gate every edit on a content check. 
+
+Keywords -large language model systems; closed-loop control; software reliability; controllable text generation. 
+
+I. I NTRODUCTION 
+
+Large Language Models (LLMs) are now ordinary com-ponents inside software systems and are used across many software-engineering tasks [1]. Typical uses include content generation, summarization, dialogue, and tutoring. In many of these features the surrounding system does not merely need plausible text; it needs text that satisfies a numeric output 
+
+> *Corresponding author: Shahbaz Siddeeq < shahbaz.siddeeq@tuni.fi >
+
+constraint , that is, a requirement that the system can express as a number or a numeric interval and check by code. Examples are an interface string that must fit a fixed character budget, a summary that must fit a token budget, a generated explanation that must sit at a stated reading level, and a release note that must retain every identifier from the change log. This paper studies the general engineering question behind these cases: how can a system built on an LLM guarantee that a measurable property of the generated text holds, and record why it holds? An LLM differs from a conventional component in three ways that make such a guarantee hard. First, it is non-deterministic: the same request can return different text. Second, it is configured through natural-language instructions and not through a typed interface, so there is no signature on which a numeric requirement can be asserted and no compiler or type checker that can reject a violation. Third, it satisfies a stated constraint only approximately, and the error is not random but systematic, as Section V shows. Two further obstacles are specific to text. Numeric constraints on text interact: making a passage simpler changes its length, and shortening a passage can remove facts. Finally, a naive fix, namely asking the model to check its own output, replaces one non-deterministic step with two, because the judge is the same kind of component as the generator. Where the constraint is not enforced, the cost falls on people. A team either accepts silent violations, or it inserts manual review, which removes the scaling advantage that motivated the automation. Neither option produces an audit record, so a team cannot answer afterwards why a particular output was shipped. Software engineering already has a standard answer for an unreliable component: wrap it in a control loop that measures the output, checks it against a specification, and corrects it, and keep the specification and the decision outside the unreliable part. The engineering question is whether that answer carries arXiv:2609.19710v1 [cs.SE] 17 Sep 2026 over to a component whose interface is a natural-language prompt. This paper investigates the question through one concrete task: generating English reading passages that meet a target word count and a target readability band without changing the source content. The task was chosen because it exhibits all of the properties above in a single instance. The two constraints are numeric, they are partly in conflict, and a third constraint, content preservation, must hold at the same time. The findings are therefore expected to transfer to any feature with a computable target metric and a content constraint, although this paper tests only the one application (Section VI). Section II reviews the relevant work and derives two gaps: existing self-refinement methods keep the correctness judgment inside the model ( G1 ), and existing readability-controlled generation work characterizes the error a prompt leaves behind rather than supplying a mechanism that removes it ( G2 ). Neither line of work reports what happens to source content while the metric is being moved. The three research questions below each address part of this gap. 
+
+RQ1. To what extent can single-shot prompting satisfy the length and difficulty constraints together? Objective. Measure how often one prompt produces text that is within the target length and the target difficulty band. 
+
+Rationale. Single-shot prompting is the common baseline, and prior work reports that it produces a trend rather than reliable attainment [2]–[4] but does not report joint length-and-difficulty attainment. If one prompt already satisfies both constraints, a control loop is not needed. 
+
+RQ2. How does closed-loop feedback affect difficulty control compared with single-shot prompting? Objective. Measure the difficulty hit rate of the closed-loop architecture and compare it with single-shot prompting. 
+
+Rationale. This question targets G1 and G2. The loop adds a deterministic measurement, a bounded edit step, and a deterministic accept check, so the accept decision no longer depends on a model judgment. 
+
+RQ3. To what extent can difficulty be controlled without reducing the semantic fidelity of the source? Objective. Measure the fidelity of accepted outputs when the difficulty hit rate is high. Rationale. This question targets the part of the gap that prior work leaves unmeasured. Editing text to change difficulty can remove source content, and a controller optimizing a readability score alone has an incentive to do so. The purpose of this article is to specify a reusable control architecture for LLM components under numeric output con-straints, and to report what such an architecture does and does not demonstrate. This is a software architecture and not a new model: no model is fine-tuned or modified, the model is used only to write and to edit text, and every accept decision is made by deterministic code. The contributions are the following.  
+
+> •
+
+A five-stage pipeline (generate, evaluate, adjust, archive, analyze) that turns approximate prompt constraints into measurable and reproducible output checks (Section III).  
+
+> •
+
+A composite readability target computed from four grade-level formulas, with a length-compensation step that corrects a measured under-generation bias.  
+
+> •
+
+A controller that applies only word and sentence replace-ments, guarded by a recall-based fidelity gate that protects source content.  
+
+> •
+
+An evaluation against single-shot prompting over four commercial models, reported with the parameter settings needed to repeat it (Section IV), together with an analysis of control quality, cost, and validity, including the limit set by metric circularity (Sections V and VI). Three limitations bound how the results should be read, and Section VI examines each of them. First, the controller opti-mizes the same composite metric on which success is scored, so the reported hit rate demonstrates metric controllability and not validated human difficulty. Second, the fidelity gate is recall-based: it detects removed content but not altered content. Third, the thresholds, the compensation factors, and the level bands were calibrated on pilot data, and the evaluation covers one application, one language, and four models. The remainder of the paper is organized as follows. Section II reviews related work and states the two gaps. Section III describes the architecture, the difficulty bands, and the fidelity gate. Section IV describes the experimental method, the two tasks, the generated dataset, and the settings needed to reproduce the runs. Section V reports the results. Section VI states the threats to validity. Section VII discusses the results and draws the lessons for software engineers. Section VIII concludes and lists future work. II. R ELATED WORK 
+
+This section reviews three areas of prior work: LLMs treated as unreliable components, readability-controlled generation, and multi-dimensional evaluation. It closes by stating the two gaps that the research questions address. 
+
+A. LLMs as Unreliable Software Components 
+
+LLMs can be treated as unreliable components that need ex-ternal checks. Self-refinement methods, such as Self-Refine [5] and Reflexion [6], let a model review and revise its own output, and have been reported to improve output on a range of tasks. When the model is also the judge, however, there is no external check that a target property is met, and the judgment is itself non-deterministic: the same candidate can be accepted in one run and rejected in the next, and no threshold is recorded against which the decision could be replayed. The architecture in this paper places the check outside the model, so that the same input and the same stored state always produce the same accept or reject decision. B. Controllable and Readability-Controlled Generation 
+
+LLMs can move text toward a target readability level, but the target is often missed and the meaning is often changed. Huang et al. [2] report that LLMs shift educational text toward a requested level but often miss it. Hsu et al. [3] report that readability-controlled generation produces a trend but not stable alignment. Kew et al. [4] report that simplification behavior varies across models. Bezirhan and von Davier [7] and Xiao et al. [8] generate passages and exercises, but they use manual quality control and not a closed loop. These results establish that a single generation step does not reliably control numeric output properties, which is the premise of RQ1. They stop at that diagnosis: they characterize the residual error of a prompt rather than supplying a mechanism that removes it. 
+
+C. Multi-Dimensional Evaluation 
+
+Marulli et al. [9] report that the readability of LLM output should not be reduced to one score. Scaria et al. [10] reach a similar conclusion for generated questions. These results support two design choices in this paper: a composite readability target instead of one formula, and a fidelity gate, so that a gain on the difficulty metric cannot be obtained by removing content. 
+
+D. Gaps Addressed by This Paper 
+
+Two gaps follow. G1 : where a loop exists, the accept decision is made by the model itself [5][6], so the loop yields no check that the surrounding system can state, threshold, and replay. 
+
+G2 : where a numeric text property is the object of study, the reported result is the residual error of a prompting strategy [2]– [4] rather than a mechanism that drives the property into a declared band, and the effect of such control on source content is not measured [9][10]. RQ1 quantifies the baseline that G2 implies, RQ2 tests a mechanism that closes G1 and G2, and RQ3 measures the content-preservation dimension that neither line of work reports. III. A RCHITECTURE 
+
+The architecture has five stages: generate, evaluate, adjust, archive, and analyze. Each stage produces data that the next stage uses and that is stored for later inspection. Figure 1 shows the stages and the two decision points that close the loop. The model is called only in the generate and adjust stages; the shaded boxes in the figure mark those two stages. Everything else is deterministic code: metric computation, the hit check, the choice of edit variant, the fidelity check, and the accept decision. A candidate leaves the loop and is archived only when it is inside the difficulty band. Otherwise the controller selects an edit variant, and the edited candidate is accepted back into the loop only if it passes the fidelity gate and has moved closer to the band centre; if it does not, the controller discards it and tries another variant. The loop terminates on a hit or after five adjustment rounds. This design confines non-determinism to two stages and makes every accept or reject decision reproducible from the stored state. 
+
+A. Generate Stage and Length Compensation 
+
+Pilot runs indicated that prompts tended to produce text that was too short, and that the shortfall grew as the requested difficulty level fell. The generate stage corrects this bias before the difficulty loop starts. For a user target of Wt words at level 
+
+L, the prompt requests a compensated target 
+
+Weff = max(80 , round( αL · Wt)) , (1) where αL is the level-specific compensation factor listed in Table I. Candidates are still scored against the user’s original target Wt: a candidate is accepted if its length lies in [0 .9 Wt, 1.2 Wt]. If it does not, the system generates again and keeps the candidate whose length is closest to Wt. The compensation is therefore a generation-stage calibration and not a relaxation of the evaluation standard. 
+
+B. Difficulty Levels, Target Bands, and the Hit Condition 
+
+Difficulty is expressed as one of five discrete levels, L ∈{1, . . . , 5}, where Level 1 is the least complex and Level 5 the most complex. A level is not a label given to the model to interpret; it is a numeric interval over a computed value. The value is the grade-family mean g, the mean of four grade-level readability indices: Flesch-Kincaid Grade (FK) [11], Automated Readability Index (ARI) [12], Coleman-Liau Index (CLI) [13], and Gunning Fog [14]. Flesch Reading Ease [15] is computed for monitoring but takes no part in the decision. Each level 
+
+L maps to a band [ blo , b hi ] on the US grade scale, given in Table I, and the hit condition is hit =  blo ≤ g ≤ bhi 
+
+, g = 14 (FK + ARI + CLI + Fog ) .
+
+(2) The bands were calibrated against common grade-band rep-resentations for English reading material and against the readability distribution observed in pilot runs. The four formulas are correlated but not identical, so requiring each one to fall inside a narrow band is frequently unsatisfiable; the mean is a single value that the controller can move. A band is used instead of a point because reading material covers a range of complexity and not one exact value. Two derived quantities are used throughout the paper. For a band with centre c = ( blo + bhi )/2 and half-width h = ( bhi − blo )/2, the normalized distance is D = |g − c|/h , and the grade drift of a sample is the signed quantity g − c, reported in grade points. Drift therefore states both the size and the direction of the error: a positive value means the text is harder than the band centre. 
+
+C. Closed-Loop Edit Controller 
+
+The controller does not regenerate the full text in each round. It applies only replacements. There are three variants: word replacement (V1), sentence-structure change (V2), and both together (V3). The controller selects V1 when the mismatch is lexical, V2 when the mismatch is structural, and V3 when both need to change. After each edit the system recomputes the metrics, rechecks the hit condition, and recomputes D. An edited candidate replaces the current text only if it passes the model call deterministic code                                    
+
+> request topic, level LWtwords
+> 1GENERATE
+> compensated target
+> Weff = max(80, αLWt)regenerate while length ∉ [0.9, 1.2] Wt
+> 2EVALUATE
+> g=14(FK+ARI+CLI+Fog) band [ blo ,bhi ], centre cD= | g−c|/ hg∈ [ blo ,bhi ] ?
+> 4ARCHIVE
+> text, metrics, hit status, edit history, token usage
+> 5ANALYZE
+> per-task CSV export, cross-model comparison 3ADJUST
+> replacement-only edit V1 word V2 sentence V3 both at most 5 rounds per sample fidelity ≥ τ
+> and Ddecreased ?
+> yes no accept edit →re-evaluate (round + 1 )yes reject →next edit variant no Figure 1. The five-stage closed-loop pipeline. Shaded stages call the model; white stages are deterministic code. TABLE I. D IFFICULTY LEVELS :TARGET BAND ON THE GRADE -FAMILY MEAN gAND THE LENGTH -COMPENSATION FACTOR αLUSED BY THE GENERATE STAGE .
+
+Level Band [blo , b hi ] Centre c αL
+
+1 6–8 7.0 1.40 2 8–10 9.0 1.30 3 10–12 11.0 1.05 4 12–14 13.0 1.00 5 14–20 17.0 1.00 fidelity gate and either hits the band or reduces D; otherwise it is discarded and another variant is tried. A bounded edit reduces cost and reduces the risk of changing meaning, because each round changes only what the diagnosis requires. 
+
+D. Fidelity Gate 
+
+Each candidate edit passes a fidelity gate before it is accepted. The gate extracts the source entities, numbers, and top keywords and computes their recall in the candidate. The fidelity score is a weighted sum of three recall values: entity recall ( Re), number recall ( Rn), and keyword recall ( Rk): 
+
+Fidelity = 0 .45 Re + 0 .35 Rn + 0 .20 Rk. (3) Entities and numbers carry the facts, so they have higher weight. A candidate is eligible for acceptance if its fidelity score is at least τ = 0 .72 . Some local lexical or syntactic acceptances require at least 0.85. These thresholds were set on pilot data to balance the acceptance rate against content loss. They are parameters and not validated constants (Section VI). 
+
+E. Archive and Analyze 
+
+The archive layer stores each generated or edited text with its readability metrics, experiment identifiers, request and generation metadata, hit status, the edit history, and token usage. The analyze layer exports one comma-separated file per task. These files support repeated cross-model comparison and let any controller decision be traced back to the state that produced it. This record is what makes the system auditable: for any shipped output, the stored state names the metric value, the band, the fidelity score, and the edit that was applied. IV. E XPERIMENTAL METHOD 
+
+This section restates the research questions in operational terms, defines the two tasks and the dataset they produced, lists the metrics, and gives the settings needed to repeat the runs. 
+
+A. Research Questions and Hypotheses 
+
+Each research question is answered by one task. RQ1 is answered by Task A, using hit rate and length deviation; RQ2 by Task B, using the difficulty hit rate, together with the two models that appear in both tasks; RQ3 by Task B, using the fidelity score. The success criteria are stated as hypotheses. H1: single-shot prompting produces fluent text but does not satisfy the difficulty target reliably. H2: closed-loop feedback raises the difficulty hit rate above 90 percent. H3: the average recall-based fidelity stays at or above 0.85. 
+
+B. The Two Tasks 
+
+The two tasks correspond to two stages of the same workflow, and they isolate the contribution of the closed loop. Task A, the baseline, measures what one prompt achieves with no feedback. The system is given a topic, a difficulty level, and a target word count, and it produces a passage in a single generation call. The length-compensation step of Section III is active, so Task A is a fair rather than a weakened baseline; the difficulty loop is not. A sample is a hit if the grade-family mean of that one passage falls inside the band of the requested level. Task A therefore answers whether the closed loop is needed at all. Task B measures the full architecture. The system is given an existing passage, drawn from the archive of previously generated texts, together with a target level, and it runs the evaluate–adjust–gate loop of Figure 1 until the passage is inside the band or the round limit is reached. A sample is a hit under the same condition as in Task A. The two tasks therefore differ in their starting point as well as in the loop: Task A controls from scratch, Task B from a given text (Section VI). 
+
+C. Dataset 
+
+No external corpus is used. The evaluation set is generated by the system itself and is fully specified by the configuration below, which is what makes it reproducible. For Task A, the configuration enumerates four topic prompts (climate adaptation , public transportation , ancient trade routes ,and marine ecosystems ), five difficulty levels, and two target lengths (300 and 600 words). This gives 4×5×2 = 40 planned generation jobs per model. The reported set contains 38 jobs per model, or 114 in total. Two jobs per model were excluded because generation or transfer failed and no text was returned; these were not low-scoring outputs, so the exclusion does not favour the baseline or the loop. For Task B, source passages are drawn from the archive produced by the generation runs and are adapted to target levels 1 to 5. The reported set contains 240 adaptation runs, 80 per model. 
+
+D. Metrics 
+
+Task A is measured by hit rate, length deviation, and average attempts. Task B is measured by hit rate, residual drift, average rounds, fidelity score, and token consumption. Hit rate is the percentage of samples satisfying the hit condition of Section III-B. Length deviation is the mean absolute percentage difference between the produced word count and the user target Wt. Average attempts counts generation calls per Task A sample, including regenerations triggered by the length window. Average rounds counts edit rounds per Task B sample. Residual drift is the signed grade drift g − c remaining after adjustment, in grade points. Fidelity is defined in Section III-D. Token consumption is the total prompt and completion tokens charged per final accepted sample, summed over every call the loop made for that sample. 
+
+E. Models, Settings, and Reproducibility 
+
+The two tasks ran as separate campaigns. Task A used gpt-5-mini, grok-4.1-fast, and gemini-3-flash-preview (written gemini-3-flash below). Task B used gpt-5-mini, grok-4.1-fast, and deepseek-v3.2. All models were accessed as hosted commercial endpoints through a single OpenRouter-compatible gateway, so that only the model identifier changed between campaigns. Two models, gpt-5-mini and grok-4.1-fast, appear in both campaigns and therefore support a within-model comparison of the two settings. The controller parameters are those stated in Section III and are repeated here so that a run can be reconstructed: the level bands and compensation factors of Table I; the length acceptance window [0 .9 Wt, 1.2 Wt]; the composite g over FK,                
+
+> TABLE II. T ASK A: SINGLE -SHOT GENERATION , 38 SAMPLES PER MODEL .
+> Model Length dev. (%) Hit rate (%) Avg. attempts gpt-5-mini 8.11 31.6 1.84 grok-4.1-fast 7.46 21.1 2.05 gemini-3-flash 11.89 31.6 1.97
+
+ARI, CLI, and Fog with equal weights; the fidelity weights 
+
+0.45 /0.35 /0.20 ; the fidelity threshold τ = 0 .72 , raised to 0.85 for local lexical and syntactic acceptances; the local-improvement criterion D = |g − c|/h must decrease; and a hard limit of five adjustment rounds per sample. Experiments were executed by configuration-driven batch scripts that call the same service endpoints as the interactive interface, rather than through manual interaction, so that every sample carries an experiment identifier, a batch identifier, and a sample identifier derived from its topic, level, target length, and repeat index. Readability metrics are computed by deterministic code from the stored text, so any reported metric can be recomputed from the archive without calling a model again. Because the model sets differ between campaigns and the Task A sample is small, all cross-model differences are reported as descriptive and no significance test is run. V. R ESULTS 
+
+This section reports Task A, then Task B, then the within-model comparison, and finally token cost and residual drift. 
+
+A. RQ1: Single-Shot Prompting Does Not Meet the Difficulty Target 
+
+Table II reports Task A. Length control was the easier of the two constraints: mean length deviation was 8.11 percent for gpt-5-mini, 7.46 percent for grok-4.1-fast, and 11.89 percent for gemini-3-flash, that is, within roughly one tenth of the requested word count. Difficulty control was not. The hit rate was 31.6 percent for gpt-5-mini, 21.1 percent for grok-4.1-fast, and 31.6 percent for gemini-3-flash, so between two thirds and four fifths of the passages fell outside the requested band. Average attempts ranged from 1.84 to 2.05, which means the length-retry mechanism was exercised on roughly every second sample and still left the difficulty error in place. A correct length did not imply a correct difficulty. The error is systematic rather than random, which is what makes it correctable. Figure 2 breaks the error down by requested level and plots the grade drift g − c defined in Section III-B. All three models undershoot at the two easiest levels, by about −1.7 to −3.2 grade points at Levels 1 and 2, and overshoot from Level 3 upward, by about +5 .5 to +6 .7
+
+grade points at Level 3 and by +8 .6 to +11 .6 grade points at Levels 4 and 5. The three curves have the same shape, so the bias is a property of prompting for a level rather than of one vendor. A model that misses the requested level this consistently cannot produce level-specific material by prompt alone, and the regularity of the curve is precisely the signal a controller can act on: the sign of the drift names the direction of the required edit. Figure 2. Single-shot prompting (Task A): grade drift g − c from the target band centre, by requested level. Positive means harder than requested. TABLE III. T ASK B: CLOSED -LOOP ARCHITECTURE , 240 SAMPLES (80 PER MODEL ). 
+
+Model Hit rate (%) Avg. rounds Avg. fidelity gpt-5-mini 92.5 1.78 0.92 grok-4.1-fast 98.8 1.74 0.93 deepseek-v3.2 95.0 1.68 0.92 
+
+> Key takeaway, RQ1
+> Single-shot prompting does not control numeric output properties reliably. It produces fluent text of roughly the right length but misses the difficulty band in 68 to 79 percent of samples. The difficulty error is systematic: too easy at Levels 1 and 2, too hard at Levels 3 to 5. What is needed is a feedback mechanism, not a better prompt.
+
+B. RQ2: Closed-Loop Control Meets the Target 
+
+Table III and Figure 3 report Task B. The hit rate was 92.5 percent for gpt-5-mini, 98.8 percent for grok-4.1-fast, and 95.0 percent for deepseek-v3.2, so all three models are above the 90 percent threshold of H2. The average number of edit rounds was 1.68 to 1.78, that is, below two and far below the limit of five. The two numbers should be read together: a high hit rate reached after many rounds would indicate that the loop was simply resampling until something passed, whereas a high hit rate reached in fewer than two rounds indicates that the diagnosis, the choice of edit variant, and the accept check are doing the work. Where prior readability-control studies report a trend but not stable attainment [2][3], the loop reaches the declared band. 
+
+C. The Effect Is Also Observed Within Model 
+
+The two campaigns do not use identical model sets, so part of the aggregate jump could in principle reflect the change of model rather than the change of architecture. Two models, however, appear in both campaigns, and for those the comparison is within model: gpt-5-mini moves from 31.6 to 92.5 percent, and grok-4.1-fast moves from 21.1 to 98.8 percent. The effect is therefore not carried by gemini-3-flash, which appears only in the baseline, or by deepseek-v3.2, which appears only in the closed loop; the two models common to 
+
+> Figure 3. Task B: closed-loop hit rate (left) and average fidelity (right) by model. Hit rate rises while fidelity stays at 0.92 to 0.93.
+
+both settings show the largest and the second-largest gain in the study. This is a within-model comparison of two settings and not a controlled ablation, because Task A generates from scratch and Task B adapts an existing passage (Section VI). 
+
+> Key takeaway, RQ2
+> The control loop moves the optimized metric into the target band. The hit rate rose from at most 31.6 percent under single-shot prompting to 92.5 to 98.8 percent, and the same direction and magnitude of change is observed within the two models present in both settings. The average number of rounds was below two, so the result comes from the deterministic evaluate, adjust, and accept logic and not from many retries. The result establishes metric controllability (Section VI).
+
+D. RQ3: Recall-Based Fidelity Is Kept 
+
+Average fidelity was 0.92 to 0.93 across the three models while the hit rate rose (Figure 3), against a gate threshold of 
+
+τ = 0 .72 and an H3 threshold of 0.85. The margin matters for the interpretation: accepted outputs did not merely clear the gate, they cleared it by roughly 0.20, so the controller was not trading content away to the last admissible point in order to reach the band. Read against the failure mode this metric was designed to catch, the result says that the gain in difficulty control was not obtained by deleting source entities, numbers, or keywords. It says nothing about content that was kept but altered, because the score is recall-based; Section VI sets out what that leaves open. 
+
+> Key takeaway, RQ3
+> The fidelity gate lets the loop change readability and keep the source content. Average fidelity stayed at 0.92 to 0.93, about 0.20 above the acceptance threshold, while the hit rate rose. Difficulty control and content preservation held together. The check is recall-based: it confirms that source entities, numbers, and keywords are kept, not that every fact is unchanged (Section VI).
+
+E. Cost and Residual Drift 
+
+The token cost per final accepted sample was 8,754 for deepseek-v3.2, 15,949 for grok-4.1-fast, and 19,605 for gpt-5-mini, a spread of about 2.2 times between the cheapest and the most expensive. The choice of model is therefore a deployment trade-off rather than an architectural one: grok-4.1-fast had the highest hit rate, while deepseek-v3.2 reached a comparable hit rate and the same fidelity at about 55 percent of the token cost of grok-4.1-fast and about 45 percent of that of gpt-5-mini. Figure 4. Task B: residual grade drift after adjustment, by target level. The drift is near zero for Levels 2 to 4 and positive at Level 5 for all models. 
+
+Figure 4 reports the signed drift that remains after adjustment. For Levels 2 to 4 it is close to zero for all three models, between 
+
+−0.23 and +0 .19 grade points, that is, well inside the band. At Level 1 a positive drift of 0.66 to 1.02 remains, which matters because that band is the narrowest in the study (half-width 1.0), so the residual sits at or beyond the band edge. At Level 5 the drift stays positive for every model, at 1.61 to 2.12 grade points, inside the wider half-width of 3.0 but one-sided. Two causes are plausible and cannot be separated with the present data: Level 5 sits at the top of the scale, where the readability formulas respond sharply to denser vocabulary and longer clauses, and the replacement-only controller is deliberately conservative, so it has little room to move a text that must be highly advanced yet still centred. Control is therefore tightest in the middle of the scale, where the controller has room on both sides of the band, and it degrades at the extremes, where it does not. The Level 5 residual is small in absolute terms but one-sided, and a one-sided error is the kind that a longer run will not average away. It bounds the claim: the architecture controls the composite metric reliably at Levels 2 to 4 and with a known positive bias at Level 5. VI. T HREATS TO VALIDITY 
+
+Construct validity: metric circularity. The controller optimizes the composite mean g, and Task B scores success by whether the same g falls in the target band, so the loop edits until the success criterion is met. The 92.5 to 98.8 percent figures therefore measure whether a declared, computable quantity can be driven into a declared interval and the decision kept auditable, which is an engineering property; as a statement about text difficulty they are close to tautological. Readability formulas use surface features, such as sentence length and word complexity, and do not measure discourse structure, concept density, or reader background. The question this design cannot answer is whether the output reads as genuinely easier or harder to a person, and answering it needs an independent, non-optimized criterion, that is, human or expert judgment on the accepted outputs. Two things limit the damage. The circularity is a property of the evaluation and not of the mechanism: the same loop accepts any computable acceptance predicate, including one supplied by an external judge. Moreover, the criterion is not satisfied by construction, since 1.2 to 7.5 percent of Task B samples never reach the band within the round limit and the residual drift of Figure 4 stays non-zero at Levels 1 and 5. 
+
+Construct validity: recall-only fidelity. The fidelity score is recall-based: it detects the removal of source entities, numbers, and keywords, but not a changed or invented fact. A passage that rewrites “increased by 20 percent” as “decreased by 20 percent” preserves both the entity and the number and would pass. The reported 0.92 to 0.93 therefore supports the narrower claim that accepted edits retained the source entities, numbers, and keywords, which is the failure mode a readability-optimizing controller is most tempted by, since deleting a difficult named entity or a long number is the cheapest way to move a grade score. It does not support a claim that the facts are unchanged, and the two claims should not be conflated. Adding a factual-consistency check, for example, one based on natural-language inference, would change the predicate evaluated at the gate and not the architecture. 
+
+Internal validity. The fidelity thresholds (0.72 and 0.85), the length-compensation factors, the level bands, and the round limit were set on pilot data. They are parameters and not validated constants, and they may not transfer to other domains, languages, or models. Their values are listed in Section IV so that a replication can vary them. 
+
+Conclusion validity. The Task A reported set is small, at 38 samples per model, and no significance test is run, so all cross-model differences are descriptive. The two settings also differ in more than the presence of the loop: Task A generates a passage from scratch, whereas Task B adapts an existing passage, so the comparison isolates the value of a closed loop over a one-shot pipeline rather than the value of the loop with every other factor held fixed. Two models appear in both settings and show the same direction and magnitude of change, which reduces but does not remove this concern. The comparison rests on the size of the difference, roughly threefold to fivefold, rather than on a statistical test. 
+
+External validity. The evaluation uses one application (English reading passages), one language, and four models; other content types, languages, and models are not tested. The architecture is not specific to this application: in principle, any task with a computable target metric and a content constraint could use the same loop, although this was not tested here. VII. D ISCUSSION 
+
+The results support a narrow claim and suggest a broader one. The narrow claim is that a numeric property of LLM output can be driven into a declared interval reliably, cheaply, and auditably: 92.5 to 98.8 percent attainment at fewer than two edit rounds, against 21.1 to 31.6 percent for the prompt alone. The broader suggestion is that the reason this works has little to do with reading passages. It works because the loop moves the definition of correctness out of the prompt and into code. Once correctness is a predicate over a computed value, the non-deterministic component is no longer being asked to decide anything; it is being asked to produce a candidate that code will accept or reject. One result qualifies this on the design side: control degrades at the ends of the scale (Figure 4), which suggests that a bounded, replacement-only controller needs slack on both sides of its target, and that a system with hard limits at the extremes should expect a one-sided residual error there. The architecture generalizes to any feature in which an LLM must satisfy a requirement that code can evaluate, and five lessons follow for practitioners.  
+
+> •
+
+L1: make the acceptance criterion code and not prose. A prompt requirement (“about 300 words, at a fifth-grade level”) is not testable, whereas the same requirement expressed as a predicate over a computed value is testable, loggable, and replayable. This is the step that converts an LLM feature from something a team hopes about into something a team can put a test around.  
+
+> •
+
+L2: keep the judge out of the model. Self-evaluation reproduces the component’s non-determinism inside the accept decision, so an output cannot be explained after the fact. Here the model appears in two of five stages and the three deterministic stages own every decision, which is what closes G1 and what makes a stored decision replayable.  
+
+> •
+
+L3: prefer a composite target over a single score, and ac-cept a band rather than a point. Four correlated readability formulas rarely agree inside a narrow interval, so requir-ing all four made the objective frequently unsatisfiable, whereas the mean gave the controller a single quantity to move (Section III-B). The same holds for any feature with several correlated quality signals.  
+
+> •
+
+L4: bound the edit, and gate it on what must not change. Replacement-only edits kept the loop at fewer than two rounds and fidelity at 0.92 to 0.93, whereas full regeneration would have discarded the previous round’s work each time. Pair every optimization target with a preservation constraint, because a controller scored on one metric will otherwise reach it by damaging something the metric does not see.  
+
+> •
+
+L5: measure the cost of control, and treat the model as a deployment parameter. The loop costs one to two extra model calls per sample, and the token cost per accepted sample varied by a factor of 2.2 across models at comparable quality; because the architecture holds the model at arm’s length, that ratio is a deployment choice and not a redesign. A final lesson concerns reporting rather than design. A closed loop built on a self-optimized metric reports how well it satisfies itself. That is a real engineering result, because a check that holds and is logged is worth more than an instruction that usually works, but it is not evidence about end users. Such a system should say so in the abstract and not only in the threats section, and should separate the evidence it has, namely that the metric is controllable and the content check holds, from the interpretation a reader will otherwise supply, namely that the text is genuinely easier to read. The practical rule is to add an independent check, drawn from outside the optimization loop, before claiming anything about end users; in this architecture that check is cheap to add, because the gate is a pluggable predicate, but it is not already done. VIII. C ONCLUSION AND FUTURE WORK 
+
+This paper presented a closed-loop architecture that turns ap-proximate prompt constraints into measurable and reproducible output checks. Single-shot prompting met the difficulty target in at most 31.6 percent of cases, with a systematic rather than a random error (RQ1). The closed-loop architecture met it in 92.5 to 98.8 percent of cases at fewer than two edit rounds on average, a change that also holds within the two models present in both settings (RQ2), while recall-based fidelity stayed at 0.92 to 0.93 (RQ3). The evidence establishes metric controllability and not validated human difficulty, and it is bounded by the recall-only fidelity score, the one-sided residual drift at Level 5, the pilot-calibrated parameters, and the descriptive statistics. For practitioners the transferable result is the five lessons of Section VII, of which the first is load-bearing: an LLM feature becomes engineerable at the moment its acceptance criterion is written as code rather than as prose. Future work follows from those limits: human and expert evaluation, to test perceived difficulty against an independent criterion; a factual-consistency check, to detect altered and not only removed content; a fully model-controlled comparison, with the same model set and the same starting texts in both settings and enough samples for a significance test, to separate the effect of the loop from that of the task shape; adaptive step size or an explicit overshoot penalty, to improve control at the top band; and application to other domains, languages, and constraint types, to test whether the pattern and not only the result transfers. ACKNOWLEDGMENT 
+
+This work has been supported by FAST, the Finnish Software Engineering Doctoral Research Network, funded by the Ministry of Education and Culture, Finland. DECLARATION OF AI A SSISTANCE 
+
+During the preparation of this manuscript, the authors used ChatGPT to assist with grammar refinement, sentence restructuring, and formatting improvements. Following the use of this tool, the authors carefully reviewed and revised the content and assume full responsibility for the final version of the publication. REFERENCES   
+
+> [1] X. Hou et al., “Large language models for software engineering: A systematic literature review”, ACM Transactions on Software Engineering and Methodology , vol. 33, no. 8, pp. 1–79, 2024.
+
+[2] C.-Y. Huang, J. Wei, and T.-H. K. Huang, “Generating educational materials with different levels of readability using LLMs”, in Proc. 3rd Workshop on Intelligent and Interactive Writing Assistants (In2Writing ’24) , 2024, pp. 16–22. DOI :10.1145/3690712.3690718 [3] Y.-S. Hsu, N. Feldhus, and S. Hakimov, “Free-text rationale generation under readability level control”, in Proc. 4th Workshop on Generation, Evaluation and Metrics (GEM 2025) ,2025, pp. 129–150. [Online]. Available: https://aclanthology. org/2025.gem-1.11/ [4] T. Kew et al., “BLESS: Benchmarking large language models on sentence simplification”, in Proc. 2023 Conference on Empirical Methods in Natural Language Processing (EMNLP) ,2023, pp. 13 291–13 309. DOI : 10 . 18653 / v1 / 2023 . emnlp -main.821 [5] A. Madaan et al., “Self-refine: Iterative refinement with self-feedback”, in Advances in Neural Information Processing Systems (NeurIPS) , vol. 36, 2023. [6] N. Shinn, F. Cassano, A. Gopinath, K. Narasimhan, and S. Yao, “Reflexion: Language agents with verbal reinforcement learning”, Advances in neural information processing systems ,vol. 36, pp. 8634–8652, 2023. [7] U. Bezirhan and M. von Davier, “Automated reading passage generation with OpenAI’s large language model”, Computers and Education: Artificial Intelligence , vol. 5, p. 100 161, 2023. 
+
+> DOI
+
+: 10.1016/j.caeai.2023.100161 [8] C. Xiao, S. X. Xu, K. Zhang, Y. Wang, and L. Xia, “Evaluating reading comprehension exercises generated by LLMs: Ashowcase of ChatGPT in education applications”, in Proc. 18th Workshop on Innovative Use of NLP for Building Educational Applications (BEA 2023) , 2023, pp. 610–625. DOI : 10.18653/ v1/2023.bea-1.52 [9] F. Marulli et al., “Understanding readability of large language models output: An empirical analysis”, Procedia Computer Science , vol. 246, pp. 5273–5282, 2024. DOI : 10.1016/j.procs. 2024.09.636 [10] N. Scaria, S. D. Chenna, and D. Subramani, “Automated educational question generation at different Bloom’s skill levels using large language models: Strategies and evaluation”, in Artificial Intelligence in Education , ser. Lecture Notes in Computer Science, vol. 14830, Springer, 2024, pp. 165–179. 
+
+> DOI
+
+: 10.1007/978-3-031-64299-9_12 [11] J. P. Kincaid, R. P. Fishburne, R. L. Rogers, and B. S. Chissom, “Derivation of new readability formulas for navy enlisted personnel”, Naval Technical Training Command, Tech. Rep. Research Branch Report 8-75, 1975. [12] E. A. Smith and R. J. Senter, “Automated readability index”, Aerospace Medical Research Laboratories, Tech. Rep. AMRL-TR-66-220, 1967. [13] M. Coleman and T. L. Liau, “A computer readability formula designed for machine scoring”, Journal of Applied Psychology ,vol. 60, no. 2, pp. 283–284, 1975. [14] R. Gunning, The Technique of Clear Writing . McGraw-Hill, 1952. [15] R. Flesch, “A new readability yardstick”, Journal of Applied Psychology , vol. 32, no. 3, pp. 221–233, 1948.
