@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-24</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-25</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 9 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 14 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>3</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>6</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>8</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-24 21:58:44 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-25 22:24:54 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,10 +69,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日共生成 9 篇推荐（精读 3 篇，速读 6 篇）</p>
-<p>精读：《Specifying and Maintaining Agentic Workflows: An Empirical Study of GitHub Agentic Workflows》（9.0/10）, 《One to More, More to One: Category-Aware Iterative Expert Training for Software Engineering Agents》（8.0/10）</p>
-<p>速读：《EmbodiedSWE: Coding Agents for Long Horizon Dexterous Robotics》（7.0/10）, 《The Communication Bottleneck: A Round-Trip Study of Tree-Structured Expression Serialization in Language Models》（6.0/10）, 《Bridging Static and Agentic RAG for Taiwanese Historical Question Answering》（6.0/10）</p>
-<p>这些结果覆盖了当下较热的方向，建议先看精读区论文的关键问题与方法。</p>
+<p>今日14篇AI编码研究中精读6篇、速读8篇，两篇9分精读《SWE-Prometheus》和《Between the Commits》领跑。</p>
+<p>最值得看的是真实仓库工程治理改进度量，以及全AI编写代码库的过程、错误与声明可靠性；速读可顺带关注编码智能体任务/运动规划、自动程序修复规格基准和代码知识图谱。</p>
+<p>普通读者建议先读两篇9分精读，再按兴趣扫速读，重点抓可复用指标和结论。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -81,12 +80,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">3 篇</strong>
+    <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Specifying and Maintaining Agentic Workflows: An Empirical Study of GitHub Agentic Workflows">Specifying and Maintaining Agentic Workflows: An Empirical Study of GitHub Agentic Workflows</span></li><li><span class="dpr-home-dashboard-paper-title" title="One to More, More to One: Category-Aware Iterative Expert Training for Software Engineering Agents">One to More, More to One: Category-Aware Iterative Expert Training for Software Engineering Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Can LLMs Reason About Runtime Behavior? A Repository-Level Dynamic Benchmark">Can LLMs Reason About Runtime Behavior? A Repository-Level Dynamic Benchmark</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="SWE-Prometheus: Measuring Engineering Governance Improvements in Real-World Repositories">SWE-Prometheus: Measuring Engineering Governance Improvements in Real-World Repositories</span></li><li><span class="dpr-home-dashboard-paper-title" title="Between the Commits: Process, Error, and Claim Reliability in a Wholly AI-Authored Codebase">Between the Commits: Process, Error, and Claim Reliability in a Wholly AI-Authored Codebase</span></li><li><span class="dpr-home-dashboard-paper-title" title="NEUROTESTGEN: Neuro-Symbolic Guided Test Generation with Large Language Models">NEUROTESTGEN: Neuro-Symbolic Guided Test Generation with Large Language Models</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>3</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>6</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -94,12 +93,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">6 篇</strong>
+    <strong class="dpr-home-dashboard-count">8 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="EmbodiedSWE: Coding Agents for Long Horizon Dexterous Robotics">EmbodiedSWE: Coding Agents for Long Horizon Dexterous Robotics</span></li><li><span class="dpr-home-dashboard-paper-title" title="The Communication Bottleneck: A Round-Trip Study of Tree-Structured Expression Serialization in Language Models">The Communication Bottleneck: A Round-Trip Study of Tree-Structured Expression Serialization in Language Models</span></li><li><span class="dpr-home-dashboard-paper-title" title="Bridging Static and Agentic RAG for Taiwanese Historical Question Answering">Bridging Static and Agentic RAG for Taiwanese Historical Question Answering</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Coding Agents for Generalized Task and Motion Planning Problems">Coding Agents for Generalized Task and Motion Planning Problems</span></li><li><span class="dpr-home-dashboard-paper-title" title="Specification-Driven Benchmarking for Automated Program Repair From Static Corpora to Executable Specifications">Specification-Driven Benchmarking for Automated Program Repair From Static Corpora to Executable Specifications</span></li><li><span class="dpr-home-dashboard-paper-title" title="CodeGraph: Open-Taxonomy Knowledge Graph for Source Code with Wikidata Grounding">CodeGraph: Open-Taxonomy Knowledge Graph for Source Code with Wikidata Grounding</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>6</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>8</strong></span></div>
 </section>
 </div>
 
