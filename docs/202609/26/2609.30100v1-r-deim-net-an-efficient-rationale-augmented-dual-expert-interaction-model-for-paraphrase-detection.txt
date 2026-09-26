@@ -1,0 +1,336 @@
+Title: R-DEIM Net: An Efficient Rationale-Augmented Dual-Expert Interaction Model for Paraphrase Detection
+
+URL Source: https://arxiv.org/pdf/2609.30100v1
+
+Published Time: Fri, 25 Sep 2026 01:32:59 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+# R-DEIM Net: An Efficient Rationale-Augmented Dual-Expert Interaction Model for Paraphrase Detection 
+
+Pushp pushp.g23@iiits.in Indian Institute of Information Technology (IIIT), Sri City, India 
+
+Vaibhav Prajapati vaibhav.prajapati@utn.de University of Technology Nuremberg (UTN), Germany 
+
+Himangshu Sarma himangshu.sarma@iiits.in Indian Institute of Information Technology (IIIT), Sri City, India 
+
+# Abstract 
+
+Recent advances in paraphrase detection reveal a fundamental trade-off: large language mod-els achieve high accuracy but require high computation, while efficient Siamese-BERT vari-ants offer practical scalability with reduced transparency in rationale generation. We present R-DEIM Net, a 76M-parameter dual-expert architecture exploring whether moderate-scale models can achieve competitive accuracy on paraphrase detection while enabling human-readable rationale generation. The architecture combines two specialized components: an Interaction Expert that captures token-level similarity patterns through multi-scale 2D con-volutions and attention head allowing variable input length, and a Reasoning Expert that uses a Flan-T5-small decoder to generate rationales as auxiliary supervision. Rather than re-encoding generated text, we extract and pool decoder hidden states as complementary features for classification. On the Quora Question Pairs dataset, R-DEIM Net achieves 90.07% accuracy and 90.16% F1-score via 10-fold cross-validation. This represents com-petitive performance with strong transformer-based baselines (e.g., MFAE BERT: 90.54% accuracy) and recent large language model based approaches (LLaMA-70B) while using a substantially smaller parameter budget. The model generates rationales alongside predic-tions, providing potential for auxiliary human-readable descriptions. 
+
+# 1 Introduction 
+
+Accurately discerning semantic equivalence between text segments for paraphrase detection is a cornerstone of modern Natural Language Understanding (NLU) (Gali et al., 2016; Srivastava & Govilkar, 2017). This capability is critical for applications ranging from intelligent search and conversational AI to content de-duplication (Hammer et al., 2023) and plagiarism detection (Kauchak & Barzilay, 2006; Callison-Burch et al., 2006; Iordanskaja et al., 1991; Duboue & Chu-Carroll, 2006; Riezler et al., 2007; Zhou et al., 2025). Following the 2017 Kaggle competition (DataCanary et al., 2017), the Quora Question Pairs (QQP) dataset has become the standard benchmark for this task, requiring models to capture semantic identity across diverse surface-level wordings (Bernardi et al., 2013; Vahtola et al., 2022). Recent progress in paraphrase detection reveals distinct trade-offs between competing objectives. High per-formance is achieved by Large Language Models (LLMs) (Han et al., 2025) and ensemble BERT (Zhang et al., 2020), but these models result in high computational costs limiting real-world deployment. Conversely, effi-cient Siamese-BERT architectures (Mahmoud & Zrigui, 2022; Cheng & Gangaraju, 2023) achieve practical scalability but provide only binary predictions with limited transparent rationale generation. While atten-tion mechanisms can partially address this gap in mathematical aspect, most efficient paraphrase detection systems still lack explicit, rationales explaining their decisions in human-readable format. 1arXiv:2609.30100v1 [cs.CL] 24 Sep 2026 To explore whether moderate-scale models can achieve competitive accuracy while providing synthetic ratio-nale generation, this paper introduces R-DEIM Net (Rationale-Augmented Dual-Expert Interaction Model). R-DEIM Net takes a sentence pair as input and outputs a binary classification alongside generated text rationales. The architecture combines two complementary experts: (1) an Interaction Expert that captures token-level similarity patterns through multi-scale 2D convolutions and attention-based pooling to handle variable-length inputs, and (2) a Reasoning Expert that uses Flan-T5-small decoder to generate rationales as auxiliary training supervision. The Reasoning Expert’s hidden states during rationale generation act as a feature vector complementing the interaction patterns for final classification. The primary contributions are as follows: • We propose R-DEIM Net, a dual-expert framework that jointly models token-to-token interactions and generative reasoning signals for paraphrase detection. • We design an interaction expert that uses 2D convolutions and an attention-based pooling strategy to efficiently capture token alignment patterns from variable length sentence pairs. • By using decoder hidden states from a generative model as latent reasoning features, we adopt a mechanism that grounds classification decisions in natural language features without re-encoding generated rationales, which avoids unnecessary computational overhead and additional encoding layers. • We present a thorough empirical analysis to show how interaction and reasoning components con-tribute to semantic decision-making, including structural alignment, kernel activation behavior, and POS-based perturbation. 
+
+# 2 Related Work 
+
+Paraphrase detection on the Quora Question Pairs (QQP) dataset has evolved from traditional lexical features to deep sequential architectures and, recently, to massive LLMs. This progression reflects a shift from manual feature engineering toward automated semantic representation, which requires trade-offs in efficiency and transparent rationale generation. 
+
+Traditional and Lexical Approaches: Early methodologies relied on manual feature engineering and basic vectorization, with accuracies typically ranging from 63% to 85%. Sharma et al. (2019) demonstrated that a simple Continuous Bag of Words (CBOW) model achieved 83.4% accuracy, while Ansari & Sharma (2020) reached 82.44% using 28 hand-crafted features with an XGBoost classifier. Similar lexical strategies were explored in ABCNN (Yin et al., 2016), PWIM (He & Lin, 2016), and the “cascadedCN” model (Korade et al., 2024). Techniques like Lexical Decomposition and Composition (LDC) (Wang et al., 2016) and Syn-tree (Chen et al., 2017) attempted to capture alignment by breaking sentences into primitive components. While computationally light, these methods are limited by the inability to capture deep semantic context or complex word-order dependencies. 
+
+Sequential and Convolutional Architectures: The shift toward neural sequence modeling introduced RNN and CNN-based frameworks, yielding accuracies between 79% and 89%. Convolutional approaches, such as Siamese-CNN and MP-CNN (Wang et al., 2017), utilized spatial filters to identify local n-gram similarities. Concurrently, recurrent models like Siamese-LSTM, MP-LSTM (Wang et al., 2017), and ESIM (Chen et al., 2017) focused on long-range dependencies. Universal encoders like InferSent (Conneau et al., 2017) and GenSen (Subramanian et al., 2018) sought general representations, while SSE (Nie & Bansal, 2017), CAS-LSTM, and Bi-CAS-LSTM (Choi et al., 2019) introduced stacked architectures to refine context. Performance boundaries were further pushed using Bi-LSTM and attention framework by Faseeh et al. (2026). This model leveraged SMOTE (Chawla et al., 2002) for augmentation, despite prevailing concerns that oversampling in the feature space may fail to preserve semantic validity in textual representations (Blagus & Lusa, 2013; Taskiran et al., 2025). Concurrent systems like pt-DecAtt (Tomar et al., 2017) and LSTM+ElBiS (Choi et al., 2018) demonstrated similar gains in predictive power. However, these models often struggle with variable-length inputs and lack transparency in decision-making logic. 2Table 1: Encoder benchmarking on QQP. 
+
+Model Size Train Acc. Train F1 Test Acc. Test F1
+
+bert-base-uncased (Devlin et al., 2018) 110M 90 .95 ± 10 .04 89 .54 ± 14 .49 85 .99 ± 8.11 84 .63 ± 12 .64 paraphrase-albert-base-v2 12M 88 .29 ± 6.26 87 .87 ± 6.74 85 .00 ± 3.99 84 .49 ± 4.43 paraphrase-MiniLM-L3-v2 17M 90 .55 ± 1.53 90 .61 ± 1.53 86 .52 ± 0.57 86 .62 ± 0.58 paraphrase-MiniLM-L6-v2 22M 91 .16 ± 1.69 91 .25 ± 1.67 87 .05 ± 0.71 87 .20 ± 0.66 
+
+paraphrase-MiniLM-L12-v2 33M 92 .97 ± 1.30 93 .05 ± 1.27 88 .42 ± 0.37 88 .56 ± 0.35 
+
+paraphrase-mpnet-base-v2 110M 88 .18 ± 13 .35 85 .36 ± 19 .36 84 .08 ± 11 .09 81 .31 ± 17 .15 paraphrase-TinyBERT-L6-v2 67M 92 .95 ± 1.67 93 .01 ± 1.65 88 .59 ± 0.64 88 .70 ± 0.61 
+
+High-Interaction and Transformer-based Systems: To capture complex semantic interactions, mod-els operating over dense interaction spaces were developed, with accuracies now reaching the 88% to 90% range. DIIN (Gong et al., 2017) and Multiway Attention Networks (MwAN) (Tan et al., 2018) utilize so-phisticated attention to align sentence pairs. The integration of ensemble BERT led to MFAE (Zhang et al., 2020; Brahma, 2018) and CDTFME-Aver (Xie et al., 2019), which leverage BERT and ELMo embeddings. At the extreme scale, the most recent model, LLaMA-70B, is applied by Han et al. (2025). 
+
+Technical Gaps: A critical analysis of existing literature reveals three primary deficiencies. First, a significant portion of prior work focuses almost exclusively on raw accuracy, frequently failing to report F1-score, which leaves performance on imbalanced data unverified. Second, nearly all existing architectures rely on a fixed max_tokens limit. This forces a compromise between truncating semantically rich sentences or introducing excessive padding, both of which create sparse, inefficient matrices and noisy attention weights. Finally, despite their predictive power, these models provide binary labels. 
+
+# 3 Method 
+
+Question matching can be viewed as a classification task that seeks a label y ∈ { Duplicate, Non-Duplicate }
+
+for a given question pair. Figure 1 illustrates our approach for this task to classify and provide rationale. In the following, we describe the individual component of this approach. 
+
+3.1 Branch A: Interaction Expert 
+
+This branch is designed to move beyond simple vector similarity and analyze token-to-token semantic relation-ships between the two questions. Both input questions are first processed by the shared encoder. To select the optimal encoder, several pre-trained encoders were evaluated (Table 1), and paraphrase-MiniLM-L12-v2 
+
+(Reimers & Gurevych, 2019; Korga et al., 2025) was selected. While models like TinyBERT achieved marginally higher raw metrics, MiniLM-L12 offers a superior trade-off, delivering competitive accuracy (88.42%) and F1-scores (88.56%) with a significantly lesser parameter ( ≈ 33M). Next, a 2D interaction matrix M is computed to capture the token-by-token similarity (Bahdanau et al., 2014; Luong et al., 2015) between every token in Q1 and Q2:
+
+M = EQ1 · ETQ2 where M ∈ RB×Lq1×Lq2 (1) Several parallel 2D convolution layers with varying kernel sizes are applied on M to discover local interaction patterns. A n × n kernel can identify patterns of similarity across n-token phrases (semantic n-grams) (Zhu et al., 2018), capturing features that a simple 1-to-1 dot product would miss. The resultant feature map has shape ( B, C, L q1, L q2). To create a fixed-size vector out of variable input, the feature map is flattened into a sequence X and processed with a custom Attention Head . A trainable query vector vq ∈ RC scores the importance of each 3Figure 1: R-DEIM Net Architecture. A dual-expert multi-task framework. Branch A (Interaction) captures token-to-token patterns via multi-scale 2D-CNNs, while Branch B (Reasoning) distills latent decoder trajectories into a “reasoning vector” to ground classification in natural language rationales. feature Xi by computing alignment scores s:
+
+si = ( Xi · vq ) + bimp (2) 4Here, bimp is a small, scalar bias (the importance_factor ) providing a baseline relevance score. These scores are normalized into attention weights using a Softmax function. Finally, the fixed-size output vector 
+
+vinteraction is computed as the weighted sum of all feature vectors: 
+
+vinteraction =
+
+
+
+> Lf lat
+
+∑
+
+> i=1
+
+exp( si)
+
+∑Lf lat  
+
+> j=1
+
+exp( sj )
+
+ · Xi (3) This attention-pooling mechanism effectively distills variable-length interaction patterns into a single, fixed-size vector for the classifier. 
+
+3.2 Branch B: Differentiable Reasoning Expert 
+
+This branch serves a dual purpose: it generates an explicit rationale for the model’s decision and converts the latent logic itself into a feature vector. Flan-T5-small decoder (Raffel et al., 2020) is employed, where the token embeddings EQ1 and EQ2 from the shared encoder are provided as ‘encoder hidden states‘, giving the decoder full context. To bridge the dimension gap between the siamese encoder (384) and the T5 decoder (512), a simple linear projection layer is used. During training, while generating a rationale the decoder is tasked with auto-regressive decoding with teacher forcing (Vaswani et al., 2017). Rather than re-encoding the generated surface text which would require pass-ing the text through another encoder, adding unnecessary computational overhead and training complexity the sequence of decoder hidden states, Hdim , is directly extracted as each token is generated.This results in a variable-length tensor ( L × Hdim ) representing the reasoning. Similar to Branch A, a separate ‘Attention Head’ is applied to pool this sequence into a single, fixed-size reasoning vector, vreasoning .
+
+3.3 Fusion and Multi-Task Training Objective 
+
+The final classification combines insights from both experts. The two feature vectors are concatenated to form a final representation ( vf inal ) containing both interaction patterns and generative logic which is passed through an MLP. The model is optimized on a weighted multi-task loss combining classification ( Lclassif y ) and generation (Lgenerate ). Lgenerate is the standard CrossEntropyLoss from the T5 decoder. For classification, false positives are costly, as in duplicate detection incorrectly merging distinct questions is more detrimental to user experience than missing a duplicate. A per-sample weight Wi is defined based on the false positive penalty wf p :
+
+Wi =
+
+{
+
+wf p if yi = 0 1 if yi = 1 (4) The classification loss is the weighted mean of the per-sample BCE losses: 
+
+Lclassif y = 1
+
+N
+
+> N
+
+∑
+
+> i=1
+
+Wi ·
+
+(
+
+− [yi log( σ(ˆ ylogits _i)) + (1 − yi) log(1 − σ(ˆ ylogits _i))] 
+
+)
+
+(5) The final multi-task loss trained by the optimizer is: 
+
+Ltotal = α · Lclassif y + (1 − α) · Lgenerate (6) 
+
+# 4 Experiments 
+
+This section presents the empirical evaluation of R-DEIM Net, including the experimental setup, comparative performance on the Quora Question Pairs (QQP) benchmark, and a multi-level analysis of model behavior. All experiments were conducted on a system equipped with an NVIDIA Quadro RTX 6000 GPU, 64 GB RAM, and an Intel Xeon CPU. 5Algorithm 1 R-DEIM Net Multi-Task Training with Decoupled Weight Decay  
+
+> 1:
+
+Input: Training set {(Q1,i , Q 2,i , y i, R i)}Ni=1  
+
+> 2:
+
+Parameters: Encoder θenc , Experts θA, θ B , Classifier θc 
+
+> 3:
+
+Hyper-parameters: Multi-task weight α, Learning rates η, weight decay λ 
+
+> 4:
+
+repeat  
+
+> 5:
+
+Sample mini-batch of size m 
+
+> 6:
+
+EQ1, E Q2 ← MiniLM-L12( Q1, Q 2; θenc ) 
+
+> 7:
+
+vi ← Attn(CNN( EQ1 · E⊤
+
+> Q2
+
+; θA))  
+
+> 8:
+
+Hdec , Lgen ← T5( R|EQ1, E Q2; θB ) 
+
+> 9:
+
+vr ← Attn( Hdec ) 
+
+> 10:
+
+ˆy ← MLP([ vi; vr ]; θc) 
+
+> 11:
+
+Ltotal = αLBCE (ˆ y, y ) + (1 − α)Lgen  
+
+> 12:
+
+gt ← ∇ θ Ltotal  
+
+> 13:
+
+mt, v t ← Update moments( gt) 
+
+> 14:
+
+θt+1 ← θt − η
+
+( mt√vt+ϵ + λθ t
+
+) 
+
+> 15:
+
+until θ converges 
+
+4.1 Experimental Setup 
+
+Dataset Curation and Preprocessing Evaluation was performed on the QQP dataset (DataCanary et al., 2017), consisting of 404,290 pairs. To train the Reasoning Expert, the dataset was augmented with synthetic rationales generated by an LLM using a few-shot Chain of Thought (CoT) prompt (Wei et al., 2022) to ensure high-quality reasoning (Appendix A and D). Following preprocessing, the final dataset comprised 400,520 annotated pairs. 
+
+Training Details and Parameters R-DEIM Net employs a paraphrase-MiniLM-L12-v2 encoder (384-dim) and a Flan-T5-small decoder (512-dim), connected via a linear projection layer. The base Flan-T5-small model contains 77M parameters, split between a 35.3M parameter encoder and a 41.6M parameter decoder. Although these components are typically integrated, our architecture utilizes only the decoder for rationale generation, leaving the T5 encoder unused and excluded from the training process. Lightweight task-specific heads introduce fewer than 1M additional parameters. Specifically, the total parameter count includes the T5 decoder (41.6M), the MiniLM encoder (33M), and custom projection/attention heads ( ≈ 1M), totaling roughly 76M parameters. Training was performed ( Algorithm 1 ) for a fixed number of epochs using AdamW optimizer (Loshchilov & Hutter, 2019) with different learning rates Ilharco et al. (2023) for pre-trained and task-specific components. All architectural choices are summarized in Appendix C. The classification objective uses a weighted binary cross-entropy loss that explicitly penalizes false positives by assigning a higher weight to the majority non-duplicate class. This design encourages conservative duplicate predictions, ensuring that a sentence pair is labeled as Duplicate only when strong semantic evidence is present. Reproducibility is ensured through the use of standardized, publicly available pre-trained models and the explicit reporting of all training hyperparameters in Appendix C. 
+
+4.2 Experimental Results 
+
+Table 2 presents the 10-fold cross-validation results. R-DEIM Net achieved an average F1-Score of 90.16% and accuracy of 90.07%. This performance improves on the efficient baselines listed (e.g., Bi-LSTM (Faseeh et al., 2026)) and is within reported ranges for large LLMs in prior work (Han et al., 2025) while being ≈
+
+900x smaller. To ensure the integrity of the evaluation, primary sources of data leakage were investigated by performing the 10-fold cross-validation split prior to any preprocessing. This ensured that lexical statistics and rationale patterns from validation sets were never visible during training. Crucially, the full R-DEIM Net outperformed the strong “Interaction-Only” baseline (Branch A only), which achieved 88.63% F1 and 88.51% accuracy. The addition of the Reasoning Expert (Branch B) provided 6Table 2: Comparative Performance. R-DEIM Net obtains strong accuracy and F1 on QQP using a compact architecture (76M params). 
+
+Model Acc. F1-Score 
+
+ABCNN (Yin et al., 2016) 63.59% -Syn-tree (Chen et al., 2017) 75.50% -Siamese-CNN (Wang et al., 2017) 79.60% -MP-CNN (Wang et al., 2017) 81.38% -XGBoost (Ansari & Sharma, 2020) 82.44% 80.44% Siamese-LSTM (Wang et al., 2017) 82.58% -MP-LSTM (Wang et al., 2017) 83.21% -Bi-LSTM (Faseeh et al., 2026) 83.30% 87.00% CBOW (Sharma et al., 2019) 83.40% 77.80% PWIM (He & Lin, 2016) 83.40% -
+
+ESIM Syn +tree (Chen et al., 2017) 85.40% -LDC (Wang et al., 2016; 2017) 85.55% -ESIM (Chen et al., 2017) 85.00% -InferSent (Conneau et al., 2017) 86.60% -GenSen (Subramanian et al., 2018) 87.01% -LSTM+ElBiS (Choi et al., 2018) 87.30% -pt-DecAtt word (Tomar et al., 2017) 87.54% -SSE (Nie & Bansal, 2017) 87.80% -CDTFME-Aver (Xie et al., 2019) 88.00% -pt-DecAtt char (Tomar et al., 2017) 88.40% -CAS-LSTM (Choi et al., 2019) 88.40% -Bi-CAS-LSTM (Choi et al., 2019) 88.60% -REGMAPR (Brahma, 2018) 88.64% -BiMPM (Wang et al., 2017) 88.17% -DIIN (Gong et al., 2017) 89.06% -MwAN (Tan et al., 2018) 89.12% -LLaMA-7B (Han et al., 2025) 89.10% 71.90% MFAE (ELMo) (Zhang et al., 2020) 89.61% -MFAE (BERT) (Zhang et al., 2020) 89.79% -DIIN (Ensemble) (Gong et al., 2017) 89.84% -LLaMA-70B (Han et al., 2025) 90.30% 74.40% MFAE (BERT Ens.) (Zhang et al., 2020) 90.54% -R-DEIM Net (Interaction-only) 88.42% 88.56% 
+
+R-DEIM Net (Proposed) 90.07% 90.16% 
+
+a substantial +1.53% boost in F1-Score. This confirmed that the generative “reasoning vector” captures semantic nuances that the interaction matrix alone misses, effectively replacing the need for manual feature engineering. 
+
+4.3 Transfer Learning Analysis 
+
+To evaluate the generalization capabilities of R-DEIM Net, a transfer learning experiment was conducted on seven diverse datasets (Appendix B) spanning community QA, paraphrase identification, and scientific entailment. First, the zero-shot performance of the QQP-trained model directly on these unseen datasets was evaluated, followed by task-specific fine-tuning. Table 3 summarizes these results. In the zero-shot setting, R-DEIM Net demonstrated strong generaliza-tion on datasets semantically similar to QQP, such as SprintFAQ (98.15% F1) and SoDD (63.01% F1). 7Table 3: Transfer learning results of R-DEIM Net. Zero-shot Fine-tuning 
+
+Dataset Acc. F1 Epochs Acc. F1
+
+SoDD (Pašek et al., 2022) 73.50 63.01 3 88.60 88.40 PIT (Xu et al., 2015) 68.97 70.17 3 81.26 81.04 PAWS (Zhang et al., 2019) 53.45 53.54 2 68.80 67.97 MRPC (Dolan & Brockett, 2005) 50.92 50.29 3 69.51 65.85 SciTail (Khot et al., 2018) 66.60 60.60 2 81.47 81.59 SprintFAQ (Shah et al., 2018) (Enevoldsen et al., 2025; Muennighoff et al., 2022) 97.90 98.15 2 99.38 99.41 CQADupStack (Hoogeveen et al., 2015) 52.34 39.24 4 80.34 80.32 This indicated that the interaction and reasoning patterns learned from general-domain questions transfer effectively to specific domains without weight updates. However, we acknowledge a performance gap on adversarial datasets like PAWS and MRPC in the zero-shot setting. These datasets are specifically designed with high lexical overlap but distinct semantics. We hypothesize that this performance degradation may stem from the Interaction Expert’s reliance on localized spatial alignments (e.g., diagonal interaction), which might be bypassed by such adversarial word-scrambling. While further empirical analysis is required to fully confirm this sensitivity to linguistic perturbation, it highlights a potential limitation of efficient spatial models compared to massive cross-attention LLMs. Fine-tuning further unlocked the potential of the model. Across all datasets, significant performance gains with minimal training (2-4 epochs) were observed. For instance, performance on the challenging PAWS 
+
+dataset, known for high lexical overlap but distinct semantics, improved from 53.54% to 67.97% F1. Similarly, 
+
+CQADupStack saw a jump from 39.24% to 80.32% F1. These results confirm that while R-DEIM Net learns a robust general representation from QQP and remains highly adaptable to specialized nuances. 
+
+4.4 Architectural Analysis 
+
+To validate architectural choices, a multi-level analysis was conducted using 10,000 question pairs. 
+
+Structural Interaction It was hypothesized that duplicate sentence pairs show stronger semantic interac-tion than non-duplicate sentence pairs, which is reflected by a higher concentration of mass along the leading diagonal of the interaction matrix. Let M be the interaction matrix, M ∈ Rn×m, where Mij denotes the interaction strength between the i-th token of the first sentence and the j-th token of the second. Structural interaction was quantified using Eq. equation 7. 
+
+rdiag =
+
+∑min( n,m ) 
+
+> k=1
+
+Mkk 
+
+∑ni=1 
+
+∑mj=1 Mij 
+
+(7) The rdiag for all sentence pairs was computed and compared with empirical cumulative distribution functions (ECDFs) between duplicate and non-duplicate examples, as shown in Figure 2. Duplicate sentence pairs exhibited a rightward shift in the ECDF, indicating higher diagonal interaction ratios. To quantify this difference, a two-sample Kolmogorov-Smirnov (KS) test (Smirnov, 1939) was applied without assuming a specific parametric form. The test revealed a statistically significant distributional difference (KS = 0.224, 
+
+p < 10 −4). Moreover, to assess whether this interaction provides a useful signal, Spearman’s rank correlation was cal-culated between rdiag and the predicted duplicate probability. A weak positive correlation ( ρ = 0 .335) was observed, indicating that higher interaction is generally associated with higher predicted probability. However, the modest strength of this correlation suggests that interaction alone is insufficient for reliable 8Figure 2: Structural Interaction Distribution. ECDFs of diagonal interaction ratios. The significant rightward shift for duplicates validates that semantic identity is strongly correlated with positional interaction mass. Table 4: Relative activation of larger CNN kernels normalized by the 3 × 3 kernel. 
+
+Interaction Regime k5/k3 k7/k3 
+
+Low 1.14 1.15 Mid 1.11 1.09 High 1.09 1.04 semantic matching. This observation supports the inclusion of complementary architectural components, such as convolutional and reasoning branches, to handle semantically equivalent but non-aligned sentence pairs. 
+
+Multi-Scale Interaction Sensitivity Activation magnitudes of the CNN kernels (3 × 3, 5 × 5, 7 × 7) were examined in Branch A to understand receptive field usage. As shown in Table 4, the model exhibited a monotonic trend: when diagonal interaction was weak (Low Regime), larger kernels (5 × 5, 7 × 7) exhibited higher relative activation compared to the base 3 × 3 kernel. This indicated that the interaction expert adaptively leverages broader spatial contexts to find semantic matches when they are not diagonally aligned. 
+
+Perturbation and Robustness To identify linguistic components driving decisions, systematic masking was performed at both token and group levels for 1,000 question pairs. 
+
+Token-Level Sensitivity: Impact of masking individual tokens is shown in Figure 3. Content-bearing parts of speech, specifically Noun , Verb , and Adjective , induced the highest drops in local accuracy and the highest “flip rates.” In contrast, function words like Determiners and Auxiliaries showed minimal impact. 
+
+Global Robustness: Figure 4 confirms this trend at the global level. Masking categories of content words led to significant degradation in F1-score, whereas removing function words caused only marginal performance loss. This alignment between local sensitivity and global degradation provides evidence that R-DEIM Net’s predictions are grounded in deep semantic content rather than superficial syntactic artifacts. 9Figure 3: Token-level perturbation analysis. Content words (Nouns, Verbs) exert the strongest influence on model decisions. 
+
+Figure 4: Group-level POS perturbation. The model is highly robust to the removal of syntactic function words but sensitive to the loss of semantic content. 
+
+# 5 Conclusion 
+
+R-DEIM Net, a 76M parameter architecture, is presented to resolve the trade-off between massive “black box” models and efficient but less accurate alternatives. While recent work achieved high accuracy but poor F1, R-DEIM Net achieved the best of both: 90.07% accuracy and 90.16% F1-Score. Ablation results show that incorporating generative reasoning features (Appendix E) yields a consistent improvement over 10 a strong interaction-only baseline, indicating that latent decoder dynamics capture semantic distinctions beyond token interaction alone. We further validated architectural choices through a multi-level architectural analysis, including structural interaction, CNN kernel activation patterns, and systematic token and POS-level perturbations. These analysis demonstrate that model decisions are driven by semantic content rather than superficial lexical overlap, providing empirical support for the proposed design. 
+
+Future Work: We will focus on three key areas. First, applying the R-DEIM architecture to other sentence-pair tasks like Natural Language Inference (NLI). Second, investigating transfer learning by testing zero-shot performance on other paraphrase datasets and exploring parameter-efficient fine-tuning. Finally, further miniaturizing the model by exploring distilled decoders to optimize the efficiency-to-performance ratio. 
+
+# Limitations 
+
+A primary limitation is the use of synthetically generated rationales for the QQP dataset via a large language model. While necessary due to the infeasibility of manually annotating > 400k pairs, this is not ideal compared to human-written ground truth (although our validation study in Appendix D indicates strong alignment with human reasoning). However, the strong performance suggests the reasoning vector remains a robust feature, opening avenues for research into whether smaller, human-annotated datasets could yield better results. Furthermore, while the reasoning vector functionally contributes to classification accuracy, we do not claim strict faithfulness. The generated surface text mimics the structure of LLM-generated rationales (via our training data) but does not definitively prove the model’s internal cognitive logic. The text serves as an auxiliary descriptive rationale rather than a guaranteed causal post-hoc explanation. Stronger validation of faithfulness remains an important direction for future work. In alignment with established SOTA benchmarks on the QQP dataset (Han et al., 2025; Wang et al., 2017), the evaluation focuses on Pair-Level Generalization . While the QQP dataset contains recurring questions across unique pairs, this experimental design reflects real-world retrieval-based settings where a model must discern semantic identity within unique pair combinations. This approach ensures a direct and fair comparison with existing literature while maintaining high-precision requirements essential for practical duplicate detection. In this study, computational efficiency and accessibility were prioritized. Experiments were conducted using base-models. While larger models (e.g., RoBERTa-large) might yield incremental performance gains, they require significantly higher VRAM and training time, which were outside the scope of the current hardware infrastructure. 
+
+# References 
+
+Navedanjum Ansari and Rajesh Sharma. Identifying semantically duplicate questions using data science approach: A quora case study. arXiv preprint arXiv:2004.11694 , 2020. Dzmitry Bahdanau, Kyunghyun Cho, and Yoshua Bengio. Neural machine translation by jointly learning to align and translate. arXiv preprint arXiv:1409.0473 , 2014. Raffaella Bernardi, Yao-Zhong Zhang, Marco Baroni, et al. Sentence paraphrase detection: When determin-ers and word order make the difference. In Proceedings of the IWCS 2013 Workshop Towards a Formal Distributional Semantics , pp. 21–29, 2013. Rok Blagus and Lara Lusa. Smote for high-dimensional class-imbalanced data. BMC Bioinformatics , 14 (106), 2013. doi: 10.1186/1471-2105-14-106. URL https://doi.org/10.1186/1471-2105-14-106 .Siddhartha Brahma. Regmapr - text matching made easy. Computing Research Repository , 2018. 11 Chris Callison-Burch, Philipp Koehn, and Miles Osborne. Improved statistical machine translation using paraphrases. In Proceedings of the Human Language Technology Conference of the North American Chapter of the Association for Computational Linguistics (HLT-NAACL) , pp. 17–24, 2006. Nitesh V Chawla, Kevin W Bowyer, Lawrence O Hall, and W Philip Kegelmeyer. Smote: synthetic minority over-sampling technique. Journal of artificial intelligence research , 16:321–357, 2002. Qian Chen, Xiaodan Zhu, Zhen-Hua Ling, Si Wei, Hui Jiang, and Diana Inkpen. Enhanced lstm for natural language inference. In Proceedings of the 55th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 1657–1668, 2017. Andrew Cheng and Swathi Gangaraju. Fine-tuning bert for sentiment analysis, paraphrase detection and semantic text similarity. Stanford University, CS224N Final Project Report, 2023. Course project report, not peer-reviewed. Jihun Choi, Taeuk Kim, and Sang-goo Lee. Element-wise bilinear interaction for sentence matching. In 
+
+Proceedings of the seventh joint conference on lexical and computational semantics , pp. 107–112, 2018. Jihun Choi, Taeuk Kim, and Sang-goo Lee. Cell-aware stacked lstms for modeling sentences. In Asian conference on machine learning , pp. 1172–1187. PMLR, 2019. Alexis Conneau, Douwe Kiela, Holger Schwenk, Loïc Barrault, and Antoine Bordes. Supervised learning of universal sentence representations from natural language inference data. arXiv preprint arXiv:1705.02364 ,2017. DataCanary, hilfialkaff, Lili Jiang, Meg Risdal, Nikhil Dandekar, and tomtung. Quora question pairs. 
+
+https://kaggle.com/competitions/quora-question-pairs , 2017. Kaggle. Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. BERT: pre-training of deep bidirec-tional transformers for language understanding. CoRR , abs/1810.04805, 2018. URL http://arxiv.org/ abs/1810.04805 .William B. Dolan and Chris Brockett. Automatically constructing a corpus of sentential paraphrases. In 
+
+Proceedings of the Third International Workshop on Paraphrasing (IWP2005) , Jeju Island, Korea, 2005. Asia Federation of Natural Language Processing. URL https://aclanthology.org/I05-5002 .Pablo Ariel Duboue and Jennifer Chu-Carroll. Answering the question you wish they had asked: The impact of paraphrasing for question answering. In Proceedings of the Human Language Technology Conference of the North American Chapter of the Association for Computational Linguistics (HLT-NAACL) , pp. 33–36, 2006. Kenneth Enevoldsen, Isaac Chung, Imene Kerboua, Márton Kardos, Ashwin Mathur, David Stap, et al. MMTEB: Massive multilingual text embedding benchmark. arXiv preprint arXiv:2502.13595 , 2025. doi: 10.48550/arXiv.2502.13595. URL https://arxiv.org/abs/2502.13595 .Muhammad Faseeh, Tahira Amin, Naeem Iqbal, Hamad Shahid Hussain, Salman Ahmad, and Muhammad Afzaal. A robust approach to text similarity detection with lstm networks based on embedding and attention synergy. Expert Systems with Applications , 296:128904, 2026. ISSN 0957-4174. doi: https: //doi.org/10.1016/j.eswa.2025.128904. URL https://www.sciencedirect.com/science/article/pii/ S0957417425025217 .Najlah Gali, Radu Mariescu-Istodor, and Pasi Fränti. Similarity measures for title matching. In 2016 23rd International Conference on Pattern Recognition (ICPR) , pp. 1548–1553. IEEE, 2016. Yichen Gong, Heng Luo, and Jian Zhang. Natural language inference over interaction space. arXiv preprint arXiv:1709.04348 , 2017. Barbara Hammer et al. Evidence-based literature review: De-duplication a cornerstone for quality. World Journal of Methodology , 13(5):390–398, December 2023. doi: 10.5662/wjm.v13.i5.390. 12 Sifei Han et al. Enhancing semantical text understanding with fine-tuned large language models: A case study on quora question pair duplicate identification. PLOS ONE , 20(1):e0317042, 2025. doi: 10.1371/ journal.pone.0317042. Hua He and Jimmy Lin. Pairwise word interaction modeling with deep neural networks for semantic similarity measurement. In Proceedings of the 2016 conference of the north American chapter of the Association for Computational Linguistics: human language technologies , pp. 937–948, 2016. Doris Hoogeveen, Karin M. Verspoor, and Timothy Baldwin. CQADupStack: A benchmark data set for Com-munity Question-Answering research. In Proceedings of the 20th Australasian Document Computing Sym-posium (ADCS) , pp. 3:1–3:8, Parramatta, NSW, Australia, 2015. ACM. doi: 10.1145/2838931.2838934. URL http://doi.acm.org/10.1145/2838931.2838934 .Gabriel Ilharco, Marco Tulio Ribeiro, Mitchell Wortsman, Suchin Gururangan, Ludwig Schmidt, Hannaneh Hajishirzi, and Ali Farhadi. Editing models with task arithmetic, 2023. URL https://arxiv.org/abs/ 2212.04089 .Lidija Iordanskaja, Richard Kittredge, and Alain Polguere. Lexical selection and paraphrase in a meaning-text generation model. In Cecile L. Paris, William R. Swartout, and William C. Mann (eds.), Natural Language Generation in Artificial Intelligence and Computational Linguistics , pp. 293–312. Springer, 1991. David Kauchak and Regina Barzilay. Paraphrasing for automatic evaluation. In Proceedings of the Human Language Technology Conference of the North American Chapter of the Association for Computational Linguistics (HLT-NAACL) , pp. 455–462, 2006. Tushar Khot, Ashish Sabharwal, and Peter Clark. SciTail: A textual entailment dataset from science question answering. In Proceedings of the Thirty-Second AAAI Conference on Artificial Intelligence , pp. 5189–5197, New Orleans, Louisiana, USA, 2018. AAAI Press. URL https://www.aaai.org/ocs/index.php/AAAI/ AAAI18/paper/view/17077 .NB Korade, MB Salunke, GG Asalkar, RG Khedkar, AU Bhosale, DM Joshi, and AC Jadhav. Exploring nlp techniques for duplicate question detection to maximizing responses on q&a websites. International Journal of Intelligent Systems and Applications in Engineering , 12(3):11–20, 2024. Alex Maximilian Korga, Sebastian Wefers, Keno Hanken, Raad Bin Tareaf, Ben Steemers, and Hunaida Avvad. Does size matter? examining sentence similarity performance in large language models. In 2025 International Conference on Information Networking (ICOIN) , pp. 595–600. IEEE, 2025. Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization. In 7th International Conference on Learning Representations, ICLR 2019 , 2019. Minh-Thang Luong, Hieu Pham, and Christopher D Manning. Effective approaches to attention-based neural machine translation. arXiv preprint arXiv:1508.04025 , 2015. Adnen Mahmoud and Mounir Zrigui. Siamese arabert-lstm model based approach for arabic paraphrase detection. In proceedings of the 36th pacific asia conference on language, information and computation ,pp. 545–553, 2022. Niklas Muennighoff, Nouamane Tazi, Loïc Magne, and Nils Reimers. MTEB: Massive text embedding benchmark. arXiv preprint arXiv:2210.07316 , 2022. doi: 10.48550/arXiv.2210.07316. URL https:// arxiv.org/abs/2210.07316 .Yixin Nie and Mohit Bansal. Shortcut-stacked sentence encoders for multi-domain inference. arXiv preprint arXiv:1708.02312 , 2017. Jan Pašek, Jakub Sido, Miloslav Konopík, and Ondřej Pražák. Mqdd – pre-training of multimodal question duplicity detection for software engineering domain, 2022. URL https://arxiv.org/abs/2203.14093 .13 Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J Liu. Exploring the limits of transfer learning with a unified text-to-text transformer. 
+
+Journal of machine learning research , 21(140):1–67, 2020. Nils Reimers and Iryna Gurevych. Sentence-bert: Sentence embeddings using siamese bert-networks. arXiv preprint arXiv:1908.10084 , 2019. Stefan Riezler, Alexander Vasserman, Ioannis Tsochantaridis, Vibhu Mittal, and Yi Liu. Statistical machine translation for query expansion in answer retrieval. In Proceedings of the 45th Annual Meeting of the Association for Computational Linguistics (ACL) , pp. 464–471, 2007. Darsh Shah, Tao Lei, Alessandro Moschitti, Salvatore Romeo, and Preslav Nakov. Adversarial domain adaptation for duplicate question detection. In Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing , pp. 1056–1063, Brussels, Belgium, October-November 2018. Association for Computational Linguistics. doi: 10.18653/v1/D18-1131. URL https://aclanthology.org/D18-1131 .Lakshay Sharma, Laura Graesser, Nikita Nangia, and Utku Evci. Natural language understanding with the quora question pairs dataset. arXiv preprint arXiv:1907.01041 , 2019. Nikolai V Smirnov. Estimate of deviation between empirical distribution functions in two independent samples. Bulletin Moscow University , 2(2):3–16, 1939. Shruti Srivastava and Sharvari Govilkar. A survey on paraphrase detection techniques for indian regional lan-guages. International Journal of Computer Applications , 163:42–47, 04 2017. doi: 10.5120/ijca2017913757. Sandeep Subramanian, Adam Trischler, Yoshua Bengio, and Christopher J Pal. Learning general purpose distributed sentence representations via large scale multi-task learning. arXiv preprint arXiv:1804.00079 ,2018. Chuanqi Tan, Furu Wei, Wenhui Wang, Weifeng Lv, and Ming Zhou. Multiway attention networks for modeling sentence pairs. In IJCAI , pp. 4411–4417, 2018. S. F. Taskiran, B. Turkoglu, E. Kaya, et al. A comprehensive evaluation of oversampling techniques for enhancing text classification performance. Scientific Reports , 15(21631), 2025. doi: 10.1038/ s41598-025-05791-7. URL https://doi.org/10.1038/s41598-025-05791-7 .Gaurav Singh Tomar, Thyago Duque, Oscar Täckström, Jakob Uszkoreit, and Dipanjan Das. Neural para-phrase identification of questions with noisy pretraining. arXiv preprint arXiv:1704.04565 , 2017. Teemu Vahtola, Mathias Creutz, and Jörg Tiedemann. It is not easy to detect paraphrases: Analysing semantic similarity with antonyms and negation using the new SemAntoNeg benchmark. In Proceedings of the Fifth BlackboxNLP Workshop on Analyzing and Interpreting Neural Networks for NLP , pp. 249–262, Abu Dhabi, United Arab Emirates (Hybrid), December 2022. Association for Computational Linguistics. doi: 10.18653/v1/2022.blackboxnlp-1.20. URL https://aclanthology.org/2022.blackboxnlp-1.20/ .Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia Polosukhin. Attention is all you need. Advances in neural information processing systems , 30, 2017. Zhiguo Wang, Haitao Mi, and Abraham Ittycheriah. Sentence similarity learning by lexical decomposition and composition. arXiv preprint arXiv:1602.07019 , 2016. Zhiguo Wang, Wael Hamza, and Radu Florian. Bilateral multi-perspective matching for natural language sentences. arXiv preprint arXiv:1702.03814 , 2017. Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Fei Xia, Ed Chi, Quoc V Le, Denny Zhou, et al. Chain-of-thought prompting elicits reasoning in large language models. Advances in neural information processing systems , 35:24824–24837, 2022. 14 Yuqiang Xie, Yue Hu, Luxi Xing, and Xiangpeng Wei. Dynamic task-specific factors for meta-embedding. In International Conference on Knowledge Science, Engineering and Management , pp. 63–74. Springer, 2019. Wei Xu, Chris Callison-Burch, and Bill Dolan. SemEval-2015 task 1: Paraphrase and semantic similarity in Twitter (PIT). In Proceedings of the 9th International Workshop on Semantic Evaluation (SemEval 2015) , pp. 1–11, Denver, Colorado, June 2015. Association for Computational Linguistics. doi: 10.18653/ v1/S15-2001. URL https://aclanthology.org/S15-2001 .Wenpeng Yin, Hinrich Schütze, Bing Xiang, and Bowen Zhou. Abcnn: Attention-based convolutional neural network for modeling sentence pairs. Transactions of the Association for computational linguistics , 4: 259–272, 2016. Rong Zhang, Qifei Zhou, Bo Wu, Weiping Li, and Tong Mo. What do questions exactly ask? mfae: Duplicate question identification with multi-fusion asking emphasis. In Proceedings of the 2020 SIAM International Conference on Data Mining , pp. 226–234. SIAM, 2020. Yuan Zhang, Jason Baldridge, and Luheng He. PAWS: Paraphrase adversaries from word scrambling. In 
+
+Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long and Short Papers) , pp. 1298–1308, Min-neapolis, Minnesota, June 2019. Association for Computational Linguistics. doi: 10.18653/v1/N19-1131. URL https://aclanthology.org/N19-1131 .Chao Zhou, Cheng Qiu, Lizhen Liang, and Daniel E. Acuna. Paraphrase identification with deep learning: A review of datasets and methods. IEEE Access , 13:65797–65822, 2025. doi: 10.1109/ACCESS.2025.3556899. Qile Zhu, Xiaolin Li, Ana Conesa, and Cécile Pereira. Gram-cnn: a deep learning approach with local context for named entity recognition in biomedical text. Bioinformatics , 34(9):1547–1554, 2018. 15 Appendix A Rationale Generation Details 
+
+To facilitate the training of the Reasoning Expert (Branch B), the Quora Question Pairs (QQP) dataset was augmented with synthetic rationales. These rationales were generated using the gemini-2.5-flash-lite 
+
+model. The following system prompt was employed to ensure the generated reasoning was structured and consistent across the dataset, focusing on core intent, entities, and scope while avoiding biased terminology. Listing 1: Prompt used for Synthetic Rationale Generation ∗∗ Role ∗ ∗ : You a r e a l i n g u i s t i c a n a l y s t who p r o v i d e s s t r u c t u r e d JSON output . ∗∗ Task ∗ ∗ : For each q u e s t i o n p a i r provided , a n a l y z e i t and r e t u r n a s i n g l e , v a l i d JSON o b j e c t . Your a n a l y s i s must f o l l o w t h e s e s t e p s : 1 . I d e n t i f y t h e Core I n t e n t o f each q u e s t i o n . 2 . I d e n t i f y t h e Key E n t i t i e s i n each q u e s t i o n . 3 . Analyze t h e Scope o f each q u e s t i o n . 4 . S y n t h e s i z e t h e s e f i n d i n g s i n t o a F i n a l Comment o f 30−40 words . 5 . Do NOT use t he words " d u p l i c a t e , " " same , " " d i f f e r e n t , " or " s i m i l a r " i n t h e final_comment f i e l d . ∗∗JSON Output Format ∗ ∗ : {" i d " : <The o r i g i n a l ID o f th e q u e s t i o n p a i r >, " c o r e _ i n t e n t " : " Your a n a l y s i s o f t he c o r e i n t e n t . " , " k e y _ e n t i t i e s " : " Your a n a l y s i s o f t h e key e n t i t i e s . " , " s c o p e " : " Your a n a l y s i s o f t he s c o p e . " , " final_comment " : " Your f i n a l s y n t h e s i z e d comment . " }∗∗ Example ∗ ∗ : Input : ID : 123 Question A: "How do I g e t t o t he a i r p o r t ? " Question B : "What ’ s t h e f a s t e s t r o u t e t o t he a i r p o r t ? " Your Output : {" i d " : 1 2 3 , " c o r e _ i n t e n t " : " Both q u e s t i o n s s e e k d i r e c t i o n s t o t he a i r p o r t . " , " k e y _ e n t i t i e s " : " The key e n t i t y f o r both i s th e ’ a i r p o r t ’ . " , " s c o p e " : " Question B adds a c o n s t r a i n t o f ’ f a s t e s t ’ , making i t a more s p e c i f i c query than t he g e n e r a l r e q u e s t i n Question A. " , " final_comment " : " Both i n q u i r i e s a r e about f i n d i n g d i r e c t i o n s t o t h e a i r p o r t . One q u e s t i o n i s a g e n e r a l r e q u e s t f o r a path , w h i l e th e o t h e r s p e c i f i c a l l y a s k s f o r th e most time− e f f i c i e n t r o u t e a v a i l a b l e . " }∗∗ Your Turn : ∗ ∗ 16 B Dataset Composition 
+
+The datasets used in this study vary significantly in scale and label balance. As shown in Table 5, we evaluated R-DEIM Net on both balanced and highly skewed distributions. Class 0 denotes Non-Duplicates and Class 1 denotes Duplicates. Table 5: Dataset statistics and class ratios (0:1). 
+
+Dataset Train ( N ) Test ( N ) Ratio ( 0:1 )
+
+SODD 804,576 94,514 14:5 SprintFAQ 80,800 20,200 100:1 PAWS 49,175 2,000 63:50 CQADupStack 37,924 9,482 1:1 SciTail 23,088 2,126 17:10 PIT (Twitter) 11,530 838 15:8 MRPC 3,917 1,630 12:25 
+
+# C Hyperparameters 
+
+Table 6 outlines the exact hyperparameter configurations used to train the components of R-DEIM Net, ensuring reproducibility across all experimental setups documented in Section 4. Table 6: Hyperparameters and configuration of R-DEIM Net. 
+
+Parameter Value 
+
+Shared Encoder MiniLM-L12-v2 (384-dim) SLM Decoder Flan-T5-small (512-dim) CNN Out Channels (per kernel) 128 CNN Kernel Sizes [3, 5, 7] ANN Hidden Size 512 ANN Dropout 0.3 Batch Size 32 Epochs 5Max Length (T5) 32 tokens BERT Learning Rate 2 × 10 −5
+
+SLM Learning Rate 5 × 10 −5
+
+Custom Heads Learning Rate 1 × 10 −4
+
+Multi-Task Loss Alpha ( α) 0.7 BCE False Positive Penalty 2.0 Importance Factor ( bimp ) 0.01 Cross-Validation 10-fold Random State (Global) 42 
+
+# D Semantic Consistency and Human Evaluation 
+
+To validate the semantic consistency of the synthetically generated rationales, an embedding-based align-ment experiment was conducted. Question pairs were concatenated using a separator token (i.e., Q1 + [SEP] + Q2 ) and processed through a pre-trained encoder ( paraphrase-MiniLM-L12-v2 ) to obtain unified pair embeddings. An identical encoding operation was performed on the LLM-generated “Final Comment” rationales. We then computed the cosine similarity between the question pair embeddings and their cor-responding rationale embeddings. For correctly matched pairs, the mean cosine similarity was 0.5670. To 17 establish a baseline, rationales were also paired with randomly selected question pairs, which caused the mean similarity to drop sharply to 0.0662. This distinct margin confirms that the generated rationales are highly specific and semantically grounded in their respective input pairs and not relying on generic formulations. Additionally, a human evaluation study was conducted with 12 annotators on a subset of over 170 randomly selected pairs to verify the quality of the generated text. Annotators were tasked with providing “ground-truth” reasoning for the semantic relationship between the questions. These human-written rationales were then compared against the model-generated rationales using embedding similarity. The results demonstrated strong alignment, yielding a Spearman Correlation of 0.814 and a Cosine Similarity of 0.763. The descriptive depth was also comparable, with an average token length of 24.50 for human-written rationales and 28.02 for the Gemini-generated rationales. To further illustrate this alignment, the top examples identified by the correlation metric ( ρ ≈ 0.88 − 0.89) highlight how closely the synthetic rationales mimic human analysis: • Example A (Correlation: 0.891): – Human-Written: “The first question is asking about what defines secondary education in India while the second question is asking about whether Archie Comics should advertise more.” 
+
+– Generated: “These questions address disparate topics. One seeks a definition of secondary education in India, while the other inquires about promotional efforts for Archie Comics.” • Example B (Correlation: 0.883): – Human-Written: “Both questions show the intent of the person asking this question about the famous movie series Harry Potter and the reasoning behind it. They are asking for subjective opinions.” 
+
+– Generated: “Both questions seek a personal favorite from the Harry Potter film series and the underlying reasons for that selection. They are asking for a subjective opinion with supporting rationale.” 
+
+# E Qualitative Analysis 
+
+As shown in Figure 5, for true duplicates (Example 1), the model successfully articulates the shared intent. Conversely, in Example 2, the Reasoning Expert explicitly contrasts the differing constraints (salary vs. skills), offering a natural language description of the semantic relationship alongside the prediction. For true duplicates, R-DEIM Net confidently predicts the class and articulates the shared intent. For non-duplicates, it correctly identifies the distinction, proving it relies on semantic understanding rather than simple keyword overlap. 
+
+Example 1 (True Duplicate): Q1: How I can improve my English communication? 
+
+Q2: How can I improve English speaking skill? 
+
+Prediction: Duplicate (0.9620) 
+
+Generated rationale: Both questions are seeking advice on enhancing English language skills. One is a request for improvement in English communication, while the other targets the improvement of spoken English. 
+
+Example 2 (Non-Duplicate): Q1: What is the average salary of a data scientist in London? 
+
+Q2: What skills do I need to become a data scientist? 
+
+Prediction: non-duplicate (0.0965) 
+
+Generated rationale: Both questions are seeking information regarding data scientist domain. One is asking about the salary of data scientist in London, while the other is asking about the skills. Figure 5: Qualitative Analysis. Sample outputs showing calibrated duplicate probabilities alongside human-readable rationales that justify semantic identity or distinction. 18
