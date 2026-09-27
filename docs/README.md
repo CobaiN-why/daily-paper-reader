@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-26</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-27</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 3 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 9 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>0</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>3</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>9</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-26 21:38:15 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-27 22:01:55 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,9 +69,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日日报完成3篇速读筛选，无精读，最高分7.0落在LLM推理生成的可执行验证。</p>
-<p>最值得关注：用可执行验证评估LLM推理生成，以及面向LLM流水线的模型感知分块与弃权式答案选择。</p>
-<p>建议普通读者先看7.0那篇的摘要与实验结论，再按兴趣跟进分块、答案选择或复述检测方向。</p>
+<p>今日9篇全速读、0精读，重点扫过指令集架构基准、代码理解中的LLM词法迷信与ML原型落地。</p>
+<p>最值得看两项7.0分工作：ISA-Bench关注跨指令集架构的计算推理评测，另一篇重审低词法质量代码下LLM代码理解偏见。</p>
+<p>普通读者可优先翻这两篇的评测设计与结论，再按需决定是否补读6.0分的ML原型笔记本实践。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -93,12 +93,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">3 篇</strong>
+    <strong class="dpr-home-dashboard-count">9 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="From Tables to Quantified Statements: Evaluating LLM Inference Generation through Executable Verification">From Tables to Quantified Statements: Evaluating LLM Inference Generation through Executable Verification</span></li><li><span class="dpr-home-dashboard-paper-title" title="ChunkRank: Model-Aware Text Chunking and Abstention-Aware Answer Selection for LLM Pipelines">ChunkRank: Model-Aware Text Chunking and Abstention-Aware Answer Selection for LLM Pipelines</span></li><li><span class="dpr-home-dashboard-paper-title" title="R-DEIM Net: An Efficient Rationale-Augmented Dual-Expert Interaction Model for Paraphrase Detection">R-DEIM Net: An Efficient Rationale-Augmented Dual-Expert Interaction Model for Paraphrase Detection</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="ISA-Bench: A Benchmark for Computational Reasoning Across Instruction Set Architectures">ISA-Bench: A Benchmark for Computational Reasoning Across Instruction Set Architectures</span></li><li><span class="dpr-home-dashboard-paper-title" title="On the Lexical Superstition of Large Language Models for Code Comprehension: Re-evaluation on Code of Low Lexical Quality">On the Lexical Superstition of Large Language Models for Code Comprehension: Re-evaluation on Code of Low Lexical Quality</span></li><li><span class="dpr-home-dashboard-paper-title" title="&quot;It Comes in Notebooks&quot;: Changes and Challenges when Operationalizing ML Prototypes">&quot;It Comes in Notebooks&quot;: Changes and Challenges when Operationalizing ML Prototypes</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>3</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>9</strong></span></div>
 </section>
 </div>
 

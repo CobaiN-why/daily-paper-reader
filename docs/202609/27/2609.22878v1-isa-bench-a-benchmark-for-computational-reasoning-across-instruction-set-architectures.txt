@@ -1,0 +1,965 @@
+Title: ISA-Bench: A Benchmark for Computational Reasoning Across Instruction Set Architectures
+
+URL Source: https://arxiv.org/pdf/2609.22878v1
+
+Published Time: Tue, 22 Sep 2026 00:56:40 GMT
+
+Number of Pages: 29
+
+Markdown Content:
+# ISA-Bench: A Benchmark for Computational Reasoning Across Instruction Set Architectures 
+
+Aditya Pola 1 Arkarprava Majumdar 1 Vineeth N. Balasubramanian 1,2 
+
+> 1
+
+IIT Hyderabad 
+
+> 2
+
+Microsoft Research, India 
+
+## Abstract 
+
+Large language model code generation benchmarks primarily evaluate well-resourced languages like Python and Java, where models benefit from abun-dant training data. They provide limited evidence about reasoning in unfamil-iar computational models: deriving arithmetic from a single subtract instruc-tion, coordinating parallel programs across communicating nodes, or wiring logic gates into circuits. We present ISA-Bench, a benchmark of programming games with constrained instruction sets. For each game we provide a full ex-ecution stack (parser, VM, and verifier), enabling automated evaluation with structured feedback for iterative refinement. Reasoning models achieve higher average solve rates than code-specialized and general-purpose models, but un-familiar syntax remains a major source of failure. Models solve more tasks with iterative feedback, though the gains vary substantially across architectures. We introduce a reasoning–execution gap (REG) analysis that reveals a recur-ring disconnect between identifying a plausible computational strategy and ex-pressing it as a correct program in the target ISA. Code is available at https: //anonymous.4open.science/r/ISA-Bench-Paper-Repo .
+
+## 1 Introduction 
+
+Large language model code generation benchmarks have scaled from function-level completion to repository-level software engineering and competitive programming. Their target languages, predominantly Python, Java, and C++, are abundantly represented in pretraining corpora. When the target language is less represented in training data, code generation accuracy degrades, and drops further for domain-specific languages with limited web presence. At the far end of this spectrum lie the custom instruction sets of assembly-style programming games, languages unlikely to appear at scale in web-crawled training data, where a model must reason about the target language from its specification alone. This end of the spectrum remains largely unbenchmarked. Programming puzzle games built around constrained instruction sets offer controlled environments for studying code generation under such conditions. Each game provides an instruction set specification, a set of tasks with deterministic test cases, and a verifier that confirms correctness through execution. Because these games were originally designed to teach computational thinking, they come with built-in difficulty progressions and self-contained specifications, making them natural benchmarks. The five games we select require models to write programs in unfamiliar instruction sets, from writing arithmetic using a single subtract-and-branch operation, to coordinating parallel programs across a grid of communicating nodes, to wiring logic gates into circuits. Together, they cover a range of computational models within a shared evaluation structure. Solving tasks in these instruction sets requires reasoning about the computational model itself rather than mapping natural-language intent to familiar syntax. The model must infer how to construct operations that the instruction set does not provide, plan resource usage under architectural arXiv:2609.22878v1 [cs.AI] 19 Sep 2026 Table 1: Comparison with code-generation benchmarks. Existing work predominantly targets mainstream programming languages. ISA-Bench evaluates synthesis in unfamiliar instruction sets.                      
+
+> Benchmark Tasks Lang. What it tests
+> HumanEval 164 Python Function completion, pass@ k
+> MBPP 974 Python Entry-level synthesis CodeContests 13k C++/Py Algorithmic reasoning SWE-bench 2.3k Python Repository issue resolution LiveCodeBench Live Python Contamination-free, self-repair
+> ISA-Bench 92 5 ISAs Unfamiliar ISA synthesis, reasoning–execution gap
+
+constraints, and in some cases coordinate multiple programs that execute concurrently. ISA-Bench tests program generation under these constraints, although prior exposure to game solutions or reusable programming patterns cannot be ruled out. Our evaluation of 14 open-weight models (8B to 32B parameters) surfaces several patterns. Parse errors are the largest first-attempt outcome category in each game’s reported distribution, exceeding 60% on HRM, SIC-1, and BOX-256. Thinking models have higher average solve rates than code-specialized and general-purpose models, but these comparisons do not control for differences in scale, training, or inference behavior. A separate reasoning–execution gap analysis records cases where plausible plans receive lower implementation scores. Its game-level differences provide a diagnostic perspective rather than a causal explanation of the solve rates. Our contributions are: 1. ISA-Bench : five programming game environments with parsers, execution engines, and test-case verifiers for each game’s instruction set, covering 92 tasks across distinct computational reasoning primitives. 2. A baseline evaluation of 14 open-weight models on program generation in instruction sets minimally represented in pretraining data, under single-shot and iterative settings. 3. A failure-mode taxonomy and reasoning–execution gap (REG) analysis distinguishing planning scores from implementation scores, alongside a descriptive analysis of iterative retry behavior. 
+
+## 2 Related Work 
+
+Existing code-generation benchmarks predominantly target mainstream programming languages. Related work also examines domain-specific language generation through grammar prompting [Wang et al., 2023] and hardware generation through Verilog/RTL benchmarks such as VerilogEval and RTLLM [Liu et al., 2023, Lu et al., 2024]. ISA-Bench complements these efforts by evaluating multiple constrained computational models within a common execution framework and introducing a reasoning–execution gap (REG) analysis of generated programs. Table 1 summarizes key differences. The standard evaluation paradigm for LLM code generation centers on functional correctness mea-sured through hidden unit tests. HumanEval introduced the pass@ k estimator for this purpose [Chen et al., 2021], and MBPP extended the approach to 974 entry-level Python tasks [Austin et al., 2021]. Subsequent benchmarks have raised the difficulty ceiling. APPS and CodeContests target full-program synthesis with contest-style algorithmic reasoning [Hendrycks et al., 2021, Li et al., 2022], LiveCodeBench provides contamination-resistant, continuously refreshed problems with ex-plicit self-repair evaluation [Jain et al., 2025], and SWE-bench tests repository-level issue resolution on real Python projects [Jimenez et al., 2024]. These benchmarks are foundational, but they operate exclusively in mainstream languages and toolchains, and therefore do not isolate whether models can infer computation in an unfamiliar ISA from its specification alone. Related work in program synthesis and executable datasets has likewise emphasized semantic eval-uation. ExeBench pairs millions of compilable C functions with input–output examples, enabling evaluation against real execution rather than surface-form similarity [Armengol-Estapé et al., 2022]. 2Figure 1: Overview of the five ISA-Bench environments. Each panel shows the computational model, an example task or code snippet, and the task range for one game. The environments progress from a single-instruction machine ( SIC-1 , where even addition requires a multi-step derivation from subtract-and-branch) through sequential architectures with increasing structure ( HRM ’s accumu-lator with conveyor I/O; TIS-100 ’s parallel node grid with blocking inter-node communication) to declarative design ( MHRD ’s compositional circuit wiring from a single NAND primitive) and spatial output generation ( BOX-256 ’s memory-mapped pixel display). This progression tests computational primitives: algebraic derivation, sequential planning, parallel coordination, structural composition, and spatial reasoning. Jigsaw augments LLM generation with program-analysis and synthesis-based post-processing, demon-strating that symbolic constraints can improve end-to-end accuracy in API-oriented synthesis [Jain et al., 2022]. ISA-Bench differs from these efforts by evaluating direct generation of executable programs in low-resource, assembly-like languages with task-specific virtual machines and verifiers, rather than operating in familiar C or Python environments or relying on post-hoc repair. At the low-level end of the spectrum, assembly-like program generation has appeared primarily in adversarial evolution and translation settings rather than as benchmarked text-to-program synthesis. Prior work has evolved assembly programs for the adversarial CodeGuru environment [Maliukov et al., 2024] and studied LLM-driven self-play in Core War [Kumar et al., 2026]. Neural compilation 3Figure 2: Evaluation pipeline for each task. The model receives an ISA specification and task description, then generates a program that passes through three stages: parsing (syntax validation), execution (running on the game’s VM), and verification (comparing outputs to test cases). Each stage can produce a distinct failure type. On failure, structured feedback is returned for up to four retries (five attempts in total). has been explored as translation from a semantics-bearing source, including C →x86 compilation [Zhang et al., 2024] and CISC →RISC assembly transpilation [Armengol-Estapé and O’Boyle, 2025]. In contrast, ISA-Bench requires the model to derive both the algorithm and its executable implementation from a natural-language task description and an ISA reference, without a source program to translate. Iterative refinement through execution feedback has received growing attention. The pass@ k frame-work measures search over candidate programs through independent sampling [Chen et al., 2021], and self-debugging approaches have demonstrated that execution feedback can improve sample efficiency [Chen et al., 2024], though self-repair gains are often modest and highly uneven once repair costs are accounted for [Olausson et al., 2024]. ISA-Bench evaluates iterative refinement across all five environments and additionally separates failures of computational planning from failures of low-level implementation. This distinction is especially informative when comparing performance across multiple unfamiliar instruction sets, where the same solve rate can mask qualitatively different failure modes. 
+
+## 3 ISA-Bench 
+
+ISA-Bench comprises five programming game environments. Each game follows the same evaluation structure. The model receives a task description and an instruction set reference (the opcodes, operand formats, and execution rules that define the game’s language), writes a program in that instruction set, and submits it to the game’s execution environment, which runs the program and checks it against expected outputs. What varies across games is the instruction set, the execution model, and the kind of reasoning the tasks demand. Figure 1 illustrates the five environments. For each game, we implement three components: 1. A parser (or assembler) reads generated source text and translates it into the game’s internal representation, whether a memory image, an instruction list, or a circuit graph. Syntax errors and invalid opcodes are caught at this stage. 2. An execution engine runs the parsed program according to the game’s computational model, stepping through instructions, cycling nodes, or propagating signals. Runtime errors such as infinite loops or illegal memory access surface here. 3. A verifier runs the program against the task’s test cases and compares outputs to expected results. This determines correctness. Together, these components accept arbitrary generated code and return structured feedback, enabling both single-shot evaluation and iterative refinement. Figure 2 illustrates this pipeline. 40 15 31         
+
+> Gemma-4 31B Qwen3 32B Qwen3 14B Phi-4-Reasoning DeepSeek-R1 32B Devstral-Small-2 Qwen3-Coder 30B Qwen3 8B Qwen2.5-Coder 32B Granite-4.1 8B Qwen2.5-Coder 14B Phi-4 14B Codestral 22B DeepSeek-Coder-V2 16B
+> SIC-1
+> 018 36
+> HRM
+> 037
+> TIS-100
+> 048
+> MHRD
+> 0510
+> BOX-256
+> solve@1 + retries
+
+Figure 3: Tasks solved per game for 14 models, in the same order as Table 4. Dark bars show solve@1; light extensions show additional solves obtained through retries, so the full stacked bar shows solve@5. 
+
+SIC-1 (Single Instruction Computer) Krinke [2022]. Tests whether a model can construct complex behavior from a single primitive operation. The instruction set has one opcode (SUBLEQ), which takes three operands: it subtracts one memory value from another and branches if the result is non-positive. There are no opcodes for arithmetic, logic, or control flow; every operation must be derived from subtract-and-branch over 256 bytes of linear memory. The architecture is Turing-complete Mavaddat and Parhami [1988]. The 31 tasks range from echoing input to addition, sorting, and self-hosting interpreters (full list in Appendix B). 
+
+Human Resource Machine Tomorrow Corporation [2015]. Requires the model to plan a se-quence of individual operations to transform an input stream into an output stream. The instruction set has 11 opcodes (load, store, add, subtract, conditional branch, and I/O) with direct and indirect addressing. The model operates through a single register and an indexed memory space, so to perform any computation, values must be loaded, manipulated, and stored one at a time. The 36 tasks range from copying values between queues to computing Fibonacci sequences, sorting lists, and traversing indirect-address chains. 
+
+TIS-100 Zachtronics [2015]. Asks the model to solve a task by writing separate programs for multiple nodes that run concurrently and pass values between each other. The architecture is a 
+
+4 × 3 grid of 12 nodes, each executing its own program using 13 opcodes (arithmetic, moves, and conditional jumps). The model outputs programs for individual nodes, marked by identifiers ( @0 ,
+
+@1 , @2 , . . . ). Nodes exchange values through directional ports, where each transfer blocks until the receiving node reads the value. Input streams feed into the top of the grid, outputs are collected from the bottom. The model must decide which nodes to program, what each one computes, and how values flow between them. The 7 tasks include doubling each value in a stream, reversing a sequence, and multiplying pairs of inputs. 
+
+MHRD Funghisoft [2017]. Evaluates whether a model can express boolean functions as circuit structure. The model writes a hardware description by declaring input and output pins, instantiating components, and wiring them together. The only primitive is a NAND gate, so all circuits must be composed from it. Correctness is determined by evaluating the circuit against a complete truth table. The 8 tasks progress from NOT and AND gates to multiplexers, half-adders, and full-adders Nisan and Schocken [2021]. 
+
+BOX-256 Kiili [2016]. The model must write a short assembly program that produces a target pixel pattern on a 16 × 16 grid. The grid’s 256 cells are the only memory: the program’s instructions are loaded into the first cells, and the program executes by reading and writing to the same grid. Every cell is simultaneously rendered as a colored pixel, so the program’s own instructions are visible in the 5SIC-1 HRM TIS-100 MHRD BOX-256 Parse error Runtime error Wrong output Solved 
+
+Figure 4: First-attempt outcome distributions by game, aggregated across 14 models. image. Drawing a pixel means writing a value to memory. The 13 opcodes cover arithmetic, control flow, and setting the color of a cell at a given coordinate. Programs run for a fixed number of cycles, after which the grid’s pixel state is compared to the target image. The 10 tasks specify target patterns from rectangles and checkerboards to spirals and fractals. In total, ISA-Bench covers 92 tasks across the five environments, with difficulty progressions inherited from each game’s design (Appendix A summarizes each ISA; Appendix D provides worked examples). 
+
+## 4 Experiments 
+
+4.1 Models 
+
+We evaluate 14 open-weight language models ranging from 8B to 32B parameters. Thinking models (Qwen3 8B/14B/32B Yang et al. [2025], Gemma-4 31B Gemma Team [2026], DeepSeek-R1 32B DeepSeek-AI [2025], Phi-4-Reasoning Abdin et al. [2025]) generate extended reasoning traces before producing code. Code-specialized models (Qwen3-Coder 30B Yang et al. [2025], Qwen2.5-Coder 14B/32B Hui et al. [2024], Codestral 22B Mistral AI [2024], DeepSeek-Coder-V2 16B Zhu et al. [2024], Devstral-Small-2 Rastogi et al. [2025]) are specialized for code generation or software-engineering tasks. General-purpose models (Granite-4.1 8B IBM Granite Team [2026], Phi-4 14B Abdin et al. [2024]) are designed for broad instruction-following tasks. We restrict evaluation to open-weight models because ISA-Bench is designed as a base benchmark that the community can extend through fine-tuning, reinforcement learning, and interpretability studies. Open-weight models ensure full reproducibility (model weights, hyperparameters, and prompts are all publicly available) and allow researchers to build on these baselines by analyzing internal representations or training on ISA-specific data. Closed-source models, by contrast, expose only limited, edited chain-of-thought traces and final outputs, restricting downstream analysis to behavioral observations alone. 
+
+4.2 Evaluation Protocol 
+
+Each model receives a system prompt containing the game’s instruction set reference and a task description, and generates a program in the game’s language. Prompt templates are provided in Appendix E. Models are given up to five attempts per task. On the first attempt, the model sees the task description and ISA reference, without worked task solutions in the system prompt. If the program fails, structured execution feedback is returned for the next attempt: a parse error if the code could not be read, a runtime error if execution halted, or per-test output comparisons if the program ran but produced incorrect results. A task is considered solved if a program passes all verification cases on any attempt within the budget; correctness is assessed on those cases. We report results under both single-shot evaluation (first attempt only) and iterative evaluation (all five attempts). 6Table 2: Scoring rubric for the reasoning–execution gap (REG) analysis. For each task, GPT-5.5 independently scores the model’s computational plan and its implementation under this fixed rubric. Solved tasks receive 3/3 automatically; unsolved tasks are judged from the model’s final attempt including its reasoning trace, generated code, and execution feedback.       
+
+> Score Plan correctness Implementation correctness
+> 0Incorrect or irrelevant reasoning; the model does not identify a viable computational strategy Non-executable output; parser failure, reasoning text leaked into code block, or wrong output format 1Partial reasoning that touches relevant concepts but misses the core algorithmic structure Code that parses but is structurally broken; wrong opcodes, missing control flow, or fundamentally flawed logic 2Mostly correct high-level strategy with incomplete or flawed low-level details Near-correct implementation with localized bugs such as off-by-one errors, wrong addresses, or missing edge cases 3Correct task decomposition and computational strategy for the target ISA Correct or nearly correct execution; all or almost all test cases pass
+
+## 5 Results 
+
+Figure 3 shows the number of tasks solved per game for each model, distinguishing first-attempt solves from those gained through iterative retries. The best-performing model, Gemma-4 31B, has a reported total of 56 of 92 tasks (60.9%). Nine of the 14 models solve fewer than 25%. Performance varies substantially across games. Gemma-4 is the only model to complete all 8 MHRD tasks, while three others reach 7. HRM shows the widest spread in solved-task counts, ranging from 1 to 32. On SIC-1, Gemma-4 solves 13 of 31 tasks and Qwen3 32B solves 4; the other models solve 0–3. TIS-100 remains difficult, with no model solving more than 3 of 7 tasks. No model solves any BOX-256 task. Retries yield large gains for some models, extending the execution-feedback setting studied in prior work Olausson et al. [2024], Chen et al. [2024]. Phi-4-Reasoning improves from 0 to 20 solved HRM tasks and from 1 to 24 across all games. Gemma-4 gains 14 additional HRM solves and improves from 2 to 13 on SIC-1. On MHRD, Gemma-4 improves from 2 to 8, while Qwen3 14B and DeepSeek-R1 improve from 3 to 7. These changes show that additional attempts with feedback can accompany substantial improvements. Thinking models as a group achieve a 31.9% solve rate, compared to 13.4% for code-specialized models and 9.8% for general-purpose models (per-model breakdown in Appendix Table 4). Within the Qwen3 family, solve rate increases from 8B (21.7%) to 14B (26.1%) to 32B (31.5%), while remaining below Gemma-4’s reported performance. 
+
+## 6 Failure Analysis 
+
+Each attempt produces one of four outcomes, determined by the stage at which execution terminates: • Parse error. The program is not valid in the game’s instruction set. The parser or assembler rejects it before execution begins. • Runtime error. The program parses but fails during execution, typically due to an infinite loop, illegal memory access, or stack overflow. • Wrong output. The program runs to completion but produces incorrect results on one or more test cases. • Solved. All test cases pass. Figure 4 shows the first-attempt outcome distributions by game, aggregated across all models. For SIC-1, parse errors account for 88.71% of first attempts, runtime errors for 4.15%, wrong outputs for 4.84%, and solves for 2.30%. The reported parse-error shares are 72.22% for HRM, 48.14% for TIS-100, 40.99% for MHRD, and 81.43% for BOX-256. TIS-100’s reported wrong-output share is 43.33%. 7Table 3: Mean plan correctness (P), implementation correctness (I), and reasoning–execution gap (G = P − I) averaged across all 14 models. Higher G indicates models plan correctly but fail during implementation. Per-model scores are in Appendix Table 5.                   
+
+> Environment Plan (P) Impl (I) Gap (G)
+> BOX-256 1.44 0.48 0.96 SIC-1 1.71 0.77 0.94 HRM 2.07 1.26 0.81 TIS-100 1.97 1.13 0.84 MHRD 2.60 2.54 0.06
+
+## 7 Reasoning–Execution Gap Analysis 
+
+The execution-level taxonomy above identifies where generated programs fail, but it does not distin-guish conceptual reasoning failures from low-level implementation failures. A program classified as “wrong output” may arise because the model misunderstood the computational structure of the task, or because it inferred the correct strategy but failed during implementation. To separate these, we perform a structured reasoning–execution analysis. For each model–task pair, we select the first attempt that passes all verification cases; if no attempt passes, we select the final attempt. In a separate diagnostic evaluation, GPT-5.5 scored the final attempt for each unsolved task along two dimensions under a fixed rubric: plan correctness (did the model identify the right computational strategy?) and implementation correctness (did the code correctly execute that strategy?). Both use a 0–3 scale, summarized in Table 2. The judge received the model’s reasoning trace, generated code, and execution feedback, and scored each dimension independently (full judge prompt in Appendix I; representative judgments in Appendix J). We define the reasoning–execution gap (REG) as 
+
+REG = PlanScore − ImplementationScore .
+
+High REG values indicate cases where models infer a plausible computational strategy but fail to express it as executable code in the target ISA. Table 3 reports mean plan correctness, implementation correctness, and REG averaged across all 14 models for each environment (per-model breakdown in Appendix Table 5). BOX-256 and SIC-1 exhibit the largest gaps (mean REG 0.96 and 0.94, respectively), indicating that models frequently identify a plausible spatial or arithmetic strategy but cannot translate it into valid programs. HRM and TIS-100 show intermediate gaps (0.81–0.84): models produce syntactically valid programs more often, but still struggle with correct algorithmic decomposition, particularly the parallel coordination required by TIS-100. MHRD has the highest mean plan and implementation scores and a near-zero gap (mean REG = 0.06), indicating close alignment between these scores in the diagnostic evaluation. The compositional structure of NAND-based design is one possible explanation, but the aggregate scores do not establish why this environment differs from the others. The REG analysis reports a rank association between the first-attempt parse-error rates in Figure 4 and mean REG across the five environments (Spearman ρ = 0 .80 ). Code-specialized models have larger mean gaps than thinking models (1.02 vs. 0.56, excluding MHRD). 
+
+## 8 Qualitative Examples 
+
+We show two solves and one failure below (more in Appendix D).                      
+
+> MHRD: NOT gate (solved) Task: Implement NOT from NAND gates. Model: Gemma-4 31B (1st attempt)
+> Inputs: in; Outputs: out; Parts: n1 NAND; Wires: in -> n1.in1, in -> n1.in2, n1.out -> out;
+> NAND( x, x ) = x∧x=x. The standard single-gate NOT.
+
+8TIS-100: Signal Amplifier (solved) Task: Double each input value. Model: Gemma-4 31B (1st attempt)                 
+
+> @0 @4 @8 MOV UP, ACC MOV UP, DOWN MOV UP, DOWN ADD ACC MOV ACC, DOWN
+> Node 0 doubles; nodes 4, 8 relay to output. All run in parallel, synchronized by blocking reads.
+> BOX-256: Rectangle Frame (failed) Task: Draw a rectangle frame on the 16 ×16 grid. Model: Gemma-4 31B (5 attempts, 0/1 tests passed)
+> Error: Unknown instruction: <THINK>
+> The model produced reasoning text instead of executable code.
+
+## 9 Iterative Refinement and Retry Behavior 
+
+Figure 3 reports solve@1 alongside solve@5 (per-model counts in Appendix Table 4). Across all model–task pairs, the reported totals increase from 76 to 154 on HRM, 10 to 34 on SIC-1, 6 to 14 on TIS-100, and 35 to 66 on MHRD. BOX-256 remains unsolved. Absolute gains are largest on HRM and MHRD, although SIC-1 also shows a substantial gain for Gemma-4. The aggregate counts do not identify which gains result from syntax repair, changes in computational strategy, or additional sampling. 
+
+## 10 Conclusion 
+
+ISA-Bench provides programming-game environments with full execution stacks. Thinking models have higher average solve rates in this evaluation, and additional attempts with execution feedback yield uneven gains. The REG analysis provides a complementary view of planning and implemen-tation scores. Together, these results highlight the gap between forming a plausible computational strategy and expressing it as a correct program under the target ISA. 
+
+## Limitations 
+
+All five environments use program synthesis with deterministic execution and fixed test cases, which does not capture interactive software systems or multi-file programming scenarios. Our model selection covers open-weight models between 8B and 32B parameters; larger or proprietary models may exhibit different failure profiles, though our focus on open-weight models is a deliberate design choice to enable reproducibility and downstream research (Section 4.1). Comparisons between model groups do not control for model size, training data, or inference behavior. The current game selection covers minimal-instruction arithmetic, sequential register planning, parallel message-passing, combinational circuit design, and spatial memory-mapped output. Notable omissions include stack-based architectures, interrupt-driven execution, and vector-parallel (SIMD) computation. The REG analysis uses GPT-5.5 as judge under a fixed rubric; scoring quality may vary with judge choice. Some game-adjacent content may appear in pretraining corpora. 
+
+## References 
+
+Marah Abdin, Jyoti Aneja, Sébastien Bubeck, et al. Phi-4 technical report. arXiv preprint arXiv:2412.08905 , 2024. Marah Abdin et al. Phi-4-reasoning technical report. arXiv preprint arXiv:2504.21318 , 2025. Jordi Armengol-Estapé and Michael F.P. O’Boyle. From CISC to RISC: Language-model guided assembly transpilation. In Findings of the Association for Computational Linguistics: EMNLP 2025 , 2025. Jordi Armengol-Estapé, Jackson Woodruff, Alexander Brauckmann, José Wesley de Souza Magalhães, and Michael F. P. O’Boyle. Exebench: an ml-scale dataset of executable c functions. In Proceedings 
+
+9of the 6th ACM SIGPLAN International Symposium on Machine Programming , MAPS 2022, page 50–59, New York, NY, USA, 2022. Association for Computing Machinery. ISBN 9781450392730. doi: 10.1145/3520312.3534867. URL https://doi.org/10.1145/3520312.3534867 .Jacob Austin, Augustus Odena, Maxwell Nye, Maarten Bosma, Henryk Michalewski, David Dohan, Ellen Jiang, Carrie Cai, Michael Terry, Quoc Le, and Charles Sutton. Program synthesis with large language models. arXiv preprint arXiv:2108.07732 , 2021. Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, Henrique Pondé de Oliveira Pinto, Jared Kaplan, Harri Edwards, Yuri Burda, Nicholas Joseph, Greg Brockman, et al. Evaluating large language models trained on code. arXiv preprint arXiv:2107.03374 , 2021. Xinyun Chen, Maxwell Lin, Nathanael Schärli, and Denny Zhou. Teaching large language models to self-debug. In International Conference on Learning Representations , 2024. DeepSeek-AI. DeepSeek-R1: Incentivizing reasoning capability in LLMs via reinforcement learning. 
+
+arXiv preprint arXiv:2501.12948 , 2025. Funghisoft. MHRD. Steam, 2017. URL https://store.steampowered.com/app/ 576030/MHRD/ .Gemma Team. Gemma 4 technical report. arXiv preprint arXiv:2607.02770 , 2026. URL https: //arxiv.org/abs/2607.02770 .Dan Hendrycks, Steven Basart, Saurav Kadavath, Mantas Mazeika, Akul Arora, Ethan Guo, Collin Burns, Samir Puranik, Horace He, Dawn Song, and Jacob Steinhardt. Measuring coding challenge competence with APPS. In Advances in Neural Information Processing Systems (NeurIPS), Datasets and Benchmarks Track , 2021. Binyuan Hui, Jian Yang, Zeyu Cui, et al. Qwen2.5-Coder technical report. arXiv preprint arXiv:2409.12186 , 2024. IBM Granite Team. Granite-4.1-8B model card. Hugging Face, 2026. URL https:// huggingface.co/ibm-granite/granite-4.1-8b .Naman Jain, Skanda Vaidyanath, Arun Iyer, Nagarajan Natarajan, Suresh Parthasarathy, Sriram Rajamani, and Rahul Sharma. Jigsaw: Large language models meet program synthesis. In 
+
+Proceedings of the 44th International Conference on Software Engineering (ICSE) , 2022. Naman Jain, King Han, Alex Gu, Wen-Ding Li, Fanjia Yan, Tianjun Zhang, Sida Wang, Armando Solar-Lezama, Koushik Sen, and Ion Stoica. LiveCodeBench: Holistic and contamination free eval-uation of large language models for code. In International Conference on Learning Representations ,2025. Carlos E Jimenez, John Yang, Alexander Wettig, Shunyu Yao, Kexin Pei, Ofir Press, and Karthik Narasimhan. SWE-bench: Can language models resolve real-world GitHub issues? In International Conference on Learning Representations , 2024. Juha Kiili. BOX-256: A tiny game about writing assembly code. Browser game, 2016. URL 
+
+http://box-256.com/ .Jared Krinke. SIC-1: A single-instruction programming game. Steam, 2022. URL https: //store.steampowered.com/app/2124440/SIC1/ .Akarsh Kumar, Ryan Bahlous-Boldi, Prafull Sharma, Phillip Isola, Sebastian Risi, Yujin Tang, and David Ha. Digital red queen: Adversarial program evolution in core war with LLMs. arXiv preprint arXiv:2601.03335 , 2026. Yujia Li, David Choi, Junyoung Chung, Nate Kushman, Julian Schrittwieser, Rémi Leblond, Tom Eccles, James Keeling, Felix Gimeno, Agustin Dal Lago, et al. Competition-level code generation with AlphaCode. Science , 378(6624):1092–1097, 2022. Mingjie Liu, Nathaniel Pinckney, Brucek Khailany, and Haoxing Ren. VerilogEval: Evaluating large language models for Verilog code generation. In IEEE/ACM International Conference on Computer-Aided Design (ICCAD) , 2023. URL https://arxiv.org/abs/2309.07544 .10 Yao Lu, Shang Liu, Qijun Zhang, and Zhiyao Xie. RTLLM: An open-source benchmark for design RTL generation with large language model. In Asia and South Pacific Design Automation Conference (ASP-DAC) , pages 722–727, 2024. URL https://arxiv.org/abs/2308. 05345 .Irina Maliukov, Gera Weiss, Oded Margalit, and Achiya Elyasaf. Evolving assembly code in an adversarial environment. In Proceedings of the Genetic and Evolutionary Computation Conference ,2024. F. Mavaddat and B. Parhami. URISC: The ultimate reduced instruction set computer. International Journal of Electrical Engineering Education , 25(4):327–334, 1988. Mistral AI. Codestral: A code-specialized language model. https://mistral.ai/news/ codestral , 2024. Noam Nisan and Shimon Schocken. The Elements of Computing Systems: Building a Modern Computer from First Principles . MIT Press, 2nd edition, 2021. Theo X Olausson, Jeevana Priya Inala, Chenglong Wang, Jianfeng Gao, and Armando Solar-Lezama. Is self-repair a silver bullet for code generation? In International Conference on Learning Representations , 2024. Abhinav Rastogi, Adam Yang, Albert Q. Jiang, et al. Devstral: Fine-tuning language models for coding agent applications. arXiv preprint arXiv:2509.25193 , 2025. Tomorrow Corporation. Human Resource Machine. Steam, 2015. URL https://store. steampowered.com/app/375820/Human_Resource_Machine/ .Bailin Wang, Zi Wang, Xuezhi Wang, Yuan Cao, Rif A. Saurous, and Yoon Kim. Grammar prompting for domain-specific language generation with large language models. In Advances in Neural Information Processing Systems , volume 36, 2023. URL https://arxiv.org/abs/ 2305.19234 .An Yang, Anfeng Li, Baosong Yang, et al. Qwen3 technical report. arXiv preprint arXiv:2505.09388 ,2025. Zachtronics. TIS-100. Steam, 2015. URL https://store.steampowered.com/app/ 370360/TIS100/ .Shuoming Zhang, Jiacheng Zhao, Chunwei Xia, Zheng Wang, Yunji Chen, and Huimin Cui. Intro-ducing compiler semantics into large language models as programming language translators: A case study of C to x86 assembly. In Findings of the Association for Computational Linguistics: EMNLP 2024 , 2024. Qihao Zhu, Daya Guo, Zhihong Shao, et al. DeepSeek-Coder-V2: Breaking the barrier of closed-source models in code intelligence. arXiv preprint arXiv:2406.11931 , 2024. 11 Appendix Contents 
+
+1 Introduction 12 Related Work 23 ISA-Bench 44 Experiments 6
+
+4.1 Models . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 64.2 Evaluation Protocol . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 6
+
+5 Results 76 Failure Analysis 77 Reasoning–Execution Gap Analysis 88 Qualitative Examples 89 Iterative Refinement and Retry Behavior 910 Conclusion 9A Per-Game ISA Reference 13 B Full Task Lists 13 C Per-Model Results 15 
+
+C.1 Run-to-run variability . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 16 
+
+D Worked Examples 17 E Prompt Templates 18 F Reward Functions 18 G Compute Resources 19 H System Prompts 19 I LLM-as-Judge Prompt 24 J LLM-as-Judge Examples 25 
+
+12 A Per-Game ISA Reference 
+
+Each game’s instruction set is summarized below. Detailed opcode descriptions, addressing modes, and execution semantics are provided in the full system prompts (Appendix E). 
+
+SIC-1. One instruction: subleq A, B [, C] . Subtracts mem[B] from mem[A] and branches to C if the result is non-positive. Memory is 256 signed bytes. Special addresses: 253 ( @IN ), 254 (@OUT ), 255 ( @HALT ). The assembler supports labels, .data directives, label offsets, and negated addresses. 
+
+HRM. 11 opcodes: INBOX , OUTBOX , COPYFROM , COPYTO , ADD , SUB , BUMPUP , BUMPDN ,
+
+JUMP , JUMPZ , JUMPN . Direct and indirect ( [n] ) addressing. Single accumulator register, indexed memory tiles. Values are integers ( −999 to 999 ) or single uppercase letters. 
+
+TIS-100. 13 opcodes: MOV , ADD , SUB , NEG , SAV , SWP , JMP , JEZ , JNZ , JGZ , JLZ , JRO , NOP .Each node has ACC and BAK registers. Port communication ( UP , DOWN , LEFT , RIGHT ) is blocking. Programs are specified per node with @N headers. 15-instruction limit per node. 
+
+MHRD. Four HDL keywords: Inputs , Outputs , Parts , Wires . The only primitive is a 
+
+NAND gate with ports in1 , in2 , out . Circuits are composed by instantiating parts and wiring them together. Supports multi-bit buses ( in[4] ). 
+
+BOX-256. 13 opcodes: MOV , ADD , SUB , MUL , DIV , MOD , JMP , JEQ , JNE , JGR , PIX , FLP , THR .Three addressing modes: immediate ( #N ), direct ( @N ), indirect ( *N ). Memory is 256 bytes shared between code and display. Each instruction is 4 bytes. Programs run for up to 10,000 cycles. 
+
+## B Full Task Lists 
+
+SIC-1 (31 tasks). Each task specifies an input/output transformation over integer sequences using only the SUBLEQ instruction. Tasks progress from basic I/O to self-hosting interpreters.  
+
+> 1.
+
+Subleq Instruction and Output. Negate each input value.  
+
+> 2.
+
+Data Directive and Looping. Negate inputs in a loop using data directives.  
+
+> 3.
+
+First Assessment. Echo each input unchanged.  
+
+> 4.
+
+Addition. Add pairs of inputs.  
+
+> 5.
+
+Subtraction. Subtract pairs of inputs.  
+
+> 6.
+
+Sign Function. Output −1, 0, or 1 based on the sign of each input.  
+
+> 7.
+
+Multiplication. Multiply pairs of inputs.  
+
+> 8.
+
+Division. Divide pairs of inputs, output quotient and remainder.  
+
+> 9.
+
+Sequence Sum. Sum a zero-terminated sequence.  
+
+> 10.
+
+Sequence Cardinality. Count elements in a zero-terminated sequence.  
+
+> 11.
+
+Number to Sequence. Expand a number n into the sequence 1, 2, . . . , n . 
+
+> 12.
+
+Self-Modifying Code. Read instructions from input and execute them.  
+
+> 13.
+
+Stack Memory. Reverse a fixed-length sequence (LIFO).  
+
+> 14.
+
+Reverse Sequence. Reverse a zero-terminated sequence.  
+
+> 15.
+
+Interleave. Interleave two zero-terminated sequences.  
+
+> 16.
+
+Indicator Function. Output 1 if an element appears in a reference set, 0 otherwise.  
+
+> 17.
+
+Sort. Sort a zero-terminated sequence in ascending order.  
+
+> 18.
+
+Mode. Find the most frequent element in a zero-terminated sequence.  
+
+> 19.
+
+Characters. Output a hardcoded string as ASCII values.  
+
+> 20.
+
+Decimal Digits. Convert an ASCII digit character to its numeric value.  
+
+> 21.
+
+Uppercase. Convert lowercase ASCII letters to uppercase.  
+
+> 22.
+
+Strings. Output a hardcoded multi-character string.  
+
+> 23.
+
+Tokenizer. Split an ASCII string on spaces (replace spaces with zeros).  
+
+> 24.
+
+Parse Decimal. Parse a zero-terminated ASCII string into an integer.  
+
+> 25.
+
+Print Decimal. Convert an integer to a zero-terminated ASCII string.  
+
+> 26.
+
+Calculator. Parse and evaluate simple arithmetic expressions from ASCII.  
+
+> 27.
+
+Multi-Line Strings. Handle newline-separated strings. 13 28. Parse Data Directives. Parse .data assembler directives from ASCII.  
+
+> 29.
+
+Parse Subleq Instructions. Parse subleq instructions from ASCII.  
+
+> 30.
+
+Self-Hosting. Parse and execute a complete subleq program from input.  
+
+> 31.
+
+Self-Hosting Part 2. Self-hosting with data directives and labels. 
+
+HRM (36 tasks). Each task transforms an input conveyor (INBOX) to an output conveyor (OUT-BOX).  
+
+> 1.
+
+Mail Room. Grab each thing from the INBOX and drop it into the OUTBOX.  
+
+> 2.
+
+Busy Mail Room. Grab each thing from the INBOX, and drop each one into the OUTBOX.  
+
+> 3.
+
+Copy Floor. Send specific letters from the floor tiles to the OUTBOX.  
+
+> 4.
+
+Scrambler Handler. Grab the first TWO things from the INBOX and drop them in reverse order.  
+
+> 5.
+
+Rainy Summer. For each two things in the INBOX, add them together.  
+
+> 6.
+
+Zero Exterminator. Send all things that ARE NOT ZERO to the OUTBOX.  
+
+> 7.
+
+Tripler Room. For each thing in the INBOX, TRIPLE it.  
+
+> 8.
+
+Zero Preservation Initiative. Send only the ZEROs to the OUTBOX.  
+
+> 9.
+
+Octoplier Suite. For each thing in the INBOX, multiply it by 8.  
+
+> 10.
+
+Sub Hallway. For each two things, subtract the 1st from the 2nd.  
+
+> 11.
+
+Tetracontiplier. For each thing in the INBOX, multiply it by 40.  
+
+> 12.
+
+Equalization Room. Get two things, send to OUTBOX if they are equal.  
+
+> 13.
+
+Maximization Room. Grab TWO things, put only the BIGGER in the OUTBOX.  
+
+> 14.
+
+Absolute Positivity. Send each thing, but remove negative signs.  
+
+> 15.
+
+Exclusive Lounge. Send 0 if same sign, 1 if different sign.  
+
+> 16.
+
+Countdown. For each number, send it followed by all numbers down to zero.  
+
+> 17.
+
+Multiplication Workshop. For each two things, multiply them.  
+
+> 18.
+
+Zero Terminated Sum. Sum each zero-terminated string.  
+
+> 19.
+
+Fibonacci Visitor. Send the Fibonacci sequence up to but not exceeding the input.  
+
+> 20.
+
+The Littlest Number. For each zero-terminated string, send only the smallest.  
+
+> 21.
+
+Mod Module. For each two things, output the remainder of dividing the first by the second.  
+
+> 22.
+
+Cumulative Countdown. Sum of the input plus all numbers down to zero.  
+
+> 23.
+
+Small Divide. How many times does the second fit into the first?  
+
+> 24.
+
+Three Sort. For each THREE things, send them sorted smallest to largest.  
+
+> 25.
+
+Storage Floor. Each input is an address; send the value at that floor tile.  
+
+> 26.
+
+String Storage Floor. Each input is an address of a zero-terminated string on the floor.  
+
+> 27.
+
+String Reverse. Reverse each zero-terminated string.  
+
+> 28.
+
+Inventory Report. Count matching items on the floor for each input.  
+
+> 29.
+
+Vowel Incinerator. Send everything except vowels.  
+
+> 30.
+
+Duplicate Removal. Send everything unless you have seen it before.  
+
+> 31.
+
+Alphabetizer. Determine which of two words comes first alphabetically.  
+
+> 32.
+
+Scavenger Chain. Follow a chain of floor tile addresses.  
+
+> 33.
+
+Digit Exploder. Send the individual digits of each number.  
+
+> 34.
+
+Re-Coordinator. Follow indirect address chains on the floor.  
+
+> 35.
+
+Prime Factory. Send prime factors in order from smallest to largest.  
+
+> 36.
+
+Sorting Floor. Sort each zero-terminated string, smallest first. 
+
+TIS-100 (7 tasks). Each task specifies input and output streams across a 4 × 3 node grid.  
+
+> 1.
+
+Signal Amplifier. Read values from IN.A, double them, write to OUT.A.  
+
+> 2.
+
+Differential Converter. Read A and B, output A-B and B-A.  
+
+> 3.
+
+Signal Comparator. Read input; output 1 to the column corresponding to its sign.  
+
+> 4.
+
+Sequence Counter. Read N, output 1, 2, 3, . . . , N.  
+
+> 5.
+
+Signal Edge Detector. Output 1 when value increases, -1 when it decreases, 0 otherwise.  
+
+> 6.
+
+Sequence Reverser. Read two values, output them in reverse order.  
+
+> 7.
+
+Signal Multiplier. Read A and B, output A × B via repeated addition. 
+
+MHRD (8 tasks). Each task specifies a truth table to implement from NAND gates.  
+
+> 1.
+
+NOT. Invert the input signal.  
+
+> 2.
+
+AND. Output 1 only when both inputs are 1.  
+
+> 3.
+
+OR. Output 1 when at least one input is 1. 14 Rectangle Frame Thick Frame Checkerboard Big Checkerboard Corner Squares     
+
+> Triangle Diagonals Spiral Sierpinski Triangle Colored Sierpinski
+
+Figure 5: Target pixel patterns for all 10 BOX-256 tasks. Each grid is 16 × 16 pixels. The program must produce the exact pattern by writing color values to shared code/display memory. 
+
+4. XOR. Output 1 when inputs are different. 
+
+5. MUX. Select in1 when sel=0, in2 when sel=1. 
+
+6. DEMUX. Route input to out1 when sel=0, out2 when sel=1. 
+
+7. HALFADDER. Add two 1-bit numbers, produce sum and carry. 
+
+8. FULLADDER. Add two 1-bit numbers with carry in, produce sum and carry out. 
+
+BOX-256 (10 tasks). Each task specifies a target pixel pattern on a 16 × 16 grid. Figure 5 shows all 10 target patterns. 
+
+1. Rectangle Frame. Draw a thin rectangle frame. 
+
+2. Thick Frame. Draw a thick rectangle frame. 
+
+3. Checkerboard. Draw a 1 ×1 checkerboard pattern. 
+
+4. Big Checkerboard. Draw a 2 ×2 checkerboard pattern. 
+
+5. Corner Squares. Draw four hollow squares in corners. 
+
+6. Triangle. Draw a stepped triangle. 
+
+7. Diagonals. Draw diagonal stripes. 
+
+8. Spiral. Draw a spiral pattern. 
+
+9. Sierpinski Triangle. Draw a Sierpinski triangle. 
+
+10. Colored Sierpinski. Draw a colored Sierpinski triangle. 
+
+## C Per-Model Results 
+
+15 Table 4: Per-model solve counts reported as solve@1 / solve@5, corresponding respectively to first-attempt performance and performance after up to five iterative attempts with execution feedback. Task counts per environment are shown in parentheses. Model type abbreviations: T = thinking/reasoning model, C = coder-specialized model, G = general-purpose model. 
+
+Model T HRM SIC-1 TIS MHRD BOX Total (36) (31) (7) (8) (10) (92) 
+
+Gemma-4 31B T 18/32 2/13 1/3 2/8 0/0 23/56 Qwen3 32B T 7/16 1/4 1/2 4/7 0/0 13/29 Qwen3 14B T 8/13 2/2 1/2 3/7 0/0 14/24 Phi-4-Reasoning T 0/20 0/1 0/1 1/2 0/0 1/24 DeepSeek-R1 32B T 8/13 0/2 1/1 3/7 0/0 12/23 Devstral-Small-2 C 6/12 1/3 1/1 4/6 0/0 12/22 Qwen3-Coder 30B C 8/14 2/2 0/0 2/5 0/0 12/21 Qwen3 8B T 9/12 1/3 1/1 2/4 0/0 13/20 Q2.5-Coder 32B C 5/7 0/0 0/1 5/5 0/0 10/13 Granite-4.1 8B G 3/6 1/1 0/0 2/5 0/0 6/12 Q2.5-Coder 14B C 2/3 0/1 0/1 1/2 0/0 3/7 Phi-4 14B G 1/1 0/1 0/1 2/3 0/0 3/6 Codestral 22B C 1/2 0/1 0/0 2/3 0/0 3/6 DS-Coder-V2 16B C 0/3 0/0 0/0 2/2 0/0 2/5 
+
+Table 5: Per-model plan correctness (P), implementation correctness (I), and reasoning–execution gap (G = P − I) across all 14 models and five environments. Mean row corresponds to Table 3 in the main text. 
+
+BOX-256 HRM MHRD SIC-1 TIS-100 Model P I G P I G P I G P I G P I GGemma-4 31B 1.90 0.90 1.00 2.72 2.72 0.00 3.00 3.00 0.00 1.68 1.31 0.37 2.57 1.86 0.71 Qwen3-32B 1.10 0.30 0.80 1.89 1.39 0.50 3.00 3.00 0.00 1.32 0.68 0.65 1.57 1.00 0.57 Qwen3-14B 1.00 0.30 0.70 1.83 1.36 0.47 3.00 3.00 0.00 1.26 0.71 0.55 1.57 1.29 0.29 Qwen3-Coder 30B 1.90 0.70 1.20 2.31 1.50 0.81 3.00 3.00 0.00 2.16 1.42 0.74 2.29 1.57 0.71 DeepSeek-R1 32B 1.00 0.60 0.40 1.83 1.42 0.42 2.75 2.75 0.00 1.16 0.65 0.52 1.57 1.14 0.43 Devstral-Small-2 1.40 1.00 0.40 2.25 1.75 0.50 2.38 2.25 0.13 2.00 1.13 0.87 2.29 1.57 0.71 Qwen3-8B 1.00 0.20 0.80 1.67 1.14 0.53 2.75 2.75 0.00 1.13 0.35 0.77 1.57 0.86 0.71 Phi-4-Reasoning 1.00 0.10 0.90 1.72 1.72 0.00 2.25 2.25 0.00 1.13 0.23 0.90 1.57 1.14 0.43 Q2.5-Coder 32B 1.70 0.30 1.40 2.19 0.89 1.31 2.38 2.25 0.13 2.06 0.97 1.10 2.14 1.00 1.14 Q2.5-Coder 14B 1.70 0.80 0.90 2.22 0.89 1.33 2.50 2.50 0.00 2.13 1.03 1.10 2.29 1.43 0.86 Granite-4.1 8B 2.00 0.20 1.80 2.22 1.06 1.17 2.63 2.25 0.38 2.06 0.55 1.52 2.00 0.86 1.14 Phi-4 14B 1.90 0.40 1.50 2.19 0.58 1.61 2.50 2.38 0.13 2.03 0.45 1.58 2.14 0.71 1.43 Codestral 22B 1.30 0.60 0.70 1.92 0.69 1.22 2.25 2.25 0.00 1.90 0.68 1.23 2.00 0.57 1.43 DS-Coder-V2 16B 1.30 0.30 1.00 2.03 0.58 1.44 2.00 1.88 0.13 1.90 0.68 1.23 2.00 0.86 1.14 
+
+Mean 1.44 0.48 0.96 2.07 1.26 0.81 2.60 2.54 0.06 1.71 0.77 0.94 1.97 1.13 0.84 
+
+C.1 Run-to-run variability 
+
+We assess run-to-run variability over three runs for Gemma-4 31B, Devstral-Small-2, and Qwen2.5-Coder 32B on HRM, SIC-1, TIS-100, and MHRD. Each run allows up to five attempts per task. Table 6 summarizes first-attempt performance (solve@1) and performance within the full attempt budget (solve@5). 16 Table 6: Solved-task counts across three runs, reported as mean ± sample standard deviation. Task counts per environment are shown in parentheses.                                                                                 
+
+> Model Metric HRM (36) SIC-1 (31) TIS-100 (7) MHRD (8)
+> Gemma-4 31B solve@1 17 .7±2.10.3±0.61.3±0.62.3±0.6
+> solve@5 32 .0±1.02.7±2.12.7±0.67.7±0.6
+> Devstral-Small-2 solve@1 5.7±2.11.3±0.60.7±0.63.7±1.5
+> solve@5 11 .7±2.11.7±0.61.0±0.06.0±1.0
+> Qwen2.5-Coder 32B solve@1 5.3±1.21.0±0.00.3±0.64.7±0.6
+> solve@5 7.0±1.02.0±1.01.0±0.05.3±0.6
+
+## D Worked Examples 
+
+Illustrative outputs are shown below, separately from the system prompts used for evaluation. BOX-256 shows a representative failure. 
+
+HRM: Mail Room Task: Grab each thing from the INBOX and drop it into the OUTBOX. 
+
+Model: Gemma-4 31B (first attempt, 2/2 tests passed) 
+
+loop: INBOX ; grab from input OUTBOX ; send to output JUMP loop ; repeat 
+
+The simplest possible HRM program. INBOX implicitly halts when the input stream is exhausted, so no explicit termination condition is needed. 
+
+SIC-1: Subleq Instruction and Output Task: Negate the supplied input. 
+
+Model: Qwen3 14B (first attempt, 1/1 tests passed) 
+
+subleq @OUT, @IN, @HALT 
+
+For the test input 3, the instruction computes 0 − 3, outputs −3, and branches to the halt address. 
+
+TIS-100: Signal Amplifier Task: Read values from IN.0, double them, write to OUT.0. 
+
+Model: Gemma-4 31B (first attempt, 1/1 tests passed) 
+
+@0 ; node 0 (input) MOV UP, ACC ; read input ADD ACC ; double it MOV ACC, DOWN ; send down @4 ; node 4 (relay) MOV UP, DOWN @8 ; node 8 (output) MOV UP, DOWN 
+
+Data flows vertically: node 0 reads and doubles, nodes 4 and 8 relay to output. Each program loops implicitly. All three execute in parallel, synchronized by blocking port reads. 
+
+17 MHRD: NOT Task: Implement a NOT gate from NAND gates.                                  
+
+> Model: Gemma-4 31B (first attempt, 2/2 tests passed)
+> Inputs: in; Outputs: out; Parts: n1 NAND; ;one NAND gate Wires: in -> n1.in1, ;tie both inputs in -> n1.in2, ;NAND(x,x)=NOT(x) n1.out -> out;
+> NAND (x, x ) = x∧x=x. The standard single-gate NOT construction.
+> BOX-256: Rectangle Frame (failed) Task: Draw a rectangle frame on the 16 ×16 grid.
+> Model: Gemma-4 31B (5 attempts, 0/1 tests passed)
+> Error: Unknown instruction: <THINK> (line 1)
+> The model emitted its reasoning trace as literal text in the code block rather than executable BOX-256 assembly. The parser rejected the very first line.
+
+## E Prompt Templates 
+
+Each model receives a system prompt containing the game’s full ISA specification and a response format instruction, without worked task solutions. Syntax snippets and ISA-level programming patterns remain part of the reference. The prompt structure is identical across all five games: 1. Role and task framing. A single sentence establishing the model as an expert programmer for the game. 2. ISA specification. The complete instruction set reference: opcodes, operand formats, addressing modes, memory layout, and execution semantics. 3. Response format. Instructions to reason in <think> tags and provide the solution in 
+
+<answer> tags. On failure, the model receives structured feedback appended to the conversation. Parse errors include the error message and line number. Runtime errors include the error type. Wrong-output failures include per-test-case comparisons of expected and actual output. 
+
+## F Reward Functions 
+
+Each environment provides a graded reward between 0 and 1, decomposed into a correctness component and an efficiency component: 
+
+r = wc · tests passed tests total + we · ⊮[all tests pass ] · efficiency where wc = 0 .7 and we = 0 .3 for all games except BOX-256, which uses wc = 0 .8 and we = 0 .2.The efficiency bonus is awarded only when all test cases pass. Game-specific efficiency metrics are: • SIC-1. Full efficiency bonus for any correct solution (no par values). • HRM. Average of instruction efficiency (par_size /actual_size) and step efficiency (par_speed /actual_steps), each capped at 1.0. • TIS-100. Node efficiency: 1 − (nodes_used − 1) /11 , rewarding solutions that use fewer of the 12 available nodes. • MHRD. NAND efficiency: reference_count /actual_count, capped at 1.0, rewarding circuits that use fewer NAND gates. • BOX-256. Pixel accuracy as the base metric (partial credit for near-correct patterns). Size efficiency bonus: 1 − code_size /256 for perfect solutions. 18 G Compute Resources 
+
+The original evaluation used a server with 8 NVIDIA A40 GPUs (48 GB each), with one Ollama instance per GPU. The reported approximately 72-hour inference time covers that original evaluation of 14 models across 92 tasks, with up to five attempts per task. No model training or fine-tuning was performed; all models were evaluated using publicly available weights. The reasoning–execution gap judgments were obtained via the GPT-5.5 API. Models used their Ollama checkpoints’ stored precision/quantization, a temperature of 0.7, and a maximum output length of 4096 tokens; answer extraction used regular-expression matching for answer tags, with reasoning-delimiter, Markdown-code-fence, and raw-text fallbacks. 
+
+## H System Prompts 
+
+The complete text of all five system prompts follows. 
+
+System prompt: SIC-1 
+
+You are an expert SIC-1 programmer. Your task is to write subleq programs that transform input sequences into specified output sequences. ,→
+
+# SIC-1 SPECIFICATION ## Architecture SIC-1 is a Single Instruction Computer. The only instruction is `subleq ` (subtract and branch if less than or equal to zero). ,→
+
+- **Memory**: 256 bytes (addresses 0-255), each byte is signed (-128 to 127) - **Execution**: Programs start at address 0, each instruction is 3 bytes - **I/O**: Special memory addresses for input/output ## The SUBLEQ Instruction 
+
+``` 
+
+subleq A, B [, C] 
+
+``` 
+
+**Semantics**: 1. `mem[A] = mem[A] - mem[B] `
+
+2. If `mem[A] <= 0`: jump to address C3. Else: continue to next instruction (PC += 3) When C is omitted, it defaults to the next instruction (no branch). ## Special Addresses | Address | Label | Behavior ||---------|-------|----------| | 253 | `@IN ` | Reading returns next input value || 254 | `@OUT ` | Writing outputs the value || 255 | `@HALT ` | Any access halts execution |## Assembler Syntax 
+
+``` 
+
+@label: ; define a label subleq @a, @b, @c ; subtract and branch .data 42 ; data value .data 'A' ; character (ASCII) @label+1 ; label with offset -@label ; negated address value 
+
+``` 
+
+## Key Patterns ### Pattern 1: Output = 0 - Input (negate) 
+
+``` 
+
+subleq @OUT, @IN ; @OUT = @OUT - @IN = 0 - input = -input 
+
+``` 
+
+### Pattern 2: Unconditional Jump 
+
+``` 
+
+subleq @zero, @zero, @target ; 0-0=0, always <=0, so always jumps @zero: .data 0
+
+``` 
+
+### Pattern 3: Zero a Memory Location 
+
+``` 
+
+19 subleq @x, @x ; x = x - x = 0
+
+``` 
+
+### Pattern 4: Copy Value (A to B) 
+
+``` 
+
+subleq @B, @B ; B = 0subleq @tmp, @tmp ; tmp = 0subleq @tmp, @A ; tmp = 0 - A = -A subleq @B, @tmp ; B = 0 - (-A) = A
+
+``` 
+
+### Pattern 5: Add Two Values 
+
+``` 
+
+; Result = A + Bsubleq @result, @result ; result = 0subleq @tmp, @tmp ; tmp = 0subleq @tmp, @A ; tmp = -A subleq @result, @tmp ; result = Asubleq @tmp, @tmp ; tmp = 0subleq @tmp, @B ; tmp = -B subleq @result, @tmp ; result = A + B
+
+``` 
+
+# RESPONSE FORMAT Reason through the problem in <think> tags, then provide your solution in <answer> tags. The code inside <answer> will be executed directly. Remember: subleq is counterintuitive. Think carefully about signs and the subtract-and-branch semantics. ,→
+
+System prompt: HRM 
+
+You are an expert Human Resource Machine (HRM) programmer. Your task is to write programs that transform input sequences into specified output sequences. ,→
+
+# HRM SPECIFICATION ## Architecture - **Hands (Accumulator)**: Holds exactly one value. Operations require data in hands. - **Floor Tiles (Memory)**: Numbered slots (0, 1, 2, ...) for storing values. - **INBOX**: Input conveyor. Reading when empty terminates the program. - **OUTBOX**: Output conveyor. Program must produce exact expected sequence. - **Values**: Integers (-999 to 999) or single uppercase letters (A-Z). ## Instruction Set ### Input/Output | Instruction | Effect ||-------------|--------| | `INBOX ` | Take next value from INBOX into hands. Empty INBOX terminates program. || `OUTBOX ` | Put value from hands onto OUTBOX. Hands become empty. |### Memory Access | Instruction | Effect ||-------------|--------| | `COPYFROM n` | Copy value from tile n into hands. || `COPYFROM [n] ` | Indirect: tile n contains address, copy from that address. || `COPYTO n` | Copy value from hands to tile n. Hands keep the value. || `COPYTO [n] ` | Indirect addressing for destination. |### Arithmetic | Instruction | Effect ||-------------|--------| | `ADD n` | hands = hands + tile[n]. Works with [n] for indirect. || `SUB n` | hands = hands - tile[n]. Works with [n] for indirect. || `BUMPUP n` | Increment tile[n] by 1, copy result to hands. || `BUMPDN n` | Decrement tile[n] by 1, copy result to hands. |### Control Flow | Instruction | Effect ||-------------|--------| | `JUMP label ` | Unconditional jump to label. || `JUMPZ label ` | Jump if hands == 0. || `JUMPN label ` | Jump if hands < 0. |## Syntax Labels are defined with a trailing colon on their own line: 
+
+20 ``` 
+
+myLabel: INBOX OUTBOX JUMP myLabel 
+
+``` 
+
+# RESPONSE FORMAT Reason through the problem in <think> tags, then provide your solution in <answer> tags. The code inside <answer> will be executed directly. 
+
+System prompt: TIS-100 
+
+You are an expert TIS-100 programmer. Your task is to write programs that transform input streams into output streams using a grid of parallel compute nodes. ,→
+
+# TIS-100 SPECIFICATION ## Architecture - **Grid**: 4 columns x 3 rows = 12 compute nodes - **Node numbering**: 0-3 (top), 4-7 (middle), 8-11 (bottom) - **Registers**: ACC (accumulator), BAK (backup, not directly accessible) - **Value range**: -999 to 999 - **I/O**: Inputs feed from above row 0, outputs collect below row 2## Grid Layout 
+
+``` 
+
+[IN.0] [IN.1] [IN.2] [IN.3] <- Input streams (columns 0-3) v v v v[ 0 ]--[ 1 ]--[ 2 ]--[ 3 ] <- Row 0 (nodes 0-3) v v v v[ 4 ]--[ 5 ]--[ 6 ]--[ 7 ] <- Row 1 (nodes 4-7) v v v v[ 8 ]--[ 9 ]--[10 ]--[11 ] <- Row 2 (nodes 8-11) v v v v[OUT.0][OUT.1][OUT.2][OUT.3] <- Output streams (columns 0-3) 
+
+``` 
+
+## Instruction Set ### Data Movement | Instruction | Effect ||-------------|--------| | `MOV SRC, DST ` | Copy value from SRC to DST |**SRC**: ACC, NIL, port (UP/DOWN/LEFT/RIGHT/ANY/LAST), immediate (-999 to 999) **DST**: ACC, NIL, port (UP/DOWN/LEFT/RIGHT/ANY/LAST) ### Arithmetic | Instruction | Effect ||-------------|--------| | `ADD SRC ` | ACC = ACC + SRC || `SUB SRC ` | ACC = ACC - SRC || `NEG ` | ACC = -ACC |### Register Operations | Instruction | Effect ||-------------|--------| | `SAV ` | BAK = ACC (save to backup) || `SWP ` | Swap ACC and BAK |### Control Flow | Instruction | Effect ||-------------|--------| | `JMP label ` | Unconditional jump || `JEZ label ` | Jump if ACC == 0 || `JNZ label ` | Jump if ACC != 0 || `JGZ label ` | Jump if ACC > 0 || `JLZ label ` | Jump if ACC < 0 || `JRO SRC ` | Jump relative by SRC instructions |## Port Communication Ports are **blocking**: a node waits until both sender and receiver are ready. - `UP `, `DOWN `, `LEFT `, `RIGHT `: Cardinal directions - `ANY `: Read from first available port - `LAST `: Use the port that ANY last used 
+
+21 ## Program Execution - Each node runs its program **independently and in parallel** with other nodes. - Programs **implicitly loop**: after the last instruction, execution wraps back to the first instruction. ,→
+
+- Each node has a **15 instruction limit**. Programs longer than 15 lines will be rejected. - A node with no code does nothing (acts as a wall to port communication). ## Program Syntax Use `@N ` to specify which node runs each code block: 
+
+``` 
+
+@0 MOV UP, ACC ADD ACC MOV ACC, DOWN @4 MOV UP, DOWN 
+
+``` 
+
+# RESPONSE FORMAT Reason through the problem in <think> tags, then provide your solution in <answer> tags. The code inside <answer> will be executed directly. Key insight: Trace the data flow from input columns through the grid to output columns. Every node in the path needs code to forward data. ,→
+
+System prompt: MHRD 
+
+You are an expert MHRD hardware designer. Your task is to write HDL code to implement digital logic circuits using NAND gates. ,→
+
+# MHRD SPECIFICATION ## Overview MHRD is a hardware design game where you build digital circuits from NAND gates. Each puzzle gives you a truth table to implement. ,→
+
+## HDL Syntax (4 Keywords) 
+
+``` 
+
+Inputs: <input_list>; Outputs: <output_list>; Parts: <part_list>; Wires: <wire_list>; 
+
+``` 
+
+### Inputs/Outputs 
+
+``` 
+
+Inputs: a, b; // two single-bit inputs Inputs: in[4]; // 4-bit bus: in[1], in[2], in[3], in[4] Outputs: out; // single-bit output Outputs: sum, carry; // multiple outputs 
+
+``` 
+
+### Parts (Component Instances) 
+
+``` 
+
+Parts: n1 NAND, n2 NAND; // two NAND gates Parts: inv NOT, a1 AND; // using built components 
+
+``` 
+
+### Wires (Connections) 
+
+``` 
+
+Wires: a -> n1.in1, // input a to n1's in1 port b -> n1.in2, // input b to n1's in2 port n1.out -> out; // n1's output to circuit output 
+
+``` 
+
+## NAND Gate (The Only Primitive) **Ports**: in1, in2, out **Truth Table**: | in1 | in2 | out ||-----|-----|-----| | 0 | 0 | 1 || 0 | 1 | 1 |
+
+22 | 1 | 0 | 1 || 1 | 1 | 0 |NAND outputs 0 only when BOTH inputs are 1. ## Building Blocks from NAND ### NOT (1 NAND): Connect input to both NAND inputs 
+
+``` 
+
+NOT: in -> n.in1, in -> n.in2, n.out -> out 
+
+``` 
+
+### AND (2 NANDs): NAND then NOT 
+
+``` 
+
+AND: NAND(a,b) -> NOT -> out 
+
+``` 
+
+### OR (3 NANDs): NOT both inputs, then NAND 
+
+``` 
+
+OR: NOT(a) -> n3.in1, NOT(b) -> n3.in2, n3.out -> out 
+
+``` 
+
+### XOR (4 NANDs): 
+
+``` 
+
+XOR: n1=NAND(a,b), n2=NAND(a,n1), n3=NAND(n1,b), n4=NAND(n2,n3) 
+
+``` 
+
+# RESPONSE FORMAT Reason through the problem in <think> tags, then provide your solution in <answer> tags. The code inside <answer> will be executed directly. 
+
+System prompt: BOX-256 
+
+You are an expert BOX-256 assembly programmer. Your task is to write programs that draw specific pixel patterns on a 16x16 display. ,→
+
+# BOX-256 SPECIFICATION ## Architecture - **Memory**: 256 bytes (addresses 0-255), shared between code and display - **Display**: 16x16 grid where address = y*16 + x- **Colors**: Values 0-15 (0=black). Only the low 4 bits matter for color. - **All arithmetic is mod 256**: values wrap (255 + 1 = 0, 0 - 1 = 255) - **Code lives in memory**: Instructions are 4 bytes each, loaded starting at address 0. Your code bytes ARE visible as pixels. ,→
+
+- **Execution**: Programs run for up to 10,000 cycles. Each cycle executes all threads. - **Program wrapping**: After the last instruction, execution wraps to instruction 0. ## Addressing Modes | Syntax | Name | Meaning ||--------|------|---------| | `#N ` or `N` | Immediate | Literal value N (0-255) || `@N ` | Direct | Value stored at memory address N || `*N ` | Indirect | Read address from memory[N], then value there |Numbers are decimal by default. Use 0x prefix for hex (e.g., 0xFF). ## Instruction Set (each instruction = 4 bytes) ### Data Movement | Instruction | Effect ||-------------|--------| | `MOV src dst ` | Copy src value to dst address || `MOV src dst count ` | Fill count bytes at dst with src value (if src is immediate), or copy count consecutive bytes from src to dst. |,→
+
+### Arithmetic (all mod 256) | Instruction | Effect ||-------------|--------| | `ADD a b dst ` | memory[dst] = (a + b) mod 256 || `SUB a b dst ` | memory[dst] = (a - b) mod 256 || `MUL a b dst ` | memory[dst] = (a * b) mod 256 || `DIV a b dst ` | memory[dst] = a / b (integer, 255 if b=0) || `MOD a b dst ` | memory[dst] = a % b (255 if b=0) |### Control Flow | Instruction | Effect |
+
+23 |-------------|--------| | `JMP #N ` | Jump by N instructions relative to current (0=no-op, 1=skip next) || `JMP @N ` | Jump to absolute byte address stored in memory[N] || `JEQ a b #N ` | If a == b, jump by N instructions relative || `JEQ a b @N ` | If a == b, jump to absolute address in memory[N] || `JNE a b #N/@N ` | Same but if a != b || `JGR a b #N/@N ` | Same but if a > b |**Backward jumps**: Values are 0-255 (no negatives). For backward jumps, store the target byte address in a memory cell and use @cell. Instruction N is at byte address N*4. ,→
+
+### Graphics | Instruction | Effect ||-------------|--------| | `PIX addr color ` | Set pixel at linear address to color (low 4 bits) |### Other | Instruction | Effect ||-------------|--------| | `FLP a b` | Swap values at addresses a and b || `THR addr ` | Spawn a new thread starting at the given address |## Memory Layout 
+
+``` 
+
+Row 0: addr 0-15 (y=0) Row 1: addr 16-31 (y=1) ... Row 15: addr 240-255 (y=15) Pixel at (x,y) = address y*16 + x
+
+``` 
+
+## Key Constraints - Max 64 instructions (4 bytes each = 256 bytes total) - Code occupies the first N*4 addresses. Those pixels will show code bytes. - Use high addresses (@248-@255) for variables/counters. - Programs loop implicitly after the last instruction. # RESPONSE FORMAT Reason through the problem in <think> tags, then provide your solution in <answer> tags. The code inside <answer> will be executed directly. 
+
+## I LLM-as-Judge Prompt 
+
+The following prompt was provided to GPT-5.5 to judge the final attempt for each unsolved task. The judge received the model’s reasoning trace, generated code, and execution feedback alongside this prompt. 
+
+Task: Plan–Execution Judgment You are evaluating ISA-Bench model outputs. 
+
+Scores 
+
+plan_score :• 0 = wrong or irrelevant reasoning • 1 = partial useful reasoning but misses core algorithm • 2 = mostly correct high-level strategy but confused/incomplete details • 3 = correct task decomposition and computational strategy 
+
+implementation_score :• 0 = no executable code, parser failure, reasoning leaked into code • 1 = executable-looking but structurally broken • 2 = close implementation with localized bug • 3 = correct or nearly correct implementation 
+
+reasoning_execution_gap = plan_score − implementation_score 
+
+Failure categories: solved , wrong_plan , correct_plan_bad_execution ,
+
+partial_plan_partial_execution , syntax_or_format_failure ,
+
+control_flow_failure , address_or_constant_bug ,
+
+lucky_or_unjustified_code 
+
+Rules 
+
+24 • Judge the reasoning separately from the final code. • Do not reward verbosity. • If the reasoning correctly describes the solution but the code fails due to syntax, jump targets, memory addresses, or formatting, use correct_plan_bad_execution .• If <think> or natural language appears inside executable code, implementation_score must be 0. • If solved is true, implementation_score should usually be 3. • If the code is correct but reasoning is absent or unjustified, use lucky_or_unjustified_code .
+
+## J LLM-as-Judge Examples 
+
+The following examples illustrate representative reasoning–execution gap (REG) judgments from the separate diagnostic evaluation. Each example shows the model’s reasoning, submitted code, execution outcome, and the judge’s verdict explaining how the plan and implementation scores were assigned. 
+
+Example 1: TIS-100 — Differential Converter Plan: 2 Impl: 0 Model: Codestral 22B Category: Correct plan, failed execution 
+
+> Model reasoning
+
+Node 0 reads A and sends it to node 1. At the same time, it keeps a copy for subtraction. Node 1 reads B, receives A from left, computes both differences, and sends them to output nodes. 
+
+> Submitted code
+
+@0 MOV UP, ACC SAV MOV ACC, RIGHT JMP LOOP LOOP: MOV UP, ACC SWP SUB ACC MOV ACC, DOWN 
+
+Execution: Undefined label: LOOP_START 
+
+> Judge verdict
+
+Plan 2: The reasoning correctly identifies the core communication pattern—route A and B to where both are available, compute both A −B and B −A—which is the right high-level strategy for a differential converter on a parallel grid. 
+
+Impl 0: The program never executes. A jump target ( LOOP_START ) referenced in node 1 is never defined, causing a parser failure before any instruction runs. 
+
+Example 2: HRM — Absolute Positivity Plan: 1 Impl: 1 Model: DeepSeek-Coder-V2 16B Category: Wrong plan 
+
+> Model reasoning
+
+If a number is negative, we should remove its negative sign by converting it to positive. We can do this using the SUB instruction to subtract zero from the number, which effectively removes any negative sign. 
+
+25 Submitted code 
+
+loop: INBOX JUMPZ end JUMPN skip_output OUTBOX JUMP loop skip_output: SUB 0OUTBOX JUMP loop end: 
+
+Execution: Runtime error: At IP 6: Empty tile 0
+
+> Judge verdict
+
+Plan 1: The reasoning names the absolute-value task but applies an invalid arithmetic shortcut— “subtract zero to remove the negative sign” misunderstands how SUB works in HRM. Subtracting an uninitialized tile does not compute the absolute value. 
+
+Impl 1: The program is syntactically valid and the control flow (branch on sign) is structurally reasonable, but it crashes at runtime because tile 0 was never initialized. This is a conceptual failure, not a formatting one. 
+
+Example 3: SIC-1 — First Assessment Plan: 2 Impl: 1 Model: Codestral 22B Category: Correct plan, failed execution 
+
+> Model reasoning
+
+The task is to create a program that reads an input value and outputs it unchanged. Since we can’t directly write to memory address 254 (@OUT), we need to manipulate the values in memory. 
+
+> Submitted code
+
+@LOOP: subleq @TMP1, @TMP1 subleq @TMP1, @INP subleq @RESULT, @RESULT subleq @RESULT, @TMP1 subleq @TMP2, @TMP2 subleq @INP, @IN subleq @TMP2, @INP subleq @RESULT, @TMP2 subleq @OUT, @OUT subleq @NEG, @NEG subleq @NEG, @RESULT subleq @OUT, @NEG subleq @ZERO, @ZERO, @LOOP 
+
+Execution: Runtime error: Cycle limit exceeded: 100000 cycles 
+
+26 Judge verdict 
+
+Plan 2: The reasoning correctly identifies the identity transformation (read input, output unchanged) and recognizes that SIC-1 requires indirect memory manipulation since there is no direct copy instruction. 
+
+Impl 1: The program is syntactically valid and uses a plausible sequence of subtract-and-negate operations, but the control flow never reaches a successful terminating state. The loop runs indefinitely, exceeding the 100,000-cycle limit. 
+
+Example 4: MHRD — MUX Plan: 1 Impl: 1 Model: Codestral 22B Category: Partial plan, partial execution 
+
+> Model reasoning
+
+A MUX selects one of two inputs based on a selector. Use AND to multiply in1 with the inverse of sel. Use AND to multiply in2 with sel. Then use OR to combine the results. 
+
+> Submitted code
+
+Inputs: in1, in2, sel; Outputs: out; Parts: n1 NAND, n2 NAND, n3 NAND, n4 NAND, n5 NAND; Wires: sel->n1.in1, sel->n1.in2, in1->n2.in1, n1.out->n2.in2, sel->n3.in1, sel->n3.in2, in2->n4.in1, n3.out->n4.in2, n2.out->n5.in1, n4.out->n5.in2, n5.out->out; 
+
+Execution: Passed 5 of 8 truth-table entries (reward: 0.44) 
+
+> Judge verdict
+
+Plan 1: The reasoning states the textbook MUX formula (out = ( in1 ∧ sel ) ∨ (in2 ∧ sel )) but does not correctly decompose it into NAND-only logic—the description conflates AND with NAND. 
+
+Impl 1: The circuit parses and executes but gate n3 duplicates the NOT of sel instead of passing sel through, so 3 of 8 truth-table rows produce wrong output. 
+
+27 Example 5: SIC-1 — Sequence Sum Plan: 1 Impl: 0 Model: Codestral 22B Category: Syntax/format failure 
+
+> Model reasoning
+
+I need to continuously read values from input and add them. The sequence is terminated by zero. I can use a loop that reads values, adds them to a running sum, and checks if the input was zero. 
+
+> Submitted code
+
+@loop: ; Read from input subleq @IN, @VAL ; Add to sum subleq @SUM, @VAL ; Check if zero subleq @TEMP, @VAL subleq @END, @TEMP subleq @ZERO, @ZERO, @loop @END: subleq @NEG_SUM, @SUM 
+
+Execution: Unknown command: "@IN" 
+
+> Judge verdict
+
+Plan 1: The reasoning captures the sentinel-sum structure (loop, accumulate, check for zero terminator) but does not address how to implement addition using only subtract-and-branch. 
+
+Impl 0: The code uses @IN as a standalone line, which the SIC-1 assembler treats as an unknown command. The assembler only recognizes subleq and .data as valid statements. The label-as-command confusion prevents parsing. 
+
+28 Example 6: BOX-256 — Corner Squares Plan: 1 Impl: 1 Model: Codestral 22B Category: Partial plan, partial execution 
+
+> Model reasoning
+
+This problem can be solved by drawing each corner square individually. Since we are only required to draw hollow squares, this can be done by setting pixels at the border of each square. 
+
+> Submitted code
+
+; top-left square (0,0)-(7,7) MOV #1 @0 #8 MOV #1 @15 @8 ADD #64 #127 @255 MOV #1 @136 #8 ADD #15 #143 @255 MOV #1 @255 #8 ; top-right square (8,0)-(15,7) ADD #16 #15 @254 MOV #1 @254 #8 
+
+Execution: 0 of 1 tests passed (reward: 0.40) 
+
+> Judge verdict
+
+Plan 1: The reasoning correctly identifies that the target consists of hollow square borders at the corners and proposes drawing each individually. However, it uses 8 ×8 regions instead of the benchmark’s 4 ×4 squares, and does not account for the specific corner colors. 
+
+Impl 1: The program parses and executes, producing a partial pixel pattern (reward: 0.40). The border-drawing approach is structurally sound but targets the wrong coordinates and sizes, so the output does not match the target image. 
+
+Example 7: MHRD — DEMUX Plan: 1 Impl: 1 Model: Phi-4-Reasoning Category: Wrong plan 
+
+> Model reasoning
+
+DEMUX means a demultiplexer. We have input signals: in, sel. Route input to out1 when sel=0, out2 when sel=1. If sel=0 then out1 gets the input and out2 is 0. 
+
+> Submitted code
+
+Inputs: in; Outputs: out; Parts: n NAND; Wires: in -> n.in1, in -> n.in2, n.out -> out; 
+
+Execution: Passed 0 of 4 tests 
+
+> Judge verdict
+
+Plan 1: The reasoning correctly describes the DEMUX interface (route input to one of two outputs based on selector), but the submitted netlist declares only one input and one output—it implements a NOT gate, not a demultiplexer. 
+
+Impl 1: The circuit parses and executes as a valid MHRD program, but it has the wrong interface (missing sel , out1 , out2 ) and implements the wrong function entirely. All 4 truth-table entries fail. 
+
+29
