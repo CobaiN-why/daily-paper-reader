@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-28</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-30</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 9 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 18 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>5</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>4</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>7</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-09-28 23:51:23 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-09-30 22:54:58 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>2026-09-28 日报精选9篇，精读5篇、速读4篇，重点聚焦编码智能体的成本低效行为与紧凑文档优化。最值得看的是两篇9分精读：如何识别并缓解编码智能体的成本低效行为，以及紧凑文档基准与优化器为何难以迁移。建议普通读者优先从这两篇入手，理解智能体效率瓶颈，再按兴趣浏览速读中的少样本优化与稀疏注意力方向。</p>
+<p>2026-09-30 精选 18 篇论文，精读 7 篇、速读 11 篇，聚焦软件工程智能体。最值得关注的是两篇 9.0 分精读：《Beyond the Model》揭示智能体外壳（harness）对实际表现的深层影响，《CUA-SWE》探索计算机使用智能体与可视化软件工程的结合。普通读者可先读这两篇精读，再按需浏览速读中关于智能体评分、并行协作与技能抽象的三项工作。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -78,12 +78,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">5 篇</strong>
+    <strong class="dpr-home-dashboard-count">7 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Analyzing and Mitigating Cost-Inefficient Behaviors in Coding Agents">Analyzing and Mitigating Cost-Inefficient Behaviors in Coding Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Compact Documentation for Coding Agents: A Benchmark, an Optimizer, and Why It Does Not Transfer">Compact Documentation for Coding Agents: A Benchmark, an Optimizer, and Why It Does Not Transfer</span></li><li><span class="dpr-home-dashboard-paper-title" title="A Framework for Identifying, Categorizing, and Explaining Bias in AI-Generated Code">A Framework for Identifying, Categorizing, and Explaining Bias in AI-Generated Code</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Beyond the Model: Demystifying Harness Effects in Software Engineering Agents">Beyond the Model: Demystifying Harness Effects in Software Engineering Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="CUA-SWE: When Computer-Use Agents Meet Visual Software Engineering">CUA-SWE: When Computer-Use Agents Meet Visual Software Engineering</span></li><li><span class="dpr-home-dashboard-paper-title" title="SWE-MILE: Asynchronous Potential-Induced Milestone Credit Assignment for Long-Horizon Software Engineering Agents">SWE-MILE: Asynchronous Potential-Induced Milestone Credit Assignment for Long-Horizon Software Engineering Agents</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>5</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>7</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -91,12 +91,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">4 篇</strong>
+    <strong class="dpr-home-dashboard-count">11 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="ClusterFewshot: Improving Few-shot Optimization for LLMs workflow">ClusterFewshot: Improving Few-shot Optimization for LLMs workflow</span></li><li><span class="dpr-home-dashboard-paper-title" title="What Will Remain Human in Software Architecture? A Focus Group Report">What Will Remain Human in Software Architecture? A Focus Group Report</span></li><li><span class="dpr-home-dashboard-paper-title" title="Block Sparse Attention with Log-Linear Complexity">Block Sparse Attention with Log-Linear Complexity</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Groupwise Agentic Grading and Advantage Redistribution for Code Agent RL">Groupwise Agentic Grading and Advantage Redistribution for Code Agent RL</span></li><li><span class="dpr-home-dashboard-paper-title" title="ParallelPilot: Supporting Coordination and Monitoring in Parallel AI Coding">ParallelPilot: Supporting Coordination and Monitoring in Parallel AI Coding</span></li><li><span class="dpr-home-dashboard-paper-title" title="CodeSkill: Latent Skill Abstraction for Long-Horizon Code Agents">CodeSkill: Latent Skill Abstraction for Long-Horizon Code Agents</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>4</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>11</strong></span></div>
 </section>
 </div>
 

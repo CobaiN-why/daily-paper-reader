@@ -1,0 +1,373 @@
+Title: AST-Based Automated Elimination of break and continue Statements in Java Code
+
+URL Source: https://arxiv.org/pdf/2609.27627v1
+
+Published Time: Thu, 24 Sep 2026 00:52:26 GMT
+
+Number of Pages: 9
+
+Markdown Content:
+# AST-Based Automated Elimination of break and continue 
+
+# Statements in Java Code 
+
+# Andrés Juárez 
+
+ajuarez@uma.es University of Málaga Málaga, Spain 
+
+# José F. Chicano 
+
+chicano@uma.es University of Málaga Málaga, Spain 
+
+# Rubén Saborido 
+
+rsain@uma.es University of Málaga Málaga, Spain 
+
+## Abstract 
+
+This work presents the development of an automatic refac-toring tool for Java code built on top of the Eclipse JDT API. The proposed approach transforms control structures containing break and continue statements within different types of loops into semantically equivalent constructs that avoid their explicit use. To achieve this, auxiliary boolean variables are introduced to restructure the control flow while preserving the original program behavior. The main objective of this transformation is to improve code structure and enable the application of subsequent automated refactorings, particularly those based on the Extract Method operation, which are typically restricted by the presence of jump statements. The implementation relies on the analysis and rewriting of the Abstract Syntax Tree (AST), ensuring semantic equivalence in all addressed scenarios. The tool was validated through 54 manually designed test cases and 151 units tests, all of which produced satisfactory results. In addition, it was applied to 139 methods from seven open-source projects, generating code without compilation errors and preserving the original behavior as verified by the projects’ test suites. The results demonstrate that the proposed approach safely automates the restructuring of code containing break and con-tinue statements, facilitating further evolution and structural analysis. 
+
+## Keywords 
+
+Java, Eclipse JDT, Abstract Syntax Tree, Code Refactoring, Method Extraction, Control Flow Transformation, break ,
+
+continue , Static Analysis 
+
+## 1 Introduction 
+
+Software maintenance accounts for the largest proportion of a system’s lifecycle cost, representing between 50% and 75% of total engineering effort [4]. Empirical studies indicate that maintenance costs frequently exceed initial development costs, with over 80% of code modifications concentrated within just 20% of system methods [2]. Ensuring code maintainability and readability is therefore critical to preventing defect insertion and reducing developer cognitive friction. To evaluate maintainability objectively, industry standards rely on metrics such as SonarSource Cognitive Complexity (SSCC) [6]. Defined at the method level, SSCC increases non-linearly with control flow nesting and explicit branching. SonarQube recommends a strict threshold of SSCC ≤ 15 per method. A canonical strategy for reducing elevated SSCC is the Extract Method refactoring, which isolates contiguous code blocks into standalone auxiliary methods. However, au-tomated IDE refactoring engines frequently fail or abort when encountering non-structured control exits—specifically ex-plicit jump statements such as break and continue . Previous search-based studies attempting automated SSCC reduction reported that 27% of non-refactorable target methods were blocked precisely due to such flow interruptions [6]. 
+
+## 1.1 Objectives and Contributions 
+
+To bridge this gap, this paper presents an automated Eclipse IDE plugin capable of rewriting non-linear loop control struc-tures into semantically equivalent, flag-driven conditional blocks. By eliminating break and continue statements across all Java loop constructs ( while , do-while , for , and foreach ), the tool serves as a catalyst for downstream Extract Method 
+
+refactorings. The primary contributions of this work are as follows: 
+
+∙ AST-Driven Transformation Engine: A deterministic, production-ready Eclipse JDT plugin executing multi-pass AST rewrites to replace explicit jumps with explicit state variables ( stay /keep ). 
+
+∙ Comprehensive Construct Support: Semantic-preserving transformation rules covering arbitrary loop nesting, multiple simultaneous jumps, and complex try-catch-finally exception handling scopes. 
+
+∙ Empirical Validation: Extensive evaluation across 139 methods from 7 real-world open-source Java bench-marks, demonstrating 100% syntactic correctness, 100% behavioral equivalence, and enabling a subse-quent **58% average reduction in SSCC** via auto-mated method extraction. 
+
+## 1.2 Document Organization 
+
+The remainder of this paper is organized as follows: Section 2 reviews the theoretical framework of SSCC and AST rewrit-ing. Section 3 details the AST transformation methodology and exception handling rules. Section 5 presents the empirical arXiv:2609.27627v1 [cs.SE] 23 Sep 2026 Andrés Juárez, José F. Chicano, and Rubén Saborido 
+
+evaluation and metric outcomes. Section 8 discusses main-tainability implications and comparisons with LLMs. Finally, Section 9 presents our conclusions, threats to validity, and future work. 
+
+Software Availability: To support open science and exact replication, the complete plugin source code, benchmark suites, and test harnesses are publicly available on GitHub 1.
+
+## 2 Related Work and Background 
+
+Code refactoring is defined as the process of restructuring existing software code without altering its external behav-ior, aiming to improve internal structure, readability, and maintainability [3]. While traditional refactoring techniques address general design flaws —such as long methods or code duplication [3]— the structural complexity of control flow remains a critical factor in software comprehensibility. Deep nesting levels, complex conditional logic, and unstructured jump statements ( break and continue ) disrupt linear execu-tion flow, significantly increasing the cognitive effort required for code comprehension and maintenance. In modern software development, maintaining control flow clarity is crucial for facilitating automated transformations. Unstructured exits within iterative structures hinder stan-dard refactoring operations, particularly method extraction. Consequently, addressing control flow disruptions serves as a prerequisite for improving long-term code maintainability and enabling further structural optimizations. 
+
+## 2.1 Cognitive Complexity and Refactoring Barriers 
+
+Unlike Cyclomatic Complexity [5], which measures the num-ber of execution paths, SonarSource Cognitive Complexity (SSCC) [1] quantifies how difficult a method is for a human to comprehend. SSCC evaluates code maintainability based on three main criteria: ignoring simplifying modular structures, incrementing by one for each linear flow interruption (e.g., 
+
+if , for , while , logical operator sequences), and penalizing deeper nesting levels. SonarSource recommends a maximum threshold of SSCC ≤ 15 per method. Unstructured jump statements such as break and continue further compound cognitive load by introducing non-linear control transfers. The primary mechanism to reduce high SSCC is the Extract Method refactoring, which moves nested code blocks into separate helper methods, thereby eliminating their nesting penalty in the caller method. However, automated Extract Method transformations (e.g., within Eclipse JDT) cannot process code fragments containing break or continue state-ments that target loops outside the selected block. These jump statements act as hard constraints, preventing auto-mated tools from extracting high-complexity code. Eliminat-ing break and continue statements while strictly preserving 
+
+> 1https://github.com/andyjuarez-dev/automated-refactoring-java-code.git
+
+program semantics is therefore a critical prerequisite for en-abling downstream automated refactorings. 
+
+## 2.2 AST-Based Control Flow Transformations 
+
+Performing structural refactorings directly on raw text or source code strings carries a high risk of generating syntacti-cally invalid code and lacks the context needed to distinguish identical keywords in different syntactic roles (e.g., distin-guishing a break within a switch statement from one within an iterative loop). Abstract Syntax Trees (ASTs) provide a formal, hierarchical representation of the program’s gram-matical structure, abstracting away superficial formatting details while exposing block hierarchies, loop bounds, and exception-handling scopes. In this work, control flow restructuring is implemented through programmatic AST manipulation. Eliminating jump statements requires structural AST rewriting, including loop conversion, block encapsulation within conditionals, and the insertion of auxiliary control state variables. Operating on the AST level ensures strict semantic preservation—guaranteeing that execution paths, side effects, loop termination condi-tions, and exception propagation order across try-catch-finally blocks remain identical to the original program. 
+
+## 2.3 Eclipse JDT Infrastructure 
+
+The transformation engine is built upon the Eclipse Java Development Tools (JDT) framework, which provides pro-grammatic access to Java source code via an AST represen-tation. Structural modifications are driven by custom imple-mentations of the ASTVisitor pattern, which traverse and inspect tree nodes, analyze scope bindings, and resolve type information. Subtree mutations —such as loop conversion, conditional wrapping, and statement insertions or deletions— are staged using JDT’s ASTRewrite API. This infrastructure ensures that AST modifications maintain syntactic validity, preserve source code layout conventions, and correctly update local variable scopes and AST bindings during multi-pass rewrites. 
+
+## 2.4 Related Work and Limitations of Existing Tools 
+
+While static analysis tools such as SonarQube, PMD, Check-style, and SpotBugs can detect high cognitive complexity and flag non-linear control jumps, their role remains strictly pas-sive, delegating code restructuring to developers. Similarly, modern IDEs (e.g., Eclipse, IntelliJ IDEA) offer automated refactoring catalogs —such as Extract Method or variable re-naming— but treat jump statements like break and continue 
+
+as passive constraints rather than targets for transformation. When a candidate block contains an explicit control jump targeting an outer loop, these IDEs abort the refactoring to avoid altering program semantics. To address high SSCC, Saborido et al. [6] developed an au-tomated Extract Method plugin, successfully reducing SSCC below the recommended threshold of 15 in 73% of 1,050 AST-Based Automated Elimination of break and continue Statements in Java Code 
+
+evaluated methods. However, among the remaining 27% of unrefactored methods, approximately 60% contained break 
+
+or continue statements that directly prevented valid method extraction. In the academic domain, framework initiatives like MANTRA (Xu et al., 2025) explore metamodel-driven automated transformations, yet lack stable production im-plementations for deterministic control flow restructuring. Recently, Large Language Models (LLMs) such as Chat-GPT and Copilot have been employed for code refactoring. However, because LLMs rely on probabilistic text genera-tion rather than formal AST semantic analysis, they fail to guarantee semantic preservation. Prompts requesting the elimination of break statements frequently yield plausible yet incorrect loop predicates, altering iteration counts and introducing subtle runtime defects. Consequently, there is a clear technological gap for a deterministic, AST-driven tool capable of safely eliminating break and continue statements. 
+
+## 2.5 Need and Contributions of this Work 
+
+The absence of automated tools capable of systematically restructuring control flow to eliminate jump statements while guaranteeing semantic preservation represents a clear gap in software engineering infrastructure. High-complexity meth-ods often remain unrefactored because explicit exits ( break 
+
+and continue ) prevent operations like Extract Method . Ad-dressing this issue requires a dedicated tool operating directly on the AST. While replacing abrupt jumps with auxiliary con-trol variables and explicit conditional blocks may temporarily increase local SSCC values, this transformation serves as an essential enabling step that normalizes control flow topology for downstream automated refactorings. To address this challenge, this work presents an AST-driven Eclipse plugin built on the JDT framework. The primary contributions of this work are threefold: 
+
+∙ Technical Contribution: The design and implementa-tion of an automated transformation engine that iden-tifies break and continue statements across all loop types ( while , do-while , for , foreach ) and rewrites them into semantically equivalent structures using auxiliary boolean variables. 
+
+∙ Methodological Contribution: A two-phase refactoring strategy in which control-flow normalization acts as an enabling intermediate step, expanding the popu-lation of complex methods susceptible to subsequent automated method extraction. 
+
+∙ Empirical Contribution: A comprehensive multi-level validation —comprising 54 analytical trace cases, 151 unit tests (achieving 99% instruction coverage), and an evaluation on 139 methods from seven open-source projects— verifying strict semantic preser-vation and measuring the synergy with automated Extract Method tools. 
+
+## 3 Methodology: Transformation Framework 
+
+This work follows an applied constructive research method-ology to design, implement, and evaluate an automated control flow transformation engine operating on Java 
+
+CompilationUnit ASTs via Eclipse JDT. The engineering process followed an iterative approach where transformation rules were progressively refined across complex control struc-tures while maintaining strict semantic equivalence as a core invariant. Each iteration encompassed four stages: (i) trans-formation rule formalization, (ii) AST visitor implementation, (iii) syntactic validation, and (iv) semantic verification via automated test execution. At a high level, the proposed framework replaces abrupt control jumps ( break and continue ) with explicit, structured state variables according to a five-step pipeline: (1) AST Node Detection: Scanning and identifying break 
+
+and continue statement nodes within iterative con-structs. (2) Contextual Analysis: Determining the target loop construct ( while , do-while , for , foreach ), nesting depth, and enclosing try-catch-finally exception scopes. (3) Control Variable Allocation: Introducing auxiliary boolean state flags (e.g., stay for break , keep for 
+
+continue ) initialized and scoped to the target loop. (4) Loop and Block Restructuring: Injecting state flag evaluations into loop predicates and encapsulating subsequent statements within conditional if blocks. (5) Jump Substitution: Replacing jump statements with boolean flag assignments ( stay = false or keep = false ), ensuring exact execution flow equivalence. 
+
+## 3.1 Transformation Rules and Taxonomy 
+
+Instead of applying isolated rules for every syntactic variation, the transformation engine normalizes control flow by catego-rizing language constructs into four distinct transformation categories. 
+
+3.1.1 Formal Transformation Model. For an arbitrary loop 𝐿 
+
+with continuation condition 𝐶 , containing 𝑛 jump statements (𝑗 1, 𝑗 2, . . . , 𝑗 𝑛 ∈ { break , continue }), the transformation in-troduces boolean state flags to replace non-linear transfers: 
+
+∙ For break statements: An auxiliary flag stay 𝑥 (ini-tialized to true before 𝐿 ) is appended to the loop condition via logical conjunction ( 𝐶 ∧ stay 𝑥 ). Exe-cuting a break is rewritten as stay 𝑥 = false , and all subsequent statements in the loop body are wrapped within conditional if (stay) 𝑥 blocks. 
+
+∙ For continue statements: An auxiliary flag keep 𝑦 is initialized to true at the beginning of each iteration. Executing a continue is rewritten as keep 𝑦 = false ,guarding all subsequent instructions within the cur-rent iteration under if (keep 𝑦 ).Andrés Juárez, José F. Chicano, and Rubén Saborido 
+
+3.1.2 Taxonomy of Supported Scenarios. 
+
+∙ Condition-Based Loops ( while , do-while ): Direct ap-plication of the formal model. Multiple break or 
+
+continue statements within the same loop share the same control flag, whereas nested loops allocate inde-pendent flags ( stay 1, stay 2, . . . ) to prevent variable collisions. 
+
+∙ Count- and Iterator-Based Loops ( for , foreach ): These constructs require structural normalization prior to jump elimination. Traditional for loops are desug-ared into equivalent while loops, moving initializa-tion statements before the loop and placing update expressions at the end of the body (guarded condition-ally if a break is present). Enhanced for (foreach )loops iterating over collections or arrays are converted into while loops driven by explicit Iterator<T> ob-jects or Arrays.stream() iterators. 
+
+3.1.3 Exception Handling and Multi-Variable Control. Excep-tion handling constructs ( try-catch-finally ) nested within iterative loops introduce non-linear control transfers that complicate jump elimination. While a break inside a sim-ple try-catch block can be handled with a single control variable ( stay 1), the presence of a finally clause requires independent state tracking. Because Java semantics mandate that a finally block must execute prior to loop exit—regardless of whether the try 
+
+block terminated normally, raised an exception, or encoun-tered a jump statement—a single flag is insufficient to capture the loop’s post-finally execution state. As demonstrated in Figure 1, the engine assigns distinct boolean flags ( stay 1 for the try scope and stay 2 for the finally scope). The condi-tion of the outer loop evaluates the conjunction of all assigned flags ( stay 1 ∧ stay 2 ∧ 𝐶 ), ensuring that the loop terminates only after the finally block completes its execution. Furthermore, in complex scenarios involving 𝑛 nested 
+
+try-catch-finally structures where multiple finally 
+
+blocks contain jump statements, the transformation en-gine dynamically allocates an 𝑛 -tuple of control vari-ables ( stay 1, stay 2, . . . , stay 𝑛 ). To support arbitrary nesting depth without variable name collisions or scope pollution, the tool’s internal architecture manages a dynamic stack of control variable identifiers per loop context. 
+
+3.1.4 Complex finally -Exception Interactions. A rare edge case occurs when a break inside an inner try block is followed by an exception thrown within an inner finally clause and caught by an outer catch . Under standard Java semantics, the raised exception suppresses the original break . Safely modeling this specific interaction would require global control flow restructuring beyond local scope transformation; thus, given its negligible occurrence in real-world code, it was excluded from the current tool scope. 
+
+## 4 Architecture and Implementation 
+
+The refactoring engine was implemented as an Eclipse plugin using Java SE 21 and the Eclipse JDT framework (v2024-12). The system architecture adopts an decoupled, multi-pass design based on the ASTVisitor pattern, orchestrated by a central handler ( RefactorHandler ). 
+
+## 4.1 Multi-Pass Transformation Pipeline 
+
+Initial experiments revealed that attempting AST analysis and semantic rewriting in a single pass was insufficient, as structural modifications (e.g., nesting code inside newly gen-erated if blocks) alter statement offsets, scope boundaries, and parent-child AST node relationships. Consequently, the tool employs a five-phase multi-pass compilation pipeline to decouple inspection from structural mutation: (1) Phase 1: Structural Normalization. Specialized visitors (ForMarkerVisitor , ForToWhileVisitor ,
+
+ForEachMarkerVisitor , ForEachToWhileVisitor )identify for and foreach loops containing jump statements and convert them into standard while 
+
+structures. (2) Phase 2: Flow and Exception Analysis. The 
+
+ExceptionAnnotator and FlowAnnotator perform a first pass over the normalized AST. They inspect loop targets, identify finally scopes, and annotate struc-tural properties on AST nodes without modifying the tree. (3) Phase 3: Body Restructuring. Driven by the Phase 2 annotations, LoopRewriterFirst reorganizes loop bodies by wrapping statements following a jump into nested if blocks, preserving local variable scopes. (4) Phase 4: Post-Restructuring Re-analysis. Because Phase 3 altered the AST topology, ExceptionAnnotator 
+
+and FlowAnnotator execute a second pass over the modified tree to recompute control paths and variable allocation metadata. (5) Phase 5: Final Semantic Rewriting. The 
+
+LoopRewriterFinal component introduces boolean control variable declarations ( stayX , keepX ), updates loop conditions via logical conjunctions, substitutes 
+
+break and continue statements with boolean flag assignments, and commits the changes using JDT’s 
+
+ASTRewrite API. 
+
+## 4.2 Architectural Decoupling and Scope Preservation 
+
+A key implementation decision was abandoning early at-tempts at "flattening" consecutive if conditions in favor of maintaining explicit block nesting. While flat if chains pro-duce cleaner syntax, restricting variable declarations within flat conditional blocks restricted their lexical scope, introduc-ing compilation errors in subsequent instructions. Retaining nested if blocks guarantees strict scope preservation for all AST-Based Automated Elimination of break and continue Statements in Java Code                                                                       
+
+> Listing 1: Original loop with try-catch-finally
+> while ( i <5) {
+> try {i ++;
+> if ( x == 1) {
+> break ;}x - -; }catch ( Exception e ) {
+> // handle e xcep tion
+> }finally {
+> if ( i == 2) {
+> break ;}}}
+> Listing 2: Refactored code using explicit state variables
+> boolean stay1 =true ;
+> boolean stay2 =true ;
+> while ( stay1 && stay2 && ( i <5) ) {
+> try {i ++;
+> if ( x == 1) {stay1 =false ;}
+> if ( stay1 ) {x - -; }}catch ( Exception e ) {
+> // handle e xcep tion
+> }finally {
+> if ( i == 2) {stay2 =false ;}}}
+> Figure 1: Representative structural transformation of nested jump statements within exception handling structures.
+
+local variables. Furthermore, separating structural reorgani-zation ( LoopRewriterFirst ) from semantic variable injection (LoopRewriterFinal ) eliminates circular transformation de-pendencies and maintains AST consistency throughout the rewrite pipeline. 
+
+## 5 Empirical Evaluation Setup and Validation 
+
+To ensure that the proposed transformation engine reliably eliminates jump statements without altering program be-havior, a multi-tiered validation strategy was designed. The evaluation targets four core objectives: (i) verifying syntactic validity and compilability, (ii) guaranteeing strict semantic equivalence, (iii) confirming structural correctness, and (iv) assessing robustness across real-world open-source software. 
+
+## 5.1 Validation Methodology and Test Suite 
+
+The tool’s correctness was evaluated across three distinct testing tiers: (1) Analytical Trace Tests: A set of 54 manually engi-neered test cases covering all loop types, arbitrary nesting depths, combinations of break and continue ,and complex try-catch-finally exception handling. Execution traces of original and refactored versions were formally compared, confirming 100% behavioral equivalence. (2) Automated Unit Tests: A suite of 151 JUnit test cases validating structural AST conversions (e.g., for -to-
+
+while desugaring), compilation integrity, and out-put equivalence via automated execution. Robustness tests on malformed or incomplete ASTs confirmed that the tool safely opts for non-intervention when AST integrity is compromised. (3) Open-Source Integration Tests: Evaluation on produc-tion codebases to test edge cases outside synthetic laboratory environments. 
+
+## 5.2 Open-Source Benchmark Dataset 
+
+The empirical evaluation was conducted on 139 methods con-taining target control structures ( break /continue ) harvested across seven open-source Java projects. To verify semantic preservation in production contexts, the original unit test suites of the target projects were executed post-refactoring. For instance, in MOEAFramework , 7 out of 22 native unit tests directly exercised the refactored methods, with all tests pass-ing successfully. Similar test suite pass rates were confirmed in jMetal and fastjson .
+
+## 5.3 Validation Metrics and Infrastructure 
+
+All experiments were executed in a controlled environment using Java SE 21, Eclipse IDE (2024-12), Maven, JUnit, and JaCoCo. Table 1 summarizes the overarching coverage and correctness metrics. JaCoCo analysis confirmed that the test suite achieved 99% instruction coverage and 90% branch coverage across the plugin’s transformation pipeline. 
+
+> Table 1: Validation, Coverage, and Execution Metrics.
+
+Metric Value / Outcome 
+
+Tool Instruction Coverage (Ja-CoCo) 99% Tool Branch Coverage (Ja-CoCo) 90% Behavioral Equivalence Rate 100% (Identical outputs) Syntactic Correctness Rate 100% (Compilable code) Empirical Scope 139 methods / 7 projects 
+
+## 6 Functional Validation and Empirical Results 
+
+This section presents the empirical validation of the proposed transformation tool, focusing on instruction coverage, syn-tactic compilability, semantic equivalence across open-source benchmarks, and the structural bugs identified and resolved during evaluation. Andrés Juárez, José F. Chicano, and Rubén Saborido 
+
+## 6.1 Coverage and Unit Test Performance 
+
+The suite of 151 automated unit tests executed with 100% pass rates. Execution coverage was measured using JaCoCo, achieving 99% instruction coverage (2,614 of 2,628 instruc-tions) and 90% branch coverage (250 of 276 branches) across all visitor and orchestrator classes. The remaining uncov-ered branches correspond to defensive null-check fallbacks designed for malformed ASTs. 
+
+## 6.2 Evaluation on Open-Source Projects 
+
+To validate real-world applicability, the tool was evaluated on 139 methods containing target jump structures ( break and 
+
+continue ) across seven open-source Java projects. Table 2 summarizes the benchmark dataset, transformed method counts, and native test suite outcomes. 
+
+> Table 2: Summary of Open-Source Benchmarks and Validation Out-comes.
+
+Project Methods Native Test Outcome 
+
+bytecode-viewer 9 Clean compilation, 0 er-rors 
+
+cybercaptor-server 5 10 server unit tests passed 
+
+fastjson 105 JSONPathTest passed (7 tests) 
+
+iotbroker 1 Clean compilation and build 
+
+jedis 1 Loop entry trace veri-fied 
+
+jMetal 6 31 algorithm tests passed 
+
+MOEAFramework 12 22 indicator tests passed 
+
+Total 139 100% compilation suc-cess 
+
+All 139 transformed files compiled without syntactic or type errors, demonstrating that the tool successfully processed over 96% of candidate control flows in production reposito-ries. (Non-transformed cases were restricted to switch-based 
+
+break s, labeled jumps, or null type bindings). Furthermore, running native third-party test suites post-refactoring (e.g., in MOEAFramework and jMetal ) confirmed 100% behavioral preservation under complex, cumulative numerical calcula-tions. 
+
+## 6.3 Identified Edge Cases and Bug Fixes 
+
+Applying the tool to production codebases exposed four subtle edge cases that drove key architectural refinements: (1) Lexical Scope Preservation: An initial prototype flat-tened consecutive if blocks. However, declaring a local variable in an early flattened block restricted its visibility, causing compilation errors in subsequent blocks that belonged to the same scope in the origi-nal code. Resolution: Reverted to nested if blocks, guaranteeing strict lexical scope preservation. (2) Updater Placement in for -to-while Desugaring: When converting a for loop into a while loop, moving the loop updater (e.g., i++ ) to the end of the body creates an infinite loop if a continue statement is present. 
+
+Resolution: The LoopRewriterFirst component tags updater expressions; if a continue is present, the updater is placed outside conditional blocks as the absolute last statement of the loop body. (3) Incomplete Type Resolution Fallbacks: In projects us-ing wildcard package imports (e.g., import package.*; ), JDT type bindings occasionally return null when resolving foreach target collections. Resolution: Im-plemented a conservative fallback policy that aborts refactoring when type resolution is inconclusive, avoid-ing unsafe iterator injections. (4) Multi-Flag Scope Management for finally Jumps: 
+
+Multiple nested try-catch-finally blocks contain-ing jumps violated the assumption that two control flags sufficed per loop. Resolution: Refactored the flag allocation mechanism to maintain a dynamic list of boolean flags scoped per finally block. 
+
+## 7 Impact on Cognitive Complexity and Method Extraction 
+
+This section evaluates the impact of the proposed transfor-mation on SonarSource Cognitive Complexity (SSCC), with particular emphasis on its interaction with subsequent au-tomated method extraction. The evaluation considers three stages: (i) the original code, (ii) the code after removing 
+
+break and continue statements using the developed tool, and (iii) the result after applying the external method-extraction tool to the transformed code. The objective is to determine whether the initial transformation, even when increasing local complexity, can facilitate subsequent reductions in cognitive complexity. 
+
+## 7.1 Experimental Design 
+
+The evaluation was conducted on methods from open-source projects containing jump statements. For each method, SSCC was measured in its original state, after applying the proposed transformation, and after applying the external method-extraction tool. This allowed the effects of the transformation to be assessed both independently and in combination with subsequent refactoring. 
+
+## 7.2 Impact of the Transformation 
+
+Removing break and continue statements requires restruc-turing the control flow through boolean state variables, mod-ified loop conditions, and additional conditional blocks. As a result, the transformation generally produces a small and controlled increase in SSCC. At the project level, this increase AST-Based Automated Elimination of break and continue Statements in Java Code 
+
+remained below 11% in all evaluated projects and did not result in disproportionate growth that would compromise readability. This increase should therefore be interpreted as an interme-diate structural cost rather than as a degradation of code quality. The additional complexity is introduced to obtain a more structured control flow that can subsequently be processed by other refactoring techniques. 
+
+## 7.3 Results after Double Refactoring 
+
+The interaction between the proposed transformation and the external method-extraction tool was evaluated on 138 trans-formed methods. In 66 cases, the external tool obtained feasi-ble solutions both on the original code and on the internally transformed code. More importantly, the double-refactoring process enabled additional solutions in cases where the ex-ternal tool was unable to find a feasible extraction on the original code. Specifically, in 10 cases, the external tool returned NO SOLUTION when applied directly to the original code, whereas it successfully identified a solution after the internal trans-formation, achieving a final SSCC below the tool’s threshold of 15. Considering the 65 cases in which the external tool initially failed to find a solution, this means that the proposed transformation enabled a successful subsequent refactoring in approximately 15% of those cases. Conversely, there were 7 cases in which the external tool succeeded on the original code but failed after the internal transformation. This confirms that the interaction between automated refactoring strategies is not uniform and that structural changes can modify the search space and heuristics used by subsequent tools. 
+
+## 7.4 Synthesis 
+
+Overall, the results show that the proposed transformation can introduce a limited intermediate increase in cognitive complexity while enabling further refactoring opportunities. In particular, the double-refactoring approach recovered fea-sible solutions in 10 of the 65 cases where the external tool initially failed, corresponding to approximately 15% of the initially unsuccessful cases. Although the interaction between the two tools is not uniformly beneficial, these results indicate that the proposed transformation can make previously infeasi-ble method extractions possible and can therefore contribute to a broader automated refactoring process. 
+
+## 8 Discussion 
+
+The findings of this work provide key insights into structural program transformations, automated refactoring semantics, and the interplay between static code metrics and toolchain evolution. 
+
+## 8.1 Deterministic AST Transformations vs. Non-Deterministic Tools 
+
+While modern development environments excel at detecting code smells and stylistic flaws, automated tools rarely exe-cute deep, semantics-preserving structural rewrites. Recent advances in Large Language Models (LLMs) have introduced generative code refactoring; however, empirical observations indicate that LLMs frequently introduce subtle control-flow bugs or fail to guarantee strict behavioral preservation in non-linear jump scenarios (e.g., nested finally blocks). By contrast, our approach leverages Abstract Syntax Tree (AST) manipulation via Eclipse’s ASTRewrite API, offering a deterministic, proven transformation mechanism. Operating directly on the AST guarantees that all execution paths, type bindings, and variable scopes are preserved, bridging the gap between high-level refactoring recommendations and rigorous, safe execution. 
+
+## 8.2 Reinterpreting Maintainability and Metric Non-Linearity 
+
+A central observation from our evaluation is that maintain-ability metrics—specifically SonarSource Cognitive Complex-ity (SSCC)—do not respond linearly to structural normal-ization. Replacing implicit jump statements with explicit boolean state flags ( stay /keep ) temporarily increases imme-diate SSCC scores due to the introduction of conditional encapsulations. However, evaluating code maintainability solely through im-mediate point metrics is reductive. By converting abrupt, non-linear control exits into explicit conditional paths, the transformation makes loop termination criteria fully visible to both static analysis tools and developers. The tempo-rary metric penalty in Phase 1 acts as an intermediate step that can facilitate downstream method extraction (Phase 2), enabling a net reduction in complexity in cases where the external refactoring tool is initially unable to find a solution. In the evaluated cases, this effect enabled successful refac-toring in approximately 15% of the cases where the external tool initially failed. 
+
+## 8.3 Compositional Refactoring and Toolchain Evolution 
+
+The experimental results demonstrate that automated refac-toring strategies should not be evaluated in isolation. A transformation that appears neutral or slightly detrimental under a single metric can fundamentally alter the execu-tion graph, opening up new opportunities for subsequent automated passes. In multi-pass software evolution, eliminating jumps acts as an essential pre-processing step. It removes non-local exit barriers, allowing standard IDE refactoring engines (such as automated Extract Method ) to process methods that were previously rejected. This highlights the necessity of viewing automated refactoring as a compositional pipeline, where Andrés Juárez, José F. Chicano, and Rubén Saborido 
+
+initial structural adjustments unlock broader architectural simplifications. 
+
+## 9 Conclusions and Limitations 
+
+This work presented an automated, AST-driven Eclipse plu-gin designed to refactor Java control structures by eliminating explicit jump statements ( break and continue ) across while ,
+
+do-while , for , and foreach loops. Operating as a crucial enabling transformation, the tool resolves non-linear con-trol exits using explicit boolean state variables, laying the groundwork for subsequent automated method extractions and maintainability optimizations. 
+
+## 9.1 Main Technical Contributions 
+
+The primary contributions and insights of this research in-clude: 
+
+∙ Practical Engineering Tool: A fully functional produc-tion plugin integrated into the Eclipse JDT ecosystem capable of performing deterministic, multi-pass AST rewrites on production codebases. 
+
+∙ Novel Infrastructure Automation: An automated so-lution filling a clear gap in IDE refactoring catalogs, where control jumps previously acted as hard barriers for automated transformation. 
+
+∙ Guaranteed Semantic Integrity: A formally verified transformation model that preserves original program behavior across complex constructs, including nested loops and try-catch-finally exception scopes. 
+
+## 9.2 Methodological Considerations 
+
+To maintain linguistic consistency with the Eclipse JDT framework, transformation artifacts follow standardized, con-cise conventions: 
+
+∙ Control Variable Naming: Concise identifiers were adopted for readability within loop predicates: stay 
+
+(tracking break conditions) and keep (guarding continue 
+
+statements). 
+
+∙ Parenthetical Isolation: Original loop predicates are systematically wrapped in explicit parentheses when appending state flags via logical conjunction (e.g., 
+
+stay1 ∧ 𝐶 ). This prevents operator precedence am-biguities in complex expressions and ensures clear structural separation during static analysis. 
+
+## 9.3 Threats to Validity and Limitations 
+
+While empirical results confirm the tool’s effectiveness, the following scope boundaries should be noted: 
+
+∙ Metric Focus: The maintainability assessment fo-cused primarily on SonarSource Cognitive Complex-ity (SSCC) and did not explicitly evaluate architec-tural coupling or cohesion metrics. 
+
+∙ Performance Aspects: The evaluation targeted syntac-tic correctness, behavioral equivalence, and cognitive metrics; runtime CPU/memory overhead introduced by additional boolean flag evaluations was not mea-sured, though it is expected to be negligible. 
+
+∙ External Heuristics Dependency: The magnitude of Phase 2 SSCC reduction relies on the specific block extraction heuristics embedded within external IDE refactoring engines. 
+
+## 10 Future Work 
+
+The refactoring model introduced in this work establishes a baseline for deterministic, AST-driven structural trans-formations. Several promising avenues exist to extend its scope, analytical depth, and integration within the software engineering ecosystem: 
+
+## 10.1 Architectural and Language Extensions 
+
+∙ Support for Labeled Control Exits: Extending the control-flow analysis engine to resolve labeled break 
+
+and continue statements within deeply nested multi-level structures. 
+
+∙ Cross-Language Portability: Adapting the underly-ing AST transformation rules to other mainstream object-oriented and imperative paradigms, such as C#, C++, Python, or TypeScript. 
+
+## 10.2 Metrics-Driven Optimization and Tool Integration 
+
+∙ In-IDE Metrics Feedback Loop: Embedding direct SonarSource Cognitive Complexity (SSCC) compu-tation into the plugin pipeline to enforce threshold-based refactoring policies (e.g., executing transforma-tions only if predicted post-extraction SSCC drops below standard thresholds). 
+
+∙ Synergy with Search-Based Software Engineering (SBSE): Incorporating jump elimination operators into automated search-based complexity reduction frameworks [6]. Combining localized AST-rewriting with global heuristic-guided search strategies expands the solution space for multi-objective refactoring al-gorithms. 
+
+∙ Educational Tooling: Adapting the transformation pipeline for interactive software engineering pedagogy, allowing students to visually analyze control-flow normalization, structured programming principles, and modular code evolution in real time. 
+
+## References      
+
+> [1] Ann Campbell. 2023. Cognitive Complexity: A new way of mea-suring understandability . Technical Report. SonarSource. [2] Shaiful Chowdhury. 2025. The Good, the Bad, and the Monstrous: Predicting Highly Change-Prone Source Code Methods at Their Inception. ACM Transactions on Software Engineering and Methodology 34, 7 (2025), 1–29.
+
+AST-Based Automated Elimination of break and continue Statements in Java Code 
+
+[3] Martin Fowler. 2018. Refactoring: improving the design of existing code . Addison-Wesley Professional, Boston. [4] Shahid Hussain, Muhammad Zubair Asghar, Bashir Ahmad, and Shakeel Ahmad. 2009. A step towards software corrective mainte-nance using RCM model. arXiv preprint arXiv:0909.0732 (2009). [5] Thomas J McCabe. 1976. A complexity measure. IEEE Transac-tions on software engineering SE-2, 4 (1976), 308–320. [6] Rubén Saborido, Javier Ferrer, Francisco Chicano, and Enrique Alba. 2022. Automatizing software cognitive complexity reduction. 
+
+IEEE Access 10 (2022), 11642–11656.
