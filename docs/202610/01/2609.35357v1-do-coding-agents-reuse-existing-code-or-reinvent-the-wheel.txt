@@ -1,0 +1,371 @@
+Title: Do Coding Agents Reuse Existing Code or Reinvent the Wheel?
+
+URL Source: https://arxiv.org/pdf/2609.35357v1
+
+Published Time: Tue, 29 Sep 2026 04:34:44 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# Do Coding Agents Reuse Existing Code or Reinvent the Wheel? 
+
+Dongsheng Ma †1, Sizhe Wang †2, Xinyi Huang 1, Zhengren Wang 3
+
+Yuhan Wang 1, Luyang Si 4, Xincheng Wei 5, Wentao Zhang *1,6 
+
+> 1
+
+Peking University 2Fudan University 3Shanghai Jiao Tong University 4Tsinghua University 
+
+> 5
+
+The Chinese University of Hong Kong, Shenzhen 6Zhongguancun Academy 
+
+madongsheng26@stu.pku.edu.cn , wangsz26@m.fudan.edu.cn , wentao.zhang@pku.edu.cn 
+
+Abstract 
+
+Coding agents are increasingly deployed for iterative development on real repositories, yet existing evaluation barely answers a basic ques-tion: do coding agents reuse existing code or reinvent the wheel? The question matters: ev-ery duplicated implementation is a fix applied twice and agents produce code far faster than humans can audit, so redundancy accumulates unsupervised. Thus, we present RepoReuse , a multi-turn benchmark for auditing code reuse in real repositories, where requirements are re-vealed turn by turn and the workspace accumu-lates across turns. It is built by a fully auto-mated pipeline combining AST-based depen-dency graphs, guided evidence collection, and execution-verified task synthesis, and scales readily to new repositories. Beyond pass rates, we measure the reuse rate together with recall and cross-turn structural redundancy. An au-dit over 3,000 turns shows that agents progres-sively stop exploring relevant repository code, reuse their own history less even when it is fully in the workspace, and leave duplicated logic in 50.8% of task chains by turn 5—all while pass rates barely move. Such deficiencies are invisible to pass rates, underscoring the need to evaluate code generation beyond functional correctness. 
+
+1 Introduction 
+
+Coding agents continue to break records on cod-ing benchmarks (Team et al., 2026; DeepSeek-AI et al., 2026; Yang et al., 2024; Wang et al., 2025a; Jimenez et al., 2024), and are increasingly deployed in real repositories to assist humans with iterative development. Yet passing tests is only half of what makes code good. Code is read, extended, and maintained long after it is written; a solution that 
+
+reinvents the wheel is not a good solution, even when every test is green.  
+
+> †Equal contribution (listed alphabetically); * Corresponding author. Work In Progress.
+
+Motivation Redundancy is not a cosmetic issue. Over time, every duplicated implementation means a bug fix or an interface change that must be ap-plied twice, a piece of functionality that silently drifts between parallel copies, and more code that every later turn—human or agent—must wade through. Recent studies have already observed the signs: in long-horizon iterative tasks, the redun-dancy of agent-produced code keeps rising, and agent-generated patches are markedly longer than reference solutions that reuse existing modules (Or-lanski et al., 2026; Li et al., 2026; Abbassi et al., 2025; Liu et al., 2025). What is truly alarming is the asymmetry of speed: agents write code far faster than human experts can audit it, so this fail-ure mode accumulates at a staggering rate, quietly piling up into “spaghetti code.” Yet our evaluation instruments are, in principle, blind to all of this. Existing benchmarks are built almost entirely around functional correctness: Hu-manEval (Chen et al., 2021), MBPP (Austin et al., 2021), and SWE-bench (Jimenez et al., 2024) score only whether tests pass (i.e., the pass rate), pay-ing little attention to another key dimension of how models write code— reusability . Prior work touches on this dimension but does not measure it in realistic multi-turn, repository-scale develop-ment: benchmarks on reuse and maintainability either iterate only at the function level (Wang et al., 2026) or are confined to a single turn (Wang et al., 2025b), while repository-level efforts stop at one-shot completion or well-documented entry points rather than the discovery and reuse of internal mod-ules (Ding et al., 2023; Liu et al., 2023; Tang et al., 2024). Real iterative development unfolds precisely at the repository scale, across turns: a model must keep developing on an existing multi-file repository, 
+
+reusing existing code —not only the repository’s own modules, but also the code it wrote in previous turns, which has by then become part of the reposi-1arXiv:2609.35357v1 [cs.SE] 28 Sep 2026 (a) Benchmark Protocol 
+
+> Available Code
+> Original Repository
+> Earlier Generated Files
+> Turns 1 … t−1
+> New Task (Turn t)
+> Coding Agent
+> New File (Turn t)
+> Keep for the next round
+> Evaluate
+
+(b) Illustrative Example: Turn 4 → Turn 5                  
+
+> Original Repository Earlier Generated Code (T4)
+> repo/scales.py encoding_pipeline.py (T4)
+> fit_scale(data)
+> Fit one shared scale Reused
+> convert_units(data, scale)
+> Convert all values with the scale Not reused
+> combine_batches(batches)
+> Merge values; retain batch lengths Reused
+> split_batches(values, lengths)
+> Restore the batch boundaries Not reused
+> encoding_batches.py (T5): agent-generated file
+> Task: Prepare Multiple Batches Using One Shared Scale.
+> Imports and Calls
+> from repo.scales import fit_scale
+> from encoding_pipeline import combine_batches
+> def prepare_batches(batches): data, lengths = combine_batches (batches) scale = fit_scale (data) values = _encode_values (data, scale) return _restore_batches (values, lengths)
+> Rewrites split_batches
+> def _restore_batches (values, lengths): ends = cumulative_sum(lengths) return [values[a:b] for a,b in zip([0]+ends[:-1], ends)]
+> Functional Tests Reuse !"#$ Reuse %"&'
+
+Pass 1/2 1/2 
+
+> Functional Tests
+> Recall · Reuse · Redundancy
+> One function reused from each source; Two wheels reinvented.
+> Two Functions Are Not Reused.
+> Rewrites convert_units
+> return [scale(x) for x in data]
+> _encode_values (data, scale): def
+
+Figure 1: Overview of RepoReuse. Left: the benchmark protocol—turn-wise requirements over a workspace that accumulates the agent’s own code, scored per turn by functional tests and by recall, reuse, and redundancy. Right: 
+
+an illustrative example—the agent reuses one repository symbol and one of its own earlier functions but rewrites the two remaining targets; tests pass while both reuse rates are 1/2.
+
+tory. To this end, we construct RepoReuse , a multi-turn benchmark for auditing code reuse in real repositories (See Figure 1). Requirements are re-vealed turn by turn and the workspace accumulates across turns, so that an agent’s reuse of both pre-existing repository modules and its own historical implementations can be measured turn by turn. Re-poReuse is built by a fully automated pipeline that combines AST-based dependency graphs, guided evidence collection, and execution-verified task synthesis, and scales readily to new repositories (Le et al., 2026; Jain et al., 2024). Our metrics mirror the agent’s per-turn work-flow: reading code, deciding what to reuse, and writing new code. The central metric, reuse rate ,asks whether the submission calls each target through a real call edge, identified by AST analysis against the reference solution’s actual dependen-cies; repository and self-produced targets are mea-sured separately (reuse repo / reuse self ). To explain why a target is missed, upstream recall records the fraction of target source code read in the current turn, separating exploration-side gaps (never read) from execution-side gaps (read but not used); down-stream, Cdup counts targets that are not called yet have most of their logic rewritten, capturing the redundancy they leave behind (Jiang et al., 2007). Together, the three trace a reuse decision from ex-ploration to consequence, forming a complete au-diting instrument for code reuse. With this auditing instrument, we uncover sys-tematic reuse deficiencies of coding agents. On the exploration side, agents gradually stop retrieving as turns progress: they read 83.6% of relevant repos-itory code at turn 1 on average, but only 35.4% at turn 5. Once the workspace is filled with their own code, reuse decisions are increasingly made from signatures and priors rather than grounded in current-turn observation. On the execution side, a more counterintuitive phenomenon is that see-ing is not using: recall over their own historical code is nearly saturated in every turn, yet self-reuse still decays from 83.9% to 69.1%. Ablations fur-ther show that disclosing the complete source of historical implementations barely helps, perform-ing on par with providing no memory at all—the bottleneck is not access to information, but the agent’s own disposition to build on existing code. Downstream, bypassed targets steadily accumu-late as structural redundancy in the workspace: the fraction of task chains containing a cross-turn re-implementation climbs from 13.8% at turn 1 to 250.8% at turn 5, while pass rates barely move. Agents solve task after task correctly while the codebase grows messier turn after turn, pass-rate-centered evaluation is structurally blind to all of it. Our contributions are as follows: • An important question: we raise a ques-tion neglected by existing evaluation: do cod-ing agents reuse existing code or reinvent the wheel? We give the first systematic, turn-by-turn measurable answer: agents steadily ac-cumulate redundant code that piles up into “spaghetti code.” • The RepoReuse benchmark: a repository-level multi-turn iterative development bench-mark with turn-wise requirement revelation, measuring an agent’s reuse of both pre-existing repository code and its own histor-ical code turn by turn. It is built by a fully automated pipeline that requires no human involvement and scales readily to new reposi-tories. • Auditing findings: a systematic audit over 3,000 turns of development shows that reuse deficiencies are pervasive and deepen over turns: agents see their own historical code yet fail to reuse it (self reuse decays from 83.9% to 69.1% even under saturated recall); by turn 5, half of the task chains have accu-mulated cross-turn re-implementations while pass rates barely move—deficiencies entirely invisible to pass-rate-centered evaluation. 
+
+2 Related Work 
+
+Coding Agents and Harnesses Coding agents are moving from research prototypes into real development workflows: new-generation models (e.g., Kimi K3 (Team et al., 2026), DeepSeek v4.1 (DeepSeek-AI et al., 2026)) treat agentic cod-ing as a core capability, while harnesses range from research frameworks (SWE-agent (Yang et al., 2024), OpenHands (Wang et al., 2025a)) to industrial products (Claude Code (Anthropic, 2025), Codex (OpenAI, 2025), DeepSeek Har-ness (DeepSeek-AI, 2026)). It is increasingly clear that harness and interaction design have be-come performance variables on par with the back-bone model (Vats and Golev, 2026): SWE-agent highlights the role of tool-interface design, and Agentless (Xia et al., 2024) shows that a simple localization–repair–validation pipeline is competi-tive even without an autonomous interaction loop. Yet evaluation along this line is defined almost en-tirely by task success rate— how an agent writes code (whether it reuses existing implementations or piles up redundancy) is not measured. RepoReuse instead audits the reuse behavior of existing agents and harnesses. 
+
+Code Generation Evaluation Code generation evaluation has long centered on functional correct-ness, from function-level tests (HumanEval (Chen et al., 2021), MBPP (Austin et al., 2021)) to issue resolution in real repositories (SWE-bench (Jimenez et al., 2024)) and repository-level completion (CrossCodeEval (Ding et al., 2023), Re-poBench (Liu et al., 2023), ML-Bench (Tang et al., 2024)). Closest to us are multi-turn benchmarks: CodeFlowBench (Wang et al., 2026) iterates within a single file; MaintainCoder (Wang et al., 2025b) varies requirements but remains single-turn; SWE-Chain (Lam et al., 2026) asks agents to upgrade a package step by step along its version chain, each step building on the agent’s own previous code-base; EvoCode-Bench (Shen et al., 2026) and SWE-EVO (Le et al., 2026) evaluate multi-turn iterative interaction and long-horizon version evolution un-der per-turn functional tests; LoopsBench (Li et al., 2026) organizes each task as a dependency DAG with tests released along the ready frontier, observ-ing bloated patches and prerequisite dependencies missed by agent plans; SlopCodeBench (Orlan-ski et al., 2026) lets agents repeatedly extend their own solutions under evolving specifications, ob-serving structural erosion and rising redundancy; SWE-Explore (Zhang et al., 2026b) measures line-level exploration recall, but over static snapshots with execution deliberately removed. These works measure outcomes and artifacts, and none audits models’ reuse behavior in realistic repository-level multi-turn development. RepoReuse fills this gap: under a repository-level multi-turn iterative setting, it measures, turn by turn, an agent’s reuse of both pre-existing repository code and its own historical code. 
+
+3 RepoReuse 
+
+3.1 Benchmark Construction 
+
+Constructing RepoReuse requires delivering two things at once: multi-turn task chains, and a ground-truth answer to “what should be reused at each turn.” To this end, we implement a fully automatic 3construction pipeline: starting from mature open-source repositories, it produces tasks through three stages—evidence collection, task synthesis, and ex-ecution verification—without any human involve-ment. The pipeline guarantees that the reference solution genuinely reuses the designated modules and that the test cases come from actual execution, so that reuse auditing rests on verifiable ground truth. 
+
+Repository Sources RepoReuse builds its tasks on mature, widely used open-source Python li-braries spanning domains such as scientific com-puting and data visualization. Selected repositories must satisfy three conditions: (1) a multi-file pure-Python codebase with a rich internal implementa-tion layer beneath the public API—the evidence for our tasks comes from these undocumented internal subpackages rather than well-documented public interfaces; (2) a reproducible environment: each repository is pinned to a specific commit, and its dependency installation recipe is directly inherited from SWE-bench’s (Jimenez et al., 2024) install ta-ble, ensuring consistency between the construction and evaluation environments. 
+
+Dependency Graph and Evidence Collection 
+
+We first build a callable “map” of the repository: via AST-based static analysis, functions and meth-ods are represented as nodes carrying precise line ranges, signatures, and docstrings, with call rela-tions as edges, forming a dependency tree that cov-ers the whole repository; internal symbols beneath the public API surface are marked as candidate starting points. A strong model (GPT-5.6 Sol (Ope-nAI, 2026)) then performs guided walks over the dependency tree: starting from an internal sym-bol, it selects the next symbol hop by hop with justifications, collecting a group of interdependent modules as an evidence pack (Li et al., 2025a; Wu et al., 2025; Ma et al., 2026; Zhang et al., 2026a). Walks from turn 2 onward depart from the previ-ous turn’s artifact, making the reuse of earlier-turn functions a natural requirement of the task chain; to prevent evidence packs from degenerating into self-wrapping over turns, an additional nearby but previously unused repository symbol is injected during each walk. 
+
+Task Synthesis Based on the evidence pack, the authoring model (GPT-5.6 Sol) synthesizes the complete content of a turn: (1) a requirement that describes only the target behavior and never names 
+
+> Table 1: Statistics of RepoReuse.
+
+Statistic Value Tasks 75 Avg. turns per task 5.0 Avg. test cases per turn 10.8 Avg. requirement length (chars) ∼2,570 New functions per turn 3Reused symbols per turn (repo / self) 1.9 / 2.4 any evidence-pack symbol—otherwise exploration degenerates into a string search; (2) a reference solution that must genuinely call the evidence-pack modules and the chain’s previous-turn artifacts; (3) 
+
+test cases whose expected values are taken from actual runs of the reference solution rather than the authoring model’s claimed outputs. Modules that pass verification are written back into the reposi-tory package under semantic names, side by side with real code, for later turns to depend on. 
+
+Verification The core of verification is the relia-bility of the test cases themselves: every expected value is obtained by actually executing the refer-ence solution, and cases that raise errors or produce unstable outputs are discarded; if too many are dis-carded for the remaining cases to cover the declared functions, the whole turn is regenerated. On top of this, each turn must pass automatic checks—e.g., the reference solution passes all tests, an empty implementation must fail, and AST analysis con-firms that the reference solution genuinely reuses the evidence-pack modules. Finally, an indepen-dent audit, trusting none of the generator’s outputs, reinstalls the entire task chain and re-runs all tests before the task is packaged for delivery. 
+
+3.2 Benchmark Overview 
+
+Table 1 summarizes the scale and composition of RepoReuse. Each turn ships with 10.8 execution-verified test cases on average; from turn 2 onward, the reference solution reuses 1.9 pre-existing repos-itory symbols and 2.4 functions produced in earlier turns per turn—both types of reuse targets gen-uinely exist in every turn, providing a stable mea-surement basis for reuse auditing. 
+
+3.3 Evaluation Framework 
+
+In each turn, a coding agent reads existing code, decides which modules to reuse, and generates new code. We first formalize this multi-turn setting and 4the reuse targets it induces, and then define metrics organized around reuse along the same workflow. 
+
+3.3.1 Task Formulation 
+
+Let W0 denote the initial repository. At each turn t,the agent receives a requirement qt and the current workspace Wt−1, and produces a submission st:
+
+(qt, W t−1) agent 
+
+−−−→ st, Wt = Wt−1 ⊕ st
+
+where ⊕ denotes installing the submission into the workspace. The agent’s own submissions, not the reference solutions, are carried into later turns, so every turn builds on what the agent itself wrote. For each turn, we extract the reuse targets from the actual dependencies of the reference solution via AST analysis and split them into two disjoint sets: repo targets T repo  
+
+> t
+
+⊆ W0, functions present in the original repository, and self targets T self  
+
+> t
+
+⊆{s1, . . . , s t−1}, functions produced by the agent in earlier turns. Self targets exist only from turn 2 onward. 
+
+3.3.2 Metric Definition 
+
+Our metrics mirror the per-turn workflow. The cen-tral reuse metric asks whether the agent adopts each target. Upstream metrics describe what the agent explored before writing code, and help explain why a target was or was not reused. Downstream met-rics describe the outcome, both whether the new code works and what bypassing a target leaves in the workspace. 
+
+Reuse Metric For s ∈ { repo , self }, the reuse rate is the fraction of targets that the submission directly calls: reuse s(t) = |{ f ∈ T st : f is called in st}| |T st | (1) A call is identified by a real call edge to the target through AST-based value-reference name match-ing. Each target is scored 0/1 regardless of invo-cation count, and a function the agent redefines locally under the same name does not count as a call. For example, reuse self (t) = 0 .5 means that the submission calls half of the earlier-turn func-tions the reference solution builds on and bypasses the other half. 
+
+Upstream Metrics Reuse rate tells us what hap-pened but not why : a target that was not reused may never have been found, or may have been found but not adopted. To separate the two, we measure 
+
+recall . A target is recalled if the agent’s file-read actions in the current turn overlap at least one line of its source body; directory listings do not count as reads: recall s(t) = |{ f ∈ T st : f is read in turn t}| |T st | (2) Combined with reuse, recall sorts every missed tar-get into one of two cases. A target that was read but not reused points to an execution-side gap, where the agent saw the code but chose not to use it; a tar-get neither read nor reused points to an exploration-side gap, where the agent never found it. To charac-terize how much the agent explores, we also report two behavior statistics per turn: Files , the number of distinct files viewed, searched, or listed, and 
+
+Lines , the number of distinct source lines viewed. These statistics are descriptive rather than evalu-ative and help interpret recall differences across models and harnesses. 
+
+Downstream Metrics We first retain standard functional correctness. Pass rate is the proportion of test cases passed in a turn, and resolve rate is the proportion of turns in which all tests pass. Cor-rectness, however, captures only one consequence of reuse. As agents produce code faster than hu-mans can audit it, an agent may solve each task cor-rectly while repeatedly re-implementing functional-ity that already exists, quietly turning the codebase into redundant “spaghetti code.” We therefore also measure whether the agent re-implements existing code (Jiang et al., 2007). A target f ∈ T repo  
+
+> t
+
+∪ T self 
+
+> t
+
+is re-implemented at turn t if st does not call f
+
+but calls at least 80% of the non-builtin functions that f itself calls, considering only targets that call at least three such functions. Because every turn inherits the workspace of earlier turns, a single re-implementation leaves a redundant copy for the rest of the task chain; we call any chain containing one a duplicated chain , and measure the duplicated-chain rate , the fraction of task chains C that have become duplicated by turn t:
+
+Cdup (t) = 1
+
+|C| 
+
+X
+
+> c∈C
+
+1∃ i ≤ t : Rc,i ̸ = ∅ (3) where Rc,i is the set of re-implemented targets at turn i of chain c. Cdup is cumulative, never de-creases along a chain, and is better when lower. 54 Experiments 
+
+4.1 Experiment Setup Models and Harnesses Since both the backbone model and the harness shape how an agent ex-plores and writes code (Vats and Golev, 2026), we evaluate a grid of model–harness combinations. We use two representative harnesses: mini-SWE-agent (SWE-agent Team, 2024), a minimal har-ness whose only action is a bash command, and 
+
+OpenCode (Anomaly (formerly SST), 2026), an open-source industrial harness with native read, grep, glob, edit, and write tools. We pair them with four backbone models: GPT-5.6 Terra (Ope-nAI, 2026), DeepSeek-v4.1-flash (DeepSeek-AI et al., 2026), Qwen3.7-plus (Qwen Team, 2026), and GLM-5.3 (Z.ai, 2026). 
+
+Evaluation Protocol All runs follow the self-invoking protocol: each turn starts a fresh agent session, while the workspace persists across turns and keeps the agent’s own earlier implementations; a failed turn does not end the chain. From turn 2 onward, the requirement lists the public interfaces of the functions the agent implemented in earlier turns but not their source code, and repository reuse targets are never named. All configurations share the same per-turn budget. All metrics are macro-averaged over turns where they are defined. 
+
+4.2 Main Results 
+
+Table 2 reports overall results where we draw sev-eral core insight: 
+
+Reuse leaves substantial room for improvement 
+
+No configuration reliably builds on existing code. Even the strongest misses 24.3% of repository tar-gets and 13.6% of its own earlier functions, al-though the requirement explicitly lists these func-tions and encourages reusing them; Qwen3.7-plus misses about half of the repository targets and a third of the self targets under both harnesses, leave a substantial room for improvement. 
+
+Reuse depends on exploration yet reading is not enough On the repository side, reuse tracks up-stream exploration. Configurations that view at least 900 source lines per turn reach 47–61% repos-itory recall, while those viewing fewer than 700 lines reach only 35–42%, and targets that were read are consistently more likely to be reused than targets that were not. On the self side, reading is not the bottleneck: every configuration reads at least 98.9% of its own earlier targets, yet self reuse ranges only from 67.0% to 86.4%. The gap there-fore lies in the decision to build on the code that was found, not in finding it. 
+
+Reuse aligns with both correctness and redun-dancy Downstream, reuse first aligns with cor-rectness. Configurations that reuse more repos-itory code generally also resolve more turns and pass more tests: DeepSeek-v4.1-flash leads on both reuse and correctness, while Qwen3.7-plus trails on both. Reuse also aligns with structure. Targets that are bypassed are far more likely than reused ones to have their logic re-implemented, so the two DeepSeek-v4.1-flash configurations, which reuse the most, have clearly the lowest Cdup at 17.1% and 21.1%, while all others lie between 33.6% and 46.7%. Across configurations, then, reuse, correct-ness, and redundancy move together; the following sections show that within a configuration, as turns progress or the memory changes, reuse and redun-dancy shift while pass rates barely move. 
+
+4.3 Reuse Across Turns 
+
+The aggregate results above average over all turns and hide how reuse evolves as a task chain grows. Since each turn adds the agent’s own code to the workspace, later turns offer more opportunities to reuse and, equally, to bypass existing implementa-tions. Table 3 therefore compares the first and last turn of each task chain. 
+
+Reuse declines over turns, especially for self tar-gets As task chains progress, agents build less on existing code. Self reuse drops by 8–24 points from turn 2 to the last turn in every configuration, even though the requirement keeps listing the agent’s ear-lier functions. The decline is steepest for Qwen3.7-plus, which loses 23–24 points, about twice the 10–13 points lost by DeepSeek-v4.1-flash. 
+
+Repository decline is driven by recall On the repository side, the decline in reuse follows the collapse of exploration. Agents read 76–91% of repository targets at turn 1, but repository recall drops sharply once their own earlier code is avail-able, reaching only 16–51% by the last turn. Reuse falls far less than recall, so later-turn repository reuse is increasingly made without reading the tar-get, plausibly from call sites seen in the agent’s own earlier code. Self targets show the opposite pattern: recall stays saturated in every turn, so the decline in self reuse cannot be attributed to exploration. 6Table 2: Main results on RepoReuse. Columns are organized around reuse: upstream metrics describe how the agent explores, and downstream metrics describe the outcome. Reuse, recall, correctness, and Cdup are in %; Cdup is averaged over the five cumulative turn-wise rates. Best reuse, recall, and correctness per column in bold .                                                                                       
+
+> Upstream Downstream Reuse Recall Agent Behavior Correctness Redundancy Harness Model repo self repo self Files Lines Resolve Pass Cdup
+> mini-SWE-agent GPT-5.6 Terra 62.8 71.1 52.7 99.6 20.5 1150 48.8 81.2 42.7 DeepSeek-v4.1-flash 68.8 84.2 61.4 99.9 45.4 1267 66.4 90.8 21.1 Qwen3.7-plus 48.9 67.7 36.2 99.6 22.0 680 27.7 71.1 37.1 GLM-5.3 55.3 71.7 47.2 99.2 36.5 1104 44.3 81.2 39.7 OpenCode GPT-5.6 Terra 61.6 67.0 42.3 100.0 18.5 479 44.5 80.1 36.8 DeepSeek-v4.1-flash 75.7 86.4 61.4 98.9 44.1 1098 72.3 91.6 17.1 Qwen3.7-plus 50.5 67.8 35.1 99.7 13.5 576 30.4 71.9 46.7 GLM-5.3 56.1 73.7 51.5 99.9 29.3 900 44.3 81.0 33.6
+
+Table 3: Recall, reuse, and redundancy at the first and last turn (%). Self reuse is defined from turn 2; ∆ is the change from the first to the last turn. Self reuse declines while the share of task chains containing re-implemented targets grows over turns.                                                                                                                         
+
+> recall repo reuse repo reuse self Cdup
+> Harness Model T1 T5 ∆T1 T5 ∆T2 T5 ∆T1 T5 ∆
+> mini-SWE-agent GPT-5.6 Terra 86.3 38.8 −47.5 61.7 64.3 +2.6 77.1 69.0 −8.1 14.7 60.0 +45.3 mini-SWE-agent DeepSeek-v4.1-flash 88.1 49.8 −38.3 74.4 72.2 −2.2 92.2 79.3 −12.9 10.7 33.3 +22.6 mini-SWE-agent Qwen3.7-plus 80.1 21.7 −58.4 52.5 50.1 −2.4 84.2 61.3 −22.9 14.7 57.3 +42.6 mini-SWE-agent GLM-5.3 82.4 33.6 −48.8 63.9 54.7 −9.2 80.9 66.2 −14.7 16.0 58.7 +42.7 OpenCode GPT-5.6 Terra 76.3 30.7 −45.6 62.4 57.2 −5.2 77.1 65.3 −11.8 10.7 52.0 +41.3 OpenCode DeepSeek-v4.1-flash 91.3 50.7 −40.6 81.3 76.1 −5.2 93.6 83.6 −10.0 9.3 25.3 +16.0 OpenCode Qwen3.7-plus 77.4 15.8 −61.6 54.4 50.8 −3.6 82.9 58.9 −24.0 21.3 69.3 +48.0 OpenCode GLM-5.3 86.7 41.8 −44.9 65.6 64.0 −1.6 83.1 69.5 −13.6 13.3 50.7 +37.4
+
+Reuse decline leads to structural redundancy 
+
+The decline in reuse has a structural consequence. When agents stop building on existing code, they re-implement it: targets that are bypassed are far more likely than reused ones to have their logic rewrit-ten in the submission. Accordingly, Cdup grows steadily over turns in every configuration, from 9– 21% of task chains at turn 1 to 51–69% by the last turn; only DeepSeek-v4.1-flash, which retains the most self reuse, stays at 25–33%. Because each turn inherits the workspace left by earlier turns, these re-implementations persist, leaving parallel versions of the same logic scattered across modules. None of this is visible in pass rates. 
+
+4.4 Effect of Historical Memory 
+
+In multi-turn development, what an agent is told about its earlier work may shape whether it builds on that work (Packer et al., 2024; Li et al., 2025b; Zhang et al., 2024). We therefore vary the form of historical memory in the requirement while keeping everything else fixed, using OpenCode with Qwen3.7-plus. Under all three settings, the agent’s own earlier implementations remain in the workspace; only the requirement differs from turn 2 onward: • No memory : the requirement contains no in-formation about earlier turns. • Interface memory (our default): the require-ment lists the module, name, signature, re-turn value, and behavior of each function im-plemented in earlier turns, and encourages reusing them. • Source memory : the requirement includes the complete source code of every earlier sub-mission, verbatim. Table 4 reports overall results under each mem-ory setting, and Table 5 compares their first and last turns. 
+
+A concise interface helps self reuse; full source code does not To get agents to build on their own earlier code, a short description of what already ex-ists works, while handing them the complete source does not. Listing the interfaces of earlier functions raises self reuse from 30.0% with no memory to 7Table 4: Effect of historical memory on OpenCode with Qwen3.7-plus (75 task chains, 375 turns per setting). Reuse, recall, correctness, and Cdup are in %; agent behavior and Cdup are averaged over turns. Best reuse, recall, and correctness per column in bold .                                         
+
+> Upstream Downstream Reuse Recall Agent Behavior Correctness Redundancy Memory repo self repo self Files Lines Resolve Pass Cdup
+> No memory 58.9 30.0 55.5 85.5 27.7 878 30.4 72.4 65.1 Interface memory 50.5 67.8 35.1 99.7 13.5 576 30.4 71.9 46.7 Source memory 51.3 29.2 38.5 84.4 16.8 567 27.7 70.2 70.7
+
+Table 5: Effect of historical memory across turns on OpenCode with Qwen3.7-plus (%). Self reuse is defined from turn 2; ∆ is the change from the first to the last turn.                                                    
+
+> recall repo reuse repo reuse self Cdup
+> Memory T1 T5 ∆T1 T5 ∆T2 T5 ∆T1 T5 ∆
+> No memory 77.0 46.5 −30.5 56.4 61.4 +5.0 34.2 32.1 −2.1 22.7 89.3 +66.6 Interface memory 77.4 15.8 −61.6 54.4 50.8 −3.6 82.9 58.9 −24.0 21.3 69.3 +48.0 Source memory 77.8 20.6 −57.2 53.4 50.1 −3.3 29.6 29.1 −0.5 17.3 94.7 +77.4
+
+67.8%, more than doubling it. Supplying the full source of earlier submissions instead leaves self reuse at 29.2%, no better than giving no memory at all, and it stays flat at about 29% in every turn. More information about earlier work is thus not what agents need; what helps is a compact map of which functions exist and where to find them. Interface memory mitigates rather than removes the problem, however: self reuse still declines over turns, from 82.9% to 58.9%. Note also that in-terface memory explicitly encourages reuse while source memory does not, so the two factors cannot be fully separated. 
+
+Memory substitutes for exploration Without memory, agents explore the workspace more broadly, opening 27.7 files per turn, about twice the 13.5 opened under interface memory, which raises repository recall from 35.1% to 55.5% and repository reuse from 50.5% to 58.9%. With in-terface memory, they rely on the note rather than exploring, and repository recall collapses twice as fast over turns, losing 61.6 points against 30.5 with-out memory. Memory thus shifts reuse between sources: it strengthens reuse of the agent’s own code but partly at the expense of repository code that the note does not cover. 
+
+Memory changes redundancy but not correct-ness Correctness is nearly identical across the three settings, with resolved rates of 27.7–30.4% and passed rates of 70.2–72.4%, yet their reuse behavior differs sharply. Redundancy is lowest un-der interface memory, where Cdup is 46.7%, and highest under source memory, where it reaches 70.7%: with the full source of earlier turns in con-text, agents tend to rewrite its logic rather than import it, and by the last turn 94.7% of task chains contain a re-implemented target. As in the main results, a pass-rate-centered evaluation would treat these settings as equivalent, even though they leave very different workspaces behind. 
+
+5 Conclusion 
+
+We asked a question existing evaluation cannot answer— do coding agents reuse existing code or reinvent the wheel? We built RepoReuse to make it measurable: a multi-turn benchmark on real reposi-tories in which requirements are revealed turn by turn, the workspace accumulates across turns, and reuse of both pre-existing repository modules and the agent’s own historical code is audited per turn. The benchmark is produced by a fully automated pipeline and scales readily to new repositories. The answer it gives is sobering: agents progressively stop exploring the repository they work in; they reuse their own history less even when it is fully in view, and handing them the complete source does not help; and the targets they bypass accumulate as cross-turn duplication that pass rates never register. Agents can solve every task and still degrade the codebase and pass rates cannot tell the difference. We hope RepoReuse provides a sustainable instru-ment for auditing, and ultimately improving, how agents build on existing code. 8Limitations 
+
+RepoReuse currently covers five mature, pure-Python libraries and 75 five-turn task chains, eval-uated with two harnesses and four backbone mod-els; whether the observed deficiencies generalize to other languages, domains, and longer develop-ment horizons remains open. Widening the repos-itory pool and the model–harness grid is work in progress, and the fully automated construction pipeline makes both straightforward to extend. 
+
+References 
+
+Altaf Allah Abbassi, Leuson Da Silva, Amin Nikan-jam, and Foutse Khomh. 2025. A taxonomy of in-efficiencies in llm-generated python code. Preprint ,arXiv:2503.06327. Anomaly (formerly SST). 2026. OpenCode: The open source AI coding agent. https://github.com/ sst/opencode . Accessed: 2026-09. Anthropic. 2025. Claude code: Ai-assisted coding in real-world codebases. Accessed: 2026-05. Jacob Austin, Augustus Odena, Maxwell Nye, Maarten Bosma, Henryk Michalewski, David Dohan, Ellen Jiang, Carrie Cai, Michael Terry, Quoc Le, and Charles Sutton. 2021. Program synthesis with large language models. Preprint , arXiv:2108.07732. Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, Henrique Ponde de Oliveira Pinto, Jared Kaplan, Harri Edwards, Yuri Burda, Nicholas Joseph, Greg Brockman, Alex Ray, Raul Puri, Gretchen Krueger, Michael Petrov, Heidy Khlaaf, Girish Sastry, Pamela Mishkin, Brooke Chan, Scott Gray, and 39 others. 2021. Evaluating large language models trained on code. Preprint , arXiv:2107.03374. DeepSeek-AI, :, Anyi Xu, B. Li, Bangcai Lin, Bing Xue, BingCheng Xian, Bingzheng Xu, Bochao Wu, Bowei Zhang, Boyi Deng, C. C. Yu, Chao Jin, Chaofan Lin, Chen Dong, Chenbing Wang, Chenfan Feng, Chengda Lu, Chenggang Zhao, and 574 others. 2026. Deepseek-v4.1-flash: Pushing the limits of kv cache compression. Preprint , arXiv:2609.19969. DeepSeek-AI. 2026. Deepseek harness: Everything is a plugin. https://github.com/deepseek-ai/ deepseek-harness .Yangruibo Ding, Zijian Wang, Wasi Uddin Ahmad, Han-tian Ding, Ming Tan, Nihal Jain, Murali Krishna Ra-manathan, Ramesh Nallapati, Parminder Bhatia, Dan Roth, and Bing Xiang. 2023. Crosscodeeval: A di-verse and multilingual benchmark for cross-file code completion. Preprint , arXiv:2310.11248. Naman Jain, King Han, Alex Gu, Wen-Ding Li, Fanjia Yan, Tianjun Zhang, Sida Wang, Armando Solar-Lezama, Koushik Sen, and Ion Stoica. 2024. Live-codebench: Holistic and contamination free evalu-ation of large language models for code. Preprint ,arXiv:2403.07974. Lingxiao Jiang, Ghassan Misherghi, Zhendong Su, and Stephane Glondu. 2007. Deckard: Scalable and ac-curate tree-based detection of code clones. In 29th International Conference on Software Engineering (ICSE’07) , pages 96–105. Carlos E. Jimenez, John Yang, Alexander Wettig, Shunyu Yao, Kexin Pei, Ofir Press, and Karthik Narasimhan. 2024. Swe-bench: Can language mod-els resolve real-world github issues? Preprint ,arXiv:2310.06770. Man Ho Lam, Chaozheng Wang, Hange Liu, Jingyu Xiao, Haau sing Li, Jen tse Huang, Terry Yue Zhuo, and Michael R. Lyu. 2026. Swe-chain: Benchmark-ing coding agents on chained release-level package upgrades. Preprint , arXiv:2605.14415. Tue Le, Minh V. T. Thai, Dung Nguyen Manh, Huy Phan Nhat, and Nghi D. Q. Bui. 2026. Swe-evo: Benchmarking coding agents in long-horizon software evolution scenarios. Preprint ,arXiv:2512.18470. Han Li, Zhemin Fang, Rili Feng, Yingqi Zhao, Jia-heng Liu, Pengfei Gao, He Ye, Dayi Lin, Qingwei Lin, Saravan Rajmohan, and Dongmei Zhang. 2026. Loopsbench: From harness engineering to loop en-gineering in coding agent evaluation. Preprint ,arXiv:2608.00267. Kuan Li, Zhongwang Zhang, Huifeng Yin, Liwen Zhang, Litu Ou, Jialong Wu, Wenbiao Yin, Baix-uan Li, Zhengwei Tao, Xinyu Wang, Weizhou Shen, Junkai Zhang, Dingchu Zhang, Xixi Wu, Yong Jiang, Ming Yan, Pengjun Xie, Fei Huang, and Jingren Zhou. 2025a. Websailor: Navigating super-human reasoning for web agent. Preprint ,arXiv:2507.02592. Zhiyu Li, Chenyang Xi, Chunyu Li, Ding Chen, Boyu Chen, Shichao Song, Simin Niu, Hanyu Wang, Ji-awei Yang, Chen Tang, Qingchen Yu, Jihao Zhao, Yezhaohui Wang, Peng Liu, Zehao Lin, Pengyuan Wang, Jiahao Huo, Tianyi Chen, Kai Chen, and 20 others. 2025b. Memos: A memory os for ai system. 
+
+Preprint , arXiv:2507.03724. Mingwei Liu, Juntao Li, Ying Wang, Xueying Du, Zuoyu Ou, Qiuyuan Chen, Bingxu An, Zhao Wei, Yong Xu, Fangming Zou, Xin Peng, and Yiling Lou. 2025. Code copycat conundrum: Demystifying repetition in llm-based code generation. Preprint ,arXiv:2504.12608. Tianyang Liu, Canwen Xu, and Julian McAuley. 2023. Repobench: Benchmarking repository-level code auto-completion systems. Preprint ,arXiv:2306.03091. 
+
+9Dongsheng Ma, Jiayu Li, Zhengren Wang, Yijie Wang, Jiahao Kong, Weijun Zeng, Jutao Xiao, Jie Yang, Wentao Zhang, Bin Wang, and Conghui He. 2026. Citevqa: Benchmarking evidence attribution for trustworthy document intelligence. Preprint ,arXiv:2605.12882. OpenAI. 2025. Introducing codex. OpenAI product announcement. OpenAI. 2026. Introducing GPT-5.6. https:// openai.com/index/gpt-5-6/ . Accessed 2026-09-23. Gabriel Orlanski, Devjeet Roy, Alexander Yun, Changho Shin, Alex Gu, Albert Ge, Dyah Adila, Nicholas Roberts, Frederic Sala, and Aws Albargh-outhi. 2026. SlopCodeBench: Benchmarking How Coding Agents Degrade Over Long-Horizon Iterative Tasks. Preprint , arXiv:2603.24755. Charles Packer, Sarah Wooders, Kevin Lin, Vivian Fang, Shishir G. Patil, Ion Stoica, and Joseph E. Gonzalez. 2024. Memgpt: Towards llms as operating systems. 
+
+Preprint , arXiv:2310.08560. Qwen Team. 2026. Qwen3.7-Plus: Multimodal agent intelligence. https://qwen.ai/blog?id=qwen3. 7-plus . Accessed: 2026-09. Haiyang Shen, Xuanzhong Chen, Wendong Xu, Yun Ma, Liang Chen, and Kuan Li. 2026. Evocode-bench: Evaluating coding agents in multi-turn iterative inter-actions. Preprint , arXiv:2605.24110. SWE-agent Team. 2024. mini-SWE-agent: A mini-malist agent for SWE-bench and beyond. https: //github.com/SWE-agent/mini-swe-agent . Ac-cessed: 2026-09. Xiangru Tang, Yuliang Liu, Zefan Cai, Yanjun Shao, Junjie Lu, Yichi Zhang, Zexuan Deng, Helan Hu, Kaikai An, Ruijun Huang, Shuzheng Si, Sheng Chen, Haozhe Zhao, Liang Chen, Yan Wang, Tianyu Liu, Zhiwei Jiang, Baobao Chang, Yin Fang, and 5 others. 2024. Ml-bench: Evaluating large language models and agents for machine learning tasks on repository-level code. Preprint , arXiv:2311.09835. Kimi Team, Tongtong Bai, Yifan Bai, Yiping Bao, M. C., Jianfeng Cai, Xinyuan Cai, Peizhou Cao, Yux-uan Cao, Ziwei Chai, Y. Charles, H. S. Che, Guanduo Chen, Guangyu Chen, Guanzheng Chen, Huarong Chen, Jia Chen, Jianlong Chen, Jun Chen, and 383 others. 2026. Kimi k3: Open frontier intelligence. 
+
+Preprint , arXiv:2607.24653. Naman Vats and Oleg Golev. 2026. The scaffold ef-fect in coding agents: Harness choice as a hid-den variable in coding-agent evaluation. Preprint ,arXiv:2607.22585. Sizhe Wang, Zhengren Wang, Dongsheng Ma, Yongan Yu, Rui Ling, Zhiyu li, Feiyu Xiong, and Wentao Zhang. 2026. CodeFlowBench: A multi-turn, iter-ative benchmark for complex code generation. In 
+
+Proceedings of the 64th Annual Meeting of the As-sociation for Computational Linguistics (Volume 1: Long Papers) , pages 4369–4402, San Diego, Cali-fornia, United States. Association for Computational Linguistics. Xingyao Wang, Boxuan Li, Yufan Song, Frank F. Xu, Xiangru Tang, Mingchen Zhuge, Jiayi Pan, Yueqi Song, Bowen Li, Jaskirat Singh, Hoang H. Tran, Fuqiang Li, Ren Ma, Mingzhang Zheng, Bill Qian, Yanjun Shao, Niklas Muennighoff, Yizhe Zhang, Binyuan Hui, and 5 others. 2025a. Openhands: An open platform for ai software developers as generalist agents. Preprint , arXiv:2407.16741. Zhengren Wang, Rui Ling, Chufan Wang, Yongan Yu, Sizhe Wang, Zhiyu Li, Feiyu Xiong, and Wentao Zhang. 2025b. Maintaincoder: Maintainable code generation under dynamic requirements. Preprint ,arXiv:2503.24260. Jialong Wu, Baixuan Li, Runnan Fang, Wenbiao Yin, Liwen Zhang, Zhengwei Tao, Dingchu Zhang, Zekun Xi, Gang Fu, Yong Jiang, Pengjun Xie, Fei Huang, and Jingren Zhou. 2025. Webdancer: Towards au-tonomous information seeking agency. Preprint ,arXiv:2505.22648. Chunqiu Steven Xia, Yinlin Deng, Soren Dunn, and Lingming Zhang. 2024. Agentless: Demystifying llm-based software engineering agents. Preprint ,arXiv:2407.01489. John Yang, Carlos E. Jimenez, Alexander Wettig, Kilian Lieret, Shunyu Yao, Karthik Narasimhan, and Ofir Press. 2024. Swe-agent: Agent-computer interfaces enable automated software engineering. Preprint ,arXiv:2405.15793. Z.ai. 2026. GLM-5.3: Frontier coding with emergent cyber capabilities. https://z.ai/blog/glm-5.3 .Accessed: 2026-09. Qintong Zhang, Xinjie Lv, Jialong Wu, Baixuan Li, Zhengwei Tao, Guochen Yan, Huanyao Zhang, Bin Wang, Jiahao Xu, Haitao Mi, and Wentao Zhang. 2026a. Docdancer: Towards agentic document-grounded information seeking. Preprint ,arXiv:2601.05163. Shaoqiu Zhang, Yuhang Wang, Jialiang Liang, Yul-ing Shi, Wenhao Zeng, Maoquan Wang, Shilin He, Ningyuan Xu, Siyu Ye, Kai Cai, and Xi-aodong Gu. 2026b. Swe-explore: Benchmarking how coding agents explore repositories. Preprint ,arXiv:2606.07297. Zeyu Zhang, Xiaohe Bo, Chen Ma, Rui Li, Xu Chen, Quanyu Dai, Jieming Zhu, Zhenhua Dong, and Ji-Rong Wen. 2024. A survey on the memory mecha-nism of large language model based agents. Preprint ,arXiv:2404.13501. 
+
+10 Appendix A Experimental Setup Details 
+
+A.1 Evaluation Protocol Turn Execution Each task chain runs in its own workspace, and its turns are executed in order. Be-fore turn t, the workspace contains the original repository together with every file the agent submit-ted in turns 1, . . . , t −1, each at its required module path; reference solutions never enter the workspace. At each turn, the requirement is rendered accord-ing to the memory setting (Appendix A.3) and handed to a fresh agent session with no dialogue history, trajectory, or test feedback from earlier turns. When the agent stops, whether by finish-ing, exhausting its budget, or failing, we read back whatever file exists at the required path and score it. A turn without a file at that path fails all of its tests. The hidden tests are copied into the workspace only after the agent stops, run from a temporary directory with a 600-second timeout, and removed afterwards. A failed turn does not end the chain: the next turn starts from whatever the agent actually left behind. 
+
+Workspace Preparation Before the first turn, we remove information that would let the agent bypass exploration. Git history is deleted, since 
+
+git log would expose later changes. All test files are deleted file by file, including test_*.py ,
+
+conftest.py , and cached test listings, because repository tests are where the construction pipeline found its evidence and often spell out the conven-tions a task relies on. Test runners and helpers that the package imports at runtime are kept, and we verify that the package still imports after this step. 
+
+Environment Each repository is pinned to its benchmark commit and installed in editable mode in a dedicated conda environment, following the installation recipe of SWE-bench (Jimenez et al., 2024). The same environment is used by all con-figurations, so that differences between runs come only from the agent. 
+
+A.2 Harness and Model Configuration mini-SWE-agent The agent interacts with the repository only through bash commands, each exe-cuted in a fresh subshell. Its prompt is adapted from the harness’s default template with our delivery in-structions (Appendix A.3). We make one addition to the default observation template: each observa-             
+
+> Table 6: Per-turn budgets and settings of the two har-nesses.
+> mini-SWE-agent OpenCode Tools bash only native tools Step limit 120 commands none Cost limit $5 none Per-command timeout 120 s harness default Wall-time limit 2,400 s 2,400 s Temperature 0provider default
+
+tion reports how many commands have been used, since without it agents tended to spend the whole budget exploring and submit nothing. The agent ends a turn with an explicit submit command. Ta-ble 6 lists its budgets; a turn is also stopped after three consecutive malformed responses. 
+
+OpenCode We run OpenCode in its headless mode with external plugins disabled and every tool call auto-approved. Each run uses an isolated con-figuration with a single model provider, so that no user-level settings, plugins, or agents affect the run. OpenCode has no built-in step or cost limit, so each turn is bounded only by the 2,400-second wall time. All models are accessed through the same OpenAI-compatible gateway under both harnesses. 
+
+Failures Agent errors, timeouts, and exceeded budgets are not retried. As described above, the turn is scored on whatever file the agent left at the required path, so such failures count against correctness rather than being excluded. 
+
+A.3 Requirement and Memory Formats Requirement Structure Every requirement fol-lows the same structure: a behavioral description of the task, the exact path and importable module name of the file to create, and for each required function its signature, a description of its behavior, and a precise contract for its return value. From turn 2 onward, a historical note follows, whose form depends on the memory setting. Repository reuse targets are never named in the requirement. 
+
+Delivery Instructions Both harnesses wrap the requirement in the same delivery instructions, shown in Appendix B.2 for OpenCode; mini-SWE-agent uses the same wording within its own action protocol. These instructions are identical across all memory settings, so a generic encouragement to reuse existing code is present even when the historical note is removed or replaced. 11 Memory Settings The three memory settings of Section 4.4 differ only in the historical note. No memory removes the note entirely. Interface mem-ory , our default, lists for every earlier turn its mod-ule and, for each function, its signature, return con-tract, and behavior, and encourages reusing them. 
+
+Source memory removes the interface note and in-stead embeds the exact source file submitted in each earlier turn, delimited by markers and labeled with its path. The box in Appendix B.2 shows the interface-memory note for turn 2 of a seaborn task, whose first turn implemented three color-mapping functions. 
+
+B Prompt Templates 
+
+B.1 Prompts for RepoReuse Pipeline Prompt for Extracting Evidence Packages 
+
+You are assembling an *evidence pack*: a small set of repository symbols that a programming task will be built on top of. You are walking a call graph, one hop at a time, like a developer clicking through cross-references. Repository: {repo_name} {round_ctx} ## Symbols collected so far {collected} ## Current position {current_block} ## Menu -- you may expand ONE of these, or stop {menu} ## Your goal Collect {lo}-{hi} symbols that could plausibly be combined into ONE coherent programming task (a small script with a few functions). Prefer symbols that genuinely belong together in a real workflow over symbols that are merely adjacent in the graph. Reply with STRICT JSON only: {{"action": "expand" | "stop", "choice": <menu number, required iff action=expand>, "reason": "<one sentence: why this symbol belongs with the ones collected>", "task_sketch": "<if stop: one sentence describing the task these symbols support>"}} 
+
+Prompt for Generating Tasks 
+
+You are authoring a programming task for a benchmark that evaluates whether coding agents explore and reuse repository internals. Inputs: an evidence pack (repository symbols to build on), a suggested direction, the package layout, and previous-round artifacts. Write a task a real developer would plausibly need, whose correct implementation GENUINELY requires reading the evidence symbols' source -- i.e., it must exploit internal conventions invisible in signatures (zero representation, coefficient ordering, implicit domain transforms). Any task solvable from docstrings alone is rejected. Output six blocks: 1. module_name: snake_case; reads as if it always belonged to the package. 2. goal: 2-4 behavioural sentences, as a maintainer would request; never reference earlier rounds --discovering what the repo already provides is what is being measured. 3. functions: {nfun} functions (name / signature / returns / behaviour); house-style names, no shared prefix; 5+ lines of real logic each; 
+
+`returns ` pins container, element type, and ordering; >=2 functions return plainly repr-comparable values. 4. solution: imports and calls the evidence symbols non-trivially; function names match block 3 verbatim; no module-level helpers. 5. calls: 8-14 single-line calls with predicted reprs, including edge cases; we execute each call and assert the real return value. 6. read_targets locations a developer MUST read: the evidence symbols plus callees encoding conventions (even if never imported); each `why ` names the convention, not the task. 
+
+B.2 Prompts for RepoReuse Evaluation Delivery Instructions 
+
+You are working in the repository checkout at {workdir} (your working directory). The package is installed in editable mode, so `python -c "import ..." ` picks up any file you write there. The repository's own test suite is not available; write and run your own checks if you need to. # Requirement 
+
+12 {requirement} # What you must deliver A new Python module at exactly 
+
+`{workdir}/{submit_to} ` (importable as `{module} `), defining exactly the functions the requirement lists, with those names and signatures. The requirement may mention modules that already exist in the repository --find and reuse them where it makes sense; do not modify existing files. Write the file, check that it imports and behaves as required, and fix what fails. A round with no file at that path scores zero however much you learned. 
+
+Interface Memory (turn 2 of a seaborn task) 
+
+## Note The repository already contains modules you implemented in earlier rounds. You are encouraged to reuse their public interfaces: ### Round 1 --
+
+`seaborn._core.color_mapping `
+
+- `color_lookup `
+
+- Signature: `def color_lookup(data, values=None, order=None) `
+
+- Returns: list[tuple[Any, tuple[float, ...]]] -- one entry per resolved category in seaborn order; NumPy scalar category labels are converted to equivalent Python scalars, and each color tuple contains exactly three RGB or four RGBA floats - Behaviour: Resolve the categorical levels and return the standardized color assigned to each level. - `map_color_values `
+
+- Signature: `def map_color_values(data, values=None, order=None) `
+
+... - `describe_palette `
+
+- Signature: `def describe_palette(colors) `
+
+... 
+
+Source Memory (turn 2 of the same task) 
+
+## Note The following exact source files were submitted by this same harness in earlier rounds of this task. Byte lengths delimit source payloads. ### Round 1 --
+
+`seaborn._core.color_mapping `
+
+- Submit path: 
+
+`seaborn/_core/color_mapping.py `
+
+- UTF-8 bytes: <length> - SHA-256: `<digest> `
+
+<<<CODEFLOW_L5_SELF_SOURCE bytes=<length>>>> [complete source of the round-1 submission] <<<END_CODEFLOW_L5_SELF_SOURCE>>> 
+
+C Case Study 
+
+Figures 2 and 3 show two consecutive turns of one task chain (mini-SWE-agent with DeepSeek-v4.1-flash). At turn 4, the agent implements 
+
+center_within_groups , which centers a numeric column within seaborn’s categorical groups, and passes all tests. At turn 5, the requirement asks for per-category summaries of centered values and explicitly lists the turn-4 interface. The agent reads the turn-4 source in full (recall = 1 .0), yet never imports it. Instead, it rewrites the dtype coercion, group masking, categorical ordering, and mean-centering logic from scratch in 262 lines, where the ground truth solution reaches the same behavior in 68 lines by calling the turn-4 function and ag-gregating its output. The submission passes 10/10 tests: nothing in the pass rate registers that the workspace now hosts two parallel implementations of the same centering semantics. 13 # Task seaborn_20260831T182310Z — Turn 4 
+
+Prepare category-oriented plots by centering observations within declared groups, reporting which ordered category directives would affect a plot, and materializing the resulting themed presentation. Group processing must preserve Seaborn’s group ordering and column restoration conventions, while category reporting must retain explicit duplicate levels, ignore levels without presets, and distinguish directives already satisfied by the configured plot. ## Where to write it Create a new file at `seaborn/_core/category_presentation.py` — a new module in the package, alongside the repository's own code. It will be imported as `seaborn._core.category_presentation`, so the name and location must match exactly. ## Required functions Your script must define exactly these functions, with these names: 
+
+- `def center_within_groups(data: pd.DataFrame, by: Sequence[str], value: str) -> dict[str, tuple[Any, ...]]` Center one numeric column within each available declared group, append per-row group sizes, and expose the reordered grouped result as stable scalar tuples. 
+
+……(More Requirements are Omitted) ### Turn 1 — `seaborn._core.presentation` - `apply_presentation` Signature: `def apply_presentation(plot: Plot, presets: Sequence[Mapping[str, Any]]) -> Plot` …… （More Modules from Turn 1,2,3 are Omitted) 
+
+Responses of DeepSeek-v4.1-flash (Excerpt): 
+
+def center_within_groups(data: pd.DataFrame, by: Sequence[str], value: str) -> dict[str, tuple[Any, ...]]: if value not in data: raise KeyError(value) if "_centered" in data or "_group_size" in data: raise ValueError("data contains reserved presentation columns") def center(part: pd.DataFrame) -> pd.DataFrame: numeric = pd.to_numeric(part[value], errors="coerce") centered = numeric - numeric.mean() return part.assign(_centered=centered, _group_size=len(part)) grouping = list(by) if data.empty: transformed = GroupBy([]).apply(data, center) else: transformed = GroupBy(grouping).apply(data, center) rows = [] for record in transformed.itertuples(index=False, name=None): normalized = [] for item in record: if hasattr(item, "item"): try: item = item.item() except ValueError: pass if item is None or item is pd.NA: item = None elif isinstance(item, float) and pd.isna(item): item = None normalized.append(item) rows.append(tuple(normalized)) return {"columns": tuple(transformed.columns),"rows": tuple(rows)} Figure 2: Case study, turn 4. Left: the turn-4 requirement. Right: the agent’s center_within_groups , centering a numeric column within seaborn’s categorical groups. 
+
+14 # Task seaborn_20260831T182310Z — Turn 5 
+
+Add utilities that prepare centered categorical comparisons for compact plotting and reporting workflows. They should preserve seaborn’s category ordering rules, distinguish observed categories from declared-but-empty category levels, and expose a stable nominal-axis specification without returning backend-specific plotting objects. The resulting summaries should make it straightforward to rank categories by within-category variation. ## Where to write it Create a new file at `seaborn/_core/category_comparison.py` — a new module in the package, alongside the repository's own code. It will be imported as `seaborn._core.category_comparison`, so the name and location must match exactly. ## Required functions Your script must define exactly these functions, with these names: 
+
+- `def centered_category_profile(data, category, value):` Center the requested value within each category and summarize each ordered category’s row count, usable centered-value count, average absolute offset, and signed residual. 
+
+……(More Requirements are Omitted) ### Turn 4 — `seaborn._core.category_presentation` - `center_within_groups` - Signature: `def center_within_groups(data: pd.DataFrame, by: Sequence[str], value: str) -> dict[str, tuple[Any, ...]]` - Returns: dict with exactly two insertion-ordered entries: 'columns' is a tuple of output column labels in DataFrame column order, and 'rows' is a tuple of row tuples in Seaborn group-schedule order; scalar NumPy values are converted to Python scalars and missing numeric values are represented by None - Behaviour: Center one numeric column within each available declared group, append per-row group sizes, and expose the reordered grouped result as stable scalar tuples. …… （More Modules from turn 1,2,3,4 are Omitted) 
+
+Responses of DeepSeek-v4.1-flash (Excerpt): 
+
+def _numeric(series: pd.Series) -> pd.Series: try: numeric = pd.to_numeric(series, errors="coerce") except (TypeError, ValueError): numeric = pd.to_numeric(pd.Series(list(series), index=series.index), errors="coerce",) try: values = numeric.to_numpy(dtype="float64", na_value=np.nan) except (TypeError, ValueError): values = numeric.astype(float).to_numpy(dtype="float64") return pd.Series(values, index=series.index) def _safe_equal(left: Any, right: Any) -> bool: try: return bool(left == right) except Exception: return False def _matches(vector: pd.Series, level: Any) -> pd.Series: try: mask = vector == level except Exception: mask = pd.Series([_safe_equal(value, level) for value in vector], index=vector.index) if not isinstance(mask, pd.Series): mask = pd.Series(mask, index=vector.index) return mask.fillna(False).astype(bool) def centered_category_profile(data: pd.DataFrame, category: str, value: str) -> dict[str, tuple]: frame = _to_frame(data) categories = _as_series(_column(frame, category), frame.index) numeric = _numeric(_as_series(_column(frame, value), frame.index)) order = [] groups = [] for level in categorical_order(categories): normalized = _normalize_scalar(level) if normalized is None: continue mask = _matches(categories, level) usable = numeric[mask].dropna() group_size = int(mask.sum()) valid_count = int(usable.size) if valid_count: offsets = usable - usable.mean() mean_absolute_offset: Optional[float] = float(offsets.abs().mean()) residual_total: Optional[float] = float(offsets.sum()) else: mean_absolute_offset = None residual_total = None order.append(normalized) groups.append((normalized, group_size, valid_count, mean_absolute_offset, residual_total) ）
+
+return {"order": tuple(order), "groups": tuple(groups)} Figure 3: Case study, turn 5. Left: the turn-5 requirement, which explicitly lists the turn-4 interface. Right: the agent reads that code (recall = 1 .0) yet rewrites the same coercion, grouping, and centering logic from scratch instead of importing it—passing 10/10 tests while duplicating its own earlier implementation. 
+
+15

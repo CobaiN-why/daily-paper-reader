@@ -1,0 +1,547 @@
+Title: Toward Interactive Understanding of Code APIs
+
+URL Source: https://arxiv.org/pdf/2609.32081v1
+
+Published Time: Tue, 29 Sep 2026 00:26:41 GMT
+
+Number of Pages: 31
+
+Markdown Content:
+# Toward Interactive Understanding of Code APIs 
+
+Dhananjay Ashok 
+
+Information Sciences Institute University of Southern California 
+
+ashokd@usc.edu 
+
+Jesse Thomason 
+
+University of Southern California 
+
+jessetho@usc.edu 
+
+Jonathan May 
+
+Information Sciences Institute University of Southern California 
+
+jonmay@isi.edu 
+
+# Abstract 
+
+Empowered by advances in Language Model agents, systems have made substantial strides in code generation and understanding. However, these approaches often rely on read access to the relevant code, an assumption which does not hold when dealing with external APIs. In this work, we introduce the PAU (Python API 
+
+Understanding) benchmark, where we provide models with black-box, API-level access to code snippets. Models must query the API with exploratory inputs and draw insights from the resulting outputs, with the goal of describing the snippet’s true functionality. By treating the code snippets as external tools that must be under-stood via interaction alone, PAU studies the more general problem of unsupervised tool understanding, specifically for tools implemented as Python methods. Despite recent progress in coding agents, even frontier models struggle to achieve high performance on PAU , with the best model (Claude-4-Opus) failing to understand over 45% of the PAU test set. An investigation into the common error modes re-veals that models are overconfident; they often overrate the quality of their current hypothesis, leading to insufficient exploration and premature termination. Finally, we take inspiration from the Asymmetric Actor Critic (AAC) paradigm, frequently used in robot learning, to post-train models for interactive code understanding. Models trained with AAC conduct more active exploration of the APIs, with an AAC-tuned Qwen3-8B model matching the performance of GPT-5-mini. 1
+
+# 1 Introduction 
+
+With powerful Language Models (LMs) at their core [10], the latest generation of coding-agents [3] set new standards in automated software development and code understanding [31]. Existing ap-proaches to evaluation often provide the model with complete, read access to the code under inves-tigation [60, 66]. For instance, Jimenez et al. [32] provide models with read access over GitHub repositories, and task them with resolving an issue. However, programmers often find themselves conducting exploratory programming [34] where they must rely on external or proprietary Application Programming Interfaces (APIs), which obscure their internal code [30]. The critical role of such APIs in software workflows necessitates the ability to understand code artefacts by studying their behaviour, as opposed to inspecting their source code [39]. For instance, while LM agents can identify zero-day vulnerabilities in open-sourced kernels by inspecting their code [11, 41], detecting vulnerabilities in closed kernels would require a more interactive approach. Vital tasks in this setting, such as black-box  
+
+> 1Code and data available at: https://github.com/DhananjayAshok/PAU-Benchmark
+> 40th Conference on Neural Information Processing Systems (NeurIPS 2026). Track on Evaluations and Datasets. arXiv:2609.32081v1 [cs.AI] 25 Sep 2026 Previous
+> Examples
+> f(3) | True
+> f(6) | False
+> f(7) | True
+> def f(x):
+> return x is prime
+> f(x) =
+> x is odd?
+> X = 2
+> f(2) = True
+> Clearly not
+> Maybe its
+> prime?
+> Black Box API
+> Interactive Exploration
+> Multi-View
+> Evaluation
+> Predicted Description
+> Gold Description
+> Description-
+> to-Code
+> Agent
+> LM-as-a-judge
+> Predicted code
+> True code
+> Score
+> (1-5)
+> I/O Comparison
+> Match %
+> (0-100)
+
+Figure 1: The PAU benchmark for interactive understanding of code APIs. Models are given (left) black box access to a Python method and must explore it enough to produce a description of its functionality. Given a predicted description, we evaluate it from two different perspectives. Using the gold description of the method’s functionality, we score the model’s prediction from 1-5 (inclusive) using an LM-as-a-judge (top-right). Additionally, we use a fixed code-writing model to convert the predicted description to a code snippet. Using a test suite of inputs, we assess the percentage of inputs for which the output of the snippet matches that of the true code (bottom-right). testing of APIs [1] and reverse engineering [67], remain challenging for more traditional, formal approaches [62], which rely on descriptive specifications for the API under exploration [43]. LMs, with their capacity to reason over their input contexts and interact with APIs, hold promise in such under-specified domains. Despite this potential, the ability of models to effectively explore and understand code through interaction alone is not well understood [59, 69]. To bridge this gap, we construct PAU (Python API Understanding) (Figure 1), a benchmark for interactive understanding of code APIs. Specifically, models are provided with black-box, API access to a Python method (i.e. can query with an input and observe an output, but cannot access the internal function body). The models are tasked with understanding the API enough to accurately describe the method’s true functionality in words. Strong performance requires a model to effectively explore the API with meaningfully different inputs and draw insights from the resulting outputs. Despite impressive performance on standard code-understanding benchmarks [32] even frontier models struggle on PAU , with every model (including Gemini-3-Flash [56], GPT-4o [44], Claude-4-Opus [4] and DeepSeek-V3 [15]) failing to understand over 45% of the available methods. Worryingly, providing two static input-output examples instead of interactive access to the API often leads to similar performance. This lack of improvement when models are allowed API access suggests that they fail to progressively improve their understanding over multiple rounds of interaction. An inspection of the errors reveals a consistent failure mode related to the ability of agents to evaluate their own progress. Models are often overconfident and conduct shallow exploration. When evaluating the quality of their hypotheses, they often prematurely decide that they have fully understood the API, opting to terminate without a thorough exploration of the API’s functionality. We hypothesise this problem is related to the deeper phenomena of sycophancy [18] and inflated self-judgement [38]. We establish (Section 5) that due to a lack of annotated exploration data and systematic unit tests to provide verifiable reward signals, the traditional approaches of Instruction-tuning [48] and Re-inforcement Learning from Verifiable Rewards (RLVR) [36] are inapplicable to our setting. For a solution, we take inspiration from robot learning [54] and adapt the asymmetric actor-critic (AAC) paradigm [47] to tune Language Models [74] for interactive code understanding. This paradigm is a reinforcement learning (RL) [33] framework, where the critic model generates high-quality guidance using privileged information that would not be accessible during agent deployment. Specifically, we use RL-algorithms (e.g. PPO [52]) to fine-tune a model for interactive code un-derstanding. At each step of RL-training, the agent attempts to interact with and describe its understanding of the API. Its explorations and working hypotheses are evaluated for rewards by an LM-as-a-critic. Different from distillation-based paradigms, which rely on a more powerful judge model to generate useful rewards [28, 73], our LM-as-a-critic uses the same backbone as the agent being trained and instead relies on privileged information [12] to produce valid step-level rewards. Specifically, the critic model is provided with the true description of the method that the actor is attempting to understand, allowing it to generate more precise rewards for exploration trajectories. Across multiple base models with varying scales, we show that while supervised fine-tuning has no impact on model performance, the AAC paradigm consistently improves their ability to explore an 2API and understand its functionality. An AAC-tuned Qwen3-8B model [65] matches the performance of the closed-source GPT-5-mini model, demonstrating the power of the approach. We summarize our contributions as follows: 1. The introduction of the PAU benchmark, which evaluates an agent’s ability to understand code through interaction with code APIs as opposed to evaluating their code-reading abilities. We are the first to demonstrate that while frontier models excel at understanding written code, they fail at understanding code artefacts through interaction alone. 2. An analysis of the failure modes of LM-based, interactive agents, showcasing consistent overconfidence and premature termination. These failure patterns persist across LMs of various scales and training paradigms, suggesting a limitation of current LM-based agents. 3. The translation of the Asymmetric Actor Critic paradigm from robot learning settings to Language Model-based RL. We are the first to use AAC to RL-tune LMs, and the approach’s success opens the way for its application in other domains. 
+
+# 2 Python API Understanding Benchmark 
+
+PAU is a collection of 3.9K train and 741 test instances of the form: < f, d, E context , E test >.• f : Python code implementing a method that takes input arguments and returns an output value. The declaration of every method follows the form: ‘def test_func(arg0, ...)’ to prevent the header from revealing information regarding its functionality. All methods are stateless, i.e. each call to f is processed independently, with no dependence on previous calls. • d: text of a gold description that explains the functionality of f .• Econtext = {(i1, o 1), (i2, o 2)}: exactly two valid input-output pairs for contextualization. These examples reveal some functionality of f , but do not showcase its full workings. • Etest = {i3, . . . i n}: a suite of test inputs which characterizes the functionality of f . Given a mapping ˆf , if ∀i ∈ Etest , ˆf (i) = f (i) then we consider ˆf to be functionally identical to f .During evaluation, the model starts with the header of f and Econtext (to help contextualize the possible space of input arguments). It is also given black-box, API access to f , accepting arbitrary Python tuples as input arguments and providing the returned output in response. The goal of the model is to write a description ˆd of the functionality of f .
+
+Evaluation: We adopt a multi-view perspective using reproducible open-weight models [6] to robustly evaluate the extent to which a predicted description captures the true functionality of f .LM-as-a-judge: Classic approaches to comparing strings (e.g. BLEU, etc [51]) are problematic, as descriptions of methods with opposite functionalities may have high lexical overlap (e.g. ‘True if arg0 is even’ v.s. ‘True if arg0 is odd’). We use an LM-as-a-judge [24](Llama3-70B [22]) to score the extent to which the predicted description reflects the true functionality on a Likert scale of 1-5 [37]. We conduct validation tests, confirming that the rankings between models are unaffected by the specific choice of prompt used, and the scores of our judge model show high agreement with both human judgements and labels from more powerful models (see Appendix B for details). Additionally, when we re-score the top four models (GPT-5-mini, Gemini-3-Flash, Claude-4-Sonnet, Claude-4-Opus) using frontier judges from two different providers (Gemini-3-Flash and Claude-4-Sonnet), the model ranking is unchanged, and scores drop only marginally (by 0.06 on average). Since description scores are an aggregation of LM-as-a-judge ratings, we caution against interpreting their absolute magnitude outside of the extremes, and view them primarily as a tool for ordinal comparison between models. Description-to-Code: An accurate and complete description can be used to reverse engineer the code of the method [14]. We use a dedicated coding model (Qwen3-Coder-30B-A3B [65]) to translate ˆd into a Python method ˆf and measure the ‘code match’ score, i.e., the extent to which it accurately reproduces the behavior of f on the test suite: 1
+
+> |Etest |
+
+P 
+
+> i∼Etest
+
+I[f (i) = ˆf (i)] . To verify the strength of our coding model, we compare its performance to GPT-4o when writing code for the gold descriptions . Qwen3-Coder-30B-A3B marginally outperforms GPT-4o(average code match 72.96% 3Input Generation: Act   
+
+> Let’s try
+> Another even
+> number next
+> Input Conceptualization: Reason
+> Previous
+> Examples
+> f(3) | True
+> f(6) | False
+> f(7) | True
+> Agent reasons about the next input to try
+> Current Hypothesis
+> True if odd f(2)
+> Output: True
+> Agent queries the API
+> Hypothesis Revision: Reflect
+> Previous
+> Examples
+> f(3) | True
+> f(6) | False
+> f(7) | True
+> f(2) | True
+> Revised Hypothesi s
+> True if prime?
+> Terminate?
+> Not yet
+> Agent revises hypothesis and
+> decides whether to terminate
+
+Figure 2: Orchestration structure for API understanding. Agents engage in a reason-act-reflect loop. vs 72.06%), confirming its suitability as a code-writing model. The imperfect performance of the code-writing model shows that the description-to-code task is still unsolved for the methods in PAU ,and that 100% code match is not yet attainable. Given the underspecified nature of assessing the semantic equivalence of code methods or their descriptions [9, 71], neither approach guarantees a perfect metric. However, their combination allows us to isolate strong and clear signals of differences between models and methods. 
+
+Benchmark Construction: We source the methods and gold descriptions from existing description-to-code benchmarks. For the training set, we source from Code-Alpaca [13], and for the test set, we use HumanEval [14], MBPP [7] and Crux-Eval [23]. We use string parsing and manipulation to rename the function declaration and input arguments. Finally, we prompt an LM (GPT-4o) to provide an exhaustive set of inputs that would characterize the performance of the function. We then perform multiple rounds of filtering: we remove methods that do not have at least five different test inputs and remove methods where all test inputs produce the same output. We adopt the industry gold standard for verifying that our test suite fully characterizes the functionality of each method by filtering based on statement and branch coverage [21, 75]. After filtering, the average statement/branch coverage across the test methods is over 99%, confirming that the test suites cover the functionality of the method. For exact details (exact prompts, tooling used, testbed statistics, etc.), see Appendix A. 
+
+# 3 Evaluating Models for Interactive Function Discovery 
+
+We evaluate a range of models on PAU , with different underlying training paradigms: 
+
+Instruction-tuned: Standard LMs that have been trained via pretraining, then instruction-tuning [10], and finally RL-tuning with human feedback [74]. This includes the Qwen3 model family (1.7B, 8B) and the Llama3 model family (1B, 8B, 70B). 
+
+Coding Models: LMs that have been explicitly trained for code-generation and understanding. Specifically, we use Qwen3-Coder-30B-A3B-Instruct and Qwen3-Coder-Next, a pair of strong mixture-of-experts models trained on data that includes instances of API calling. 
+
+Reasoning Models: LMs tuned with RLVR, often with a focus on mathematical reasoning, code writing and scientific understanding [15]. In particular, we benchmark the most capable open-weight models, DeepSeekV3 and Gemma4-31B [57]. 
+
+Frontier Models: State-of-the-art models from closed source providers. Information on their training regimes and scale is scarce. We use powerful models from OpenAI (GPT-4o-mini, GPT-4o, GPT-5.4-mini), Anthropic (Claude-4-Sonnet, Claude-4-Opus) and Google (Gemini-3-Flash). We evaluate each model in two different modes: 
+
+In-context: An interaction-free setting where we do not provide models with API access to f .Models must use only the two examples in Econtext to predict the functionality of f . We use this mode to quantify the added benefit of providing models with interactive API access. 
+
+Interactive: For the standard evaluation mode in PAU , we implement a fixed orchestration agentic workflow, following a step-wise ReACT paradigm [68]. The model maintains a running hypothesis regarding the method’s functionality and records the list of all observed input-output examples. The orchestration constrains the agent to alternate between three distinct phases (Figure 2): 4Llama3-1B Qwen3-1.7B Llama3-8B Qwen3-8B Qwen3-Coder-30B Gemma-4-31B Llama3-70B Qwen3-Coder-Next Deepseek GPT-4o-mini GPT-4o GPT-5-mini Gemini-3-Flash Sonnet-4 Opus-4 Max         
+
+> 025 50 75 100
+> Score Spread (%)  12345Llama3-1B Qwen3-1.7B Llama3-8B Qwen3-8B Qwen3-Coder-30B Gemma-4-31B Llama3-70B Qwen3-Coder-Next Deepseek GPT-4o-mini GPT-4o GPT-5-mini Gemini-3-Flash Sonnet-4 Opus-4 Max
+> 025 50 75 100
+> CS Spread (%)  0-19% 20-39% 40-59% 60-79% 80-100%
+
+Figure 3: Model performance on PAU in the interactive setting, with the spread of LM-as-a-judge scores (left) and code match scores (right). Each coloured bar segment represents the % of the test set for which the description score / code match score falls within that particular range. Even the best performing model (Claude-4-Opus) struggles (score 2 or lower) to accurately describe over 45% of the methods in the test set. Code written using the predicted description fails (code match score less than 80%) to completely match the true methods’ behaviour on over 45% of the methods. The ‘Max’ aggregation uses the highest available score (across all models) for a given test instance, establishing an upper bound on current model capabilities and demonstrating the difficulty of PAU .1. Next input conceptualization: The model is provided with its current hypothesis, the method header, and the observed input-output examples (initially Econtext ). The model reasons as to the properties of the input to try next, with the goal of confirming or rejecting the hypothesis. 2. Next input generation: Given all of the input information for the previous step (hypothesis, examples, header) and the output of the previous step, the model is prompted to generate a precise Python tuple that can be supplied as input to f . We obtain the return value or error using f and add these to the list of seen input-output examples 3. Hypothesis revision: Given the information for the previous steps, as well as the output to the previously predicted input to the method, the model is prompted to revise its hypothesis if needed, and if confident in its hypothesis, decide to terminate its exploration procedure. If the model does not decide to terminate (and the maximum number of iterations is not exceeded), then the model returns to step 1 with the revised hypothesis and larger input-output list. This mode allows models to act as agents, interacting with the API until they autonomously decide that they are confident in their current answer. Our choice of fixed orchestration is driven by initial results, with models struggling to properly query APIs when using open-ended agentic generation. To ensure that the performance of this approach is representative of model capabilities as a whole, we experiment with several alternate baselines in the Appendix. We find that performance is robust to the choice of prompts and does not improve when prompts include software testing-specific hints [42] (e.g. advocating for boundary-value analysis, query diversification, or providing counterexample search strategies). We also verify that alternate interaction structures and a RAG-based approach using the PAU training set achieves similar performance, establishing that the interactive setting is a sound estimate of model ability. For exact prompts and alternate baselines explored, see Appendix C. 
+
+3.1 Results 
+
+Regardless of the choice of metric, the performance of the models varies predictably with scale (Figure 3). Smaller models fail catastrophically while the most powerful, frontier models achieve moderate success (score 4 or above, code match score 60% or above) on nearly half of the test set. Encouragingly, the rankings implied by the different evaluation methods are highly correlated, with both metrics agreeing on the top models being Claude-4-Opus, followed by Claude-4-Sonnet. This agreement establishes that the multi-aspect evaluation framework identifies clear instances of model improvement. We compute the ‘Max’ performance across all models by selecting the highest score obtained by any model on a given test instance. This post-hoc ensemble still fails to fully understand 25% of the test set, establishing the difficulty of PAU . These unsolved instances are not simply impossible: they include cases where the models’ final hypotheses are contradicted by their own queries, and which annotators with graduate-level computer science training could reverse engineer through interaction alone (Appendix A.5). 5incontext interactive incontext interactive incontext interactive incontext interactive incontext interactive incontext interactive incontext interactive     
+
+> 020 40 60 80 100
+> Score Spread (%)
+> Qwen3-Coder-30B Deepseek GPT-4o GPT-5-mini Gemini-3-Flash Sonnet-4 Opus-4
+> 12345
+
+Figure 4: Comparison between the incontext and interactive setting shows that strong models like GPT-4o struggle to fully utilize the benefits of interactive API access. Only the Claude models are significantly (at p < 0.05 ) improved in the interactive mode. We find that different models find different methods challenging to understand. This can be seen in how the ‘Max’ performance is substantially higher than any one individual model. Quantitatively, the correlation between the instance-wise success rate of Gemini-3-Flash and Claude-4-Opus is 0.54 
+
+(Spearman rank correlation [55]), which falls short of strong agreement. This discrepancy suggests that each model has varying biases that prove helpful or harmful in specific instances. The result also establishes that models can hope to improve substantially on our benchmark. However, even Claude-4-Opus struggles (score 2 or lower) to accurately describe over 45% of the methods in the test set and code written using the predicted description fails (code match score less than 80%) to completely match the true methods’ behaviour on over 45% of the methods. More concerning is that most models achieve similar performance in the in-context and interactive modes. Using a paired bootstrap t-test [35], we find (Figure 4, Figure 18) no significant difference between the performance of these two settings (at p< 0.05 ) for the majority of models evaluated, with the only exceptions being GPT-5-mini, Gemini-3-Flash, DeepSeek, Claude-4-Sonnet and Claude-4-Opus, which significantly improve when given API access. However, even for these models, the degree of difference is marginal. This result also holds for reasoning and code-generation models, which are specifically trained to use tool calls or APIs. The equivalence in performance with and without interaction suggests that most LMs do not effectively use the tool (API) at their disposal to improve their predicted descriptions. Overall, our experiments establish that PAU is challenging for the strongest of models. This poor performance demonstrates that, despite their ability to understand code when provided the text of the function, models struggle to understand code artifacts from their input-output behavior alone. 
+
+# 4 Error Analysis 
+
+Having seen that models are unable to efficiently explore the PAU APIs and determine their true functionality, we perform a qualitative analysis of the successes and failures of various models. Our analysis reveals consistent patterns across models, with specific examples in Appendix C. To quantify these patterns, we use an LM agent (Claude Code [3]) to classify every failed trajectory of the three strongest models (Claude-4-Sonnet, Claude-4-Opus and Gemini-3-Flash) into one of five categories: format following, hallucination, reasoning errors, insufficient exploration and other (Figure 5). 
+
+Format Following : In order to pass inputs into the API, the LM agent must output a valid Python expression that is evaluated and provided as input arguments to the method. When an LM generates invalid expressions that violate some aspect of Python syntax, we consider this a format following error. While the smallest models in our test suite (Qwen3-1.7B, Llama3-1B, etc) will often fail in this regard, we confirm that the majority of the larger models generate only valid input tuples and do not 6Insufficient Exploration 48.7% Reasoning Errors 43.3%  
+
+> Other 7.3%
+
+Figure 5: Distribution of failure modes for the three strongest models. Insufficient exploration and reasoning errors account for over 90% of failures. Format following (0.0%) and hallucination (0.7%) errors are virtually absent at this scale and are omitted. make format following errors, with none of the failures of the three strongest models attributable to format following. 
+
+Hallucination: In the hypothesis revision stage, the LM must parse the set of input-output examples it has seen, reason over the patterns they imply, and update its running hypothesis. If the LM’s reasoning contains references to fabricated input-output examples that it had not seen, we consider it a case of hallucination. Similar to the format following, we observe this trend only in smaller models, with the reasoning chains of more powerful models being consistent with the examples seen and largely free of hallucinations (0.7% of the failures of the three strongest models). 
+
+Reasoning Errors: In the hypothesis revision stage, the model must determine whether its current hypothesis is satisfactory, and terminate if it is confident. A necessary (but not sufficient) condition for a hypothesis to be sound is that it must fit all of the examples the agent has seen so far. If the agent decides to stop exploring when its current hypothesis does not fit one of the examples it has already seen, we consider it a failure in reasoning and refer to it as overconfidence. We observe consistent overconfidence in small (lower than 4B) and medium-scale models (smaller than 30B), with models often accepting hypotheses that are contradicted by the very examples they have already seen. While this variant of error decreases with scale and reasoning training, it remains pervasive even in the most powerful models, accounting for 43.3% of the failures of the three strongest models. For example, when exploring a method that returns True iff an uppercase letter is preceded by a lowercase one, Claude-4-Opus observed (‘ABC’,) → False, yet concluded that the method ‘returns True if the string contains at least one uppercase letter’, a hypothesis refuted by an example still visible in its context (Appendix A.5). The persistence of this tendency across all models suggests that it is an artifact of more fundamental design decisions in the training of LMs. We posit that this failure occurs due to the tendencies of LMs to lean towards ‘positive’ or ‘affirmatory’ language, i.e., sycophancy [18]. Results from verbalised uncertainty quantification also support the claim that LMs are overconfident regarding their decisions [63], a limitation which may have wide-ranging implications for LM-based agents. 
+
+Insufficient Exploration: While the above failures occur less as models grow more powerful, we identify a common failure mode that persists with scale, and is the single largest source of failure (48.7%) for the three strongest models. While exploring APIs, LMs do not actively seek to try inputs that could falsify their current hypothesis or test the edge cases of their hypothesis. This behavioural trait leads to insufficient diversity in attempted inputs, which results in partially correct hypotheses that miss major aspects of an API’s functionality. Unlike human software engineers, who often test systems by evaluating edge cases and unexpected inputs [20], even the most powerful LMs opt for more standard inputs. We consider the selection of strategic exploratory inputs to be the most challenging aspect of the API understanding task, requiring the ability to think creatively about the space of possible methods behind the black-box API [42]. 
+
+# 5 Asymmetric Actor Critic for Interactive Code API Understanding 
+
+Seeing that models lack the capability to properly explore black-box code APIs, we search for a training paradigm that can imbue them with this ability. The PAU training set, which matches the structure of the test set (but uses different Python methods), could help facilitate this learning. 7Previous   
+
+> Examples
+> f(b) | True
+> f(d) | True
+> f(f) | True
+> Agent Attempts
+> Exploratio n
+> Let’s try
+> ‘k’ next!
+> RL-Tuning with Asymmetric Actor Critic
+> Learning Agent Environment
+> Action
+> Critic w Privileged Info
+> True Description
+> Rewards
+> True Description
+> Checks if input
+> is a consonant
+> Bad idea.
+> Must try
+> vowels.
+> Reward: -1
+> Asymmetric
+> Critic
+> Determines
+> Reward
+
+Figure 6: Overview of RL-Tuning with Asymmetric Actor Critic. At each step of training, the agent’s actions are rewarded by a critic that is aware of the gold description which the agent is trying to infer. We first evaluate whether the standard paradigm of supervised fine-tuning can help improve models on this task. Specifically, we fine-tune base models (Qwen3-1.7B, Qwen3-8B, Llama3-8B) on the 
+
+PAU training set, tuning them to perform description prediction in the in-context mode, i.e. without interactive API access. While we should not expect substantial improvements (consider the example in Figure 1, which can never be reliably resolved without additional interaction), such a fine-tuning process may improve the first guess of the model (based on the two provided examples) and could lead to a minor increase in performance. Unfortunately, we observe no such improvement, with all fine-tuned models performing worse than the base models (in the incontext setting). We identify the core hurdle as the lack of dense, step-wise supervision. An ideal dataset for supervised finetuning shows the model examples of useful, exploratory inputs being attempted and the ideal inferences to draw from the results. However, such a dataset does not exist, and would be prohibitively expensive to collect from human annotation [5]. More recent RL paradigms, such as Reinforcement Learning with Verifiable Rewards [15], are also challenging to apply in this setting. Unlike an agent writing code (which can be verified with external unit tests), there is no verifiable way to evaluate whether a particular input was ‘good’ for the purpose of exploring the API’s functionality. For a solution, we take inspiration from works in robot learning, which pioneer the paradigm of Asymmetric Actor Critic methods for Reinforcement Learning [47, 8]. Traditionally, these methods involve training an agent to optimize rewards as determined by a critic model. The critic model is not necessarily more powerful than the agent (in terms of computational capacity), but rather uses privileged information that the agent does not have to produce enhanced reward signals [12, 27]. For example, Pinto et al. [47] train an agent for pick-and-place manipulation from RGB observations. During training, the critic is given access to full-simulator information such as the ground truth coordinates of the target object, enabling more effective learning. Such a paradigm enables RL algorithms to use information that may be available only during training to enhance the reward signal conveyed to the agent. We adapt this paradigm to our task, and, in doing so, introduce the first successful instantiation of the AAC paradigm for RL-tuning of LMs. We create environments (Figure 6) where the agent attempts to explore method APIs from the PAU 
+
+train set in the interactive setting. At each step, the agent’s actions are rewarded or penalised by a critic that is aware of the gold description which the agent is trying to infer. The critic is frozen over the course of training and uses the same base LM as the agent, obviating concerns that performance improvements are a result of distillation from a more powerful critic model. We design a reward schedule which combines parsing-based reward signals and critic-based rewards to incentivise both format following and deeper exploration. Specifically, in the ‘input conceptualization’ step, we penalize overly long generations and reward the agent if the conceived input is judged to be an effective test of the current hypothesis. For the ‘input generation’ step, we penalize the agent if it generates an input that is not a valid Python tuple or causes an error when used to query the method. Finally, for the ‘hypothesis revision’ step, the rewards depend on the agent’s decision to terminate or continue exploration. If the agent’s current hypothesis is judged to be accurate, then the agent is penalized for continuing exploration, and if the agent’s current hypothesis is judged as inaccurate, the agent is rewarded for continuing exploration. Given these environments, we train the base agent with GRPO [74] for a maximum of five epochs, selecting the best checkpoint as judged by average validation-set reward. For exact reward scales, hyperparameters and details, see Appendix D. 85.1 Results 
+
+Across all base models (Figure 6, left, middle), RL-tuning under the AAC paradigm increases the average score ( +0 .13 ) and average code match score ( +6 .27% ). The AAC-tuned Qwen3-8B model achieves a description score of 2.591 , rivalling the 2.595 achieved by GPT-5-mini (all results are significant at p<0.05, with a paired bootstrapped t-test). When we use the RL-tuned models in the 
+
+in-context mode, performance is comparable to the base models. This discrepancy implies that the performance increase from RL-tuning does not come from the model becoming better at making initial guesses about the API’s functionality, but rather from more effective exploration and reasoning about outputs. We also investigate the qualitative effects of AAC-tuning on API exploration: Qwen3-1.7B Llama3-8B Qwen3-8B 
+
+> 012
+> Description Score Qwen3-1.7B Llama3-8B Qwen3-8B
+> 020 40
+> Code Score (%)
+> Setting
+> base AAC Qwen3-1.7B Llama3-8B Qwen3-8B
+> 010 20
+> # Queries
+
+Figure 7: RL-tuning with AAC makes models better able to explore APIs and understand their functionality (left, middle), significant at p < 0.05 with a bootstrap t-test. The AAC-tuned Qwen3-8B model achieves a description score of 2.591 , rivalling the 2.595 achieved by GPT-5-mini. AAC-tuned models make fewer format-following errors and more actively explore the API (right). 
+
+Format Following: Smaller base models (e.g. Qwen3-1.7B) struggle with following the formatting instructions of the exploration steps and suggest invalid Python tuple expressions as inputs to the API. Due to the environmental reward provided in our training, the RL-tuned variants do not exhibit this behavior and are nearly flawless at generating valid Python expressions with which to query the API. 
+
+Deeper Exploration: Base models often tend to be overconfident in their current hypothesis and terminate their exploration prematurely. As per our reward schedule, an agent which decides to prematurely terminate is penalised by the critic. This incentivises deeper exploration, and as a result, the RL-tuned models learn to query the API more often, with diverse inputs (Figure 6, right). We highlight the generality of the Asymmetric Actor Critic paradigm. Several unverifiable tasks, such as creative essay writing, automated data analysis, and strategic decision making, are ones where the final solution to a problem is known; however, the reasoning steps between the problem and solution are hard to annotate or create precise reward signals for. The success of AAC on our task suggests that the method holds promise in such unverifiable domains by leveraging a critic with knowledge of the final solution to provide useful step-level reward signals for optimization. 
+
+# 6 Related Work 
+
+With LMs becoming increasingly proficient at tool-use [26, 45, 29], recent benchmarks measure their ability to effectively use growing and diverse libraries of tools [17]. While existing work measures the abilities of models to effectively use tools [25, 16] in dynamic contexts [70, 58], there is limited work on understanding how tools or APIs function through interaction alone. Traditional approaches to black box understanding of APIs come from literature on software testing [46]. Classic methods require specification of input and output constraints that an API must follow [42]. While such methods can provide powerful formal guarantees [62], they are inapplicable to settings where the APIs do not come with sufficient specifications [43]. Follow-up works seek to learn such specifications through interaction [50], however, even in these cases, the exploratory inputs used to discover these specifications are generated from API-specific interface descriptions. Other approaches instead enumerate a variety of possible specifications and perform motivated testing to check whether specific invariants hold over various inputs to the API [1]. Concurrent work has begun exploring the feasibility of applying LMs to black box API discovery, for example, Yang et al. [67] use LMs and graph algorithms to discover details about a web API from its runtime traffic logs. Most similar to our work are Geng et al. [19] and Wei et al. [61], which evaluate the ability of LMs to reverse engineer Python methods from interaction with a method API or input-output examples. Prior 9work either adopts a fundamentally different paradigm that does not isolate the failures that PAU 
+
+does, or adopts a similar framework but tests on functions that are already discoverable by existing systems. Wei et al. [61] follow prior work on active learning [2] and use an oracle that, with knowledge of the true function, provides counterexamples to each proposed hypothesis and decides when to terminate. This exports the two dominant failure modes we identify (Section 4), devising exploratory inputs and judging when to stop, to the oracle, and is an unrealistic model of APIs in the wild. Fine-tuning on their answer-aware trajectories is also harmful in our setting (Appendix D.3). The setup of Geng et al. [19] is similar to PAU , but their test set is limited to 100 list-mapping programs that implement a lambda expression, where the query is a list of integers and the response is an integer. Compared to PAU , which involves a varying number of input arguments, diverse input and output types, and more complex internal logic, this test set lacks scale and diversity of inputs, outputs and functionality. More importantly, it is no longer challenging for frontier LMs: when we run the 80 unique programs from Geng et al. [19] in the PAU interactive setting, Gemini-3-Pro [56] achieves a description score of 4.13/5, with a perfect score on 87.5% of the programs. Neither of these works proposes a solution to the problems they set up, while we show that our novel adaptation of the AAC paradigm can improve the ability of models to perform interactive API understanding. 
+
+# 7 Limitations and Ethical Considerations 
+
+As a benchmark for Python API methods, our work does not evaluate the entire range of possible black-box APIs, with important code-related functionality (such as memory management) not evaluated due to its reduced importance in Python. We additionally only use stateless methods in our benchmark, a simplification of the interactive code understanding problem. Despite these decisions, our evaluations demonstrate the difficulty of PAU , suggesting that even simple instantiations of interactive code understanding are challenging for frontier LMs. Similarly, since the test methods are sourced from popular code benchmarks, they may have been exposed during LM pre-training (see Appendix A.4). We believe that these factors only accentuate the surprise of our findings: even stateless, potentially pre-exposed functions behind simple APIs cannot be reliably understood through black-box interaction. We view solving PAU as a necessary, but not sufficient, prerequisite for agents that can understand code through black-box interaction alone. Just as simple code synthesis benchmarks like HumanEval [14] and MBPP [7] helped build the scaffold for systems that eventually perform well on sophisticated testbeds like SWE-Bench [32], we hope that PAU will serve as a fundamental testing ground for black-box understanding of code, enabling rapid iteration on methods that will prove useful for more complex and realistic settings. While interactive code understanding is a capability that underlies fundamental workflows in software engineering [34], the applications of this skill include reverse engineering of proprietary APIs [53]. Our results establish that reverse engineering of sophisticated APIs through interaction alone is likely out of the capabilities of existing models. However, a stronger generation of models may enable actors to illicitly extract private code, and must be considered when developing models capable of deep exploration and interactive understanding. 
+
+# 8 Conclusion 
+
+In this work, we introduce the PAU benchmark, a testbed for interactive understanding of code APIs. We demonstrate that despite the impressive performance of coding agents on standard code understanding benchmarks, they consistently fail on PAU , with no model able to understand more than 45% of the test APIs. Our analysis reveals the consistent failure modes of overconfidence and premature termination of exploration, a problem that persists across various LMs with different training paradigms, suggesting a more fundamental limitation of LM-based agents. Finally, we adapt the Asymmetric Actor Critic paradigm from robot learning to RL-tuning of LMs for interactive code understanding, leading to models that conduct more active exploration of APIs and prove more capable at understanding their functionality. 10 References 
+
+[1] J. C. Alonso, S. Segura, and A. Ruiz-Cortés. Agora: automated generation of test oracles for rest apis. In Proceedings of the 32nd ACM SIGSOFT International Symposium on Software Testing and Analysis , pages 1018–1030, 2023. [2] D. Angluin. Learning regular sets from queries and counterexamples. Inf. Comput. , 75:87–106, 1987. URL https://api.semanticscholar.org/CorpusID:11873053 .[3] Anthropic. Claude code: An agentic tool for software engineering, 2025. URL https: //www.anthropic.com/claude-code . Version 2.x. [4] Anthropic. Introducing claude opus 4.7. https://www.anthropic.com/news/ claude-opus-4-7 , April 2026. Accessed: 2026-04-24. [5] D. Ashok and J. May. A little human data goes a long way. In W. Che, J. Nabende, E. Shutova, and M. T. Pilehvar, editors, Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers) , pages 381–413, Vienna, Austria, July 2025. Association for Computational Linguistics. ISBN 979-8-89176-252-7. doi: 10.18653/v1/ 2025.acl-short.30. URL https://aclanthology.org/2025.acl-short.30/ .[6] B. Atıl, S. Aykent, A. Chittams, L. Fu, R. J. Passonneau, E. Radcliffe, G. R. Rajagopal, A. Sloan, T. Tudrej, F. Ture, Z. Wu, L. Xu, and B. Baldwin. Non-determinism of “deterministic” LLM system settings in hosted environments. In M. Akter, T. Chowdhury, S. Eger, C. Leiter, J. Opitz, and E. Çano, editors, Proceedings of the 5th Workshop on Evaluation and Comparison of NLP Systems , pages 135–148, Mumbai, India, Dec. 2025. Association for Computational Linguistics. ISBN 979-8-89176-305-0. doi: 10.18653/v1/2025.eval4nlp-1.12. URL https: //aclanthology.org/2025.eval4nlp-1.12/ .[7] J. Austin, A. Odena, M. Nye, M. Bosma, H. Michalewski, D. Dohan, E. Jiang, C. Cai, M. Terry, Q. Le, et al. Program synthesis with large language models. arXiv preprint arXiv:2108.07732 ,2021. [8] A. Baisero and C. Amato. Unbiased asymmetric reinforcement learning under partial ob-servability. In Adaptive Agents and Multi-Agent Systems , 2021. URL https://api. semanticscholar.org/CorpusID:246430620 .[9] F. Brooks and H. Kugler. No silver bullet . April, 1987. [10] T. B. Brown. Language models are few-shot learners. arXiv preprint arXiv:2005.14165 , 2020. [11] D. Brumley. What we know about Copy Fail (CVE-2026-31431), April 2026. URL https:// www.bugcrowd.com/blog/what-we-know-about-copy-fail-cve-2026-31431/ . Ac-cessed: 2026-05-05. [12] Y. Cai, X. Liu, A. Oikonomou, and K. Zhang. Provable partially observable reinforcement learn-ing with privileged information. In The Thirty-eighth Annual Conference on Neural Information Processing Systems , 2024. URL https://openreview.net/forum?id=o3i1JEfzKw .[13] S. Chaudhary. Code alpaca: An instruction-following llama model for code generation. https: //github.com/sahil280114/codealpaca , 2023. [14] M. Chen, J. Tworek, H. Jun, Q. Yuan, H. P. D. O. Pinto, J. Kaplan, H. Edwards, Y. Burda, N. Joseph, G. Brockman, et al. Evaluating large language models trained on code. arXiv preprint arXiv:2107.03374 , 2021. [15] DeepSeek-AI, D. Guo, D. Yang, H. Zhang, J.-M. Song, R. Zhang, R. Xu, Q. Zhu, S. Ma, P. Wang, X. Bi, X. Zhang, X. Yu, Y. Wu, Z. F. Wu, Z. Gou, Z. Shao, Z. Li, et al. Deepseek-r1 incentivizes reasoning in llms through reinforcement learning. Nature , 645:633 – 638, 2025. URL https://api.semanticscholar.org/CorpusID:275789950 .[16] Z. Dong, R. Gong, Y. Yong, S. Wu, Y. Yao, S.-L. Chen, and X.-C. Yin. Tool playgrounds: A comprehensive and analyzable benchmark for llm tool invocation. ICASSP 2025 - 2025 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , pages 1–5, 2025. URL https://api.semanticscholar.org/CorpusID:276979188 .11 [17] B. Elder, A. Murthi, J. Kang, A. Naik, K. Basu, K. Kate, and D. Contractor. Live API-bench: 2500+ live APIs for testing multi-step tool calling. In V. Demberg, K. Inui, and L. Marquez, editors, Proceedings of the 19th Conference of the European Chapter of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 3092–3124, Rabat, Morocco, Mar. 2026. Association for Computational Linguistics. ISBN 979-8-89176-380-7. doi: 10.18653/v1/ 2026.eacl-long.143. URL https://aclanthology.org/2026.eacl-long.143/ .[18] A. Fanous, J. Goldberg, A. Agarwal, J. Lin, A. Zhou, S. Xu, V. Bikia, R. Daneshjou, and S. Koyejo. Syceval: Evaluating llm sycophancy. In Proceedings of the AAAI/ACM Conference on AI, Ethics, and Society , volume 8, pages 893–900, 2025. [19] J. Geng, H. Chen, D. Arumugam, and T. L. Griffiths. Are large language models reliable ai scientists? assessing reverse-engineering of black-box systems. In LLM for Scientific Discovery: Reasoning, Assistance, and Collaboration , 2025. [20] P. Godefroid, M. Y. Levin, D. A. Molnar, et al. Automated whitebox fuzz testing. In Ndss ,volume 8, pages 151–166, 2008. [21] J. Goodenough and S. L. Gerhart. Toward a theory of test data selection. IEEE Transactions on Software Engineering , SE-1:156–173, 1975. URL https://api.semanticscholar.org/ CorpusID:374434 .[22] A. Grattafiori, A. Dubey, A. Jauhri, A. Pandey, A. Kadian, A. Al-Dahle, A. Letman, A. Mathur, A. Schelten, A. Vaughan, et al. The llama 3 herd of models. arXiv preprint arXiv:2407.21783 ,2024. [23] A. Gu, B. Roziere, H. J. Leather, A. Solar-Lezama, G. Synnaeve, and S. Wang. CRUXEval: A benchmark for code reasoning, understanding and execution. In ICLR 2024 Workshop on Navigating and Addressing Data Problems for Foundation Models , 2024. URL https: //openreview.net/forum?id=DDtzzyEgQq .[24] J. Gu, X. Jiang, Z. Shi, H. Tan, X. Zhai, C. Xu, W. Li, Y. Shen, S. Ma, H. Liu, et al. A survey on llm-as-a-judge. The Innovation , 2024. [25] Z. Guo, S. Cheng, H. Wang, S. Liang, Y. Qin, P. Li, Z. Liu, M. Sun, and Y. Liu. Stabletoolbench: Towards stable large-scale benchmarking on tool learning of large language models, 2024. [26] S. Hao, T. Liu, Z. Wang, and Z. Hu. Toolkengpt: Augmenting frozen language models with massive tools via tool embeddings. In A. Oh, T. Naumann, A. Glober-son, K. Saenko, M. Hardt, and S. Levine, editors, Advances in Neural Informa-tion Processing Systems , volume 36, pages 45870–45894. Curran Associates, Inc., 2023. URL https://proceedings.neurips.cc/paper_files/paper/2023/file/ 8fd1a81c882cd45f64958da6284f4a3f-Paper-Conference.pdf .[27] E. S. Hu, J. Springer, O. Rybkin, and D. Jayaraman. Privileged sensing scaffolds reinforcement learning. In The Twelfth International Conference on Learning Representations , 2024. URL 
+
+https://openreview.net/forum?id=EpVe8jAjdx .[28] T. Huang, S. You, F. Wang, C. Qian, and C. Xu. Knowledge distillation from a stronger teacher. In A. H. Oh, A. Agarwal, D. Belgrave, and K. Cho, editors, Advances in Neural Information Processing Systems , 2022. URL https://openreview.net/forum?id=157Usp_kbi .[29] T. Huang, D. Jung, V. Kumar, M. Kachuee, X. Li, P. Xu, and M. Chen. Planning and editing what you retrieve for enhanced tool learning. In K. Duh, H. Gomez, and S. Bethard, editors, 
+
+Findings of the Association for Computational Linguistics: NAACL 2024 , pages 975–988, Mexico City, Mexico, June 2024. Association for Computational Linguistics. doi: 10.18653/v1/ 2024.findings-naacl.61. URL https://aclanthology.org/2024.findings-naacl.61/ .[30] D. Jacobson, G. Brail, and D. Woods. APIs: A strategy guide . " O’Reilly Media, Inc.", 2012. [31] N. Jain, K. Han, A. Gu, W.-D. Li, F. Yan, T. Zhang, S. Wang, A. Solar-Lezama, K. Sen, and I. Stoica. Livecodebench: Holistic and contamination free evaluation of large language models for code. In The Thirteenth International Conference on Learning Representations , 2025. URL 
+
+https://openreview.net/forum?id=chfJJYC3iL .12 [32] C. E. Jimenez, J. Yang, A. Wettig, S. Yao, K. Pei, O. Press, and K. R. Narasimhan. SWE-bench: Can language models resolve real-world github issues? In The Twelfth International Conference on Learning Representations , 2024. URL https://openreview.net/forum? id=VTF8yNQM66 .[33] L. P. Kaelbling, M. L. Littman, and A. W. Moore. Reinforcement learning: A survey. Journal of artificial intelligence research , 4:237–285, 1996. [34] M. B. Kery and B. A. Myers. Exploring exploratory programming. In 2017 IEEE Symposium on Visual Languages and Human-Centric Computing (VL/HCC) , pages 25–29. IEEE, 2017. [35] P. Koehn. Statistical significance tests for machine translation evaluation. In D. Lin and D. Wu, editors, Proceedings of the 2004 Conference on Empirical Methods in Natural Language Processing , pages 388–395, Barcelona, Spain, July 2004. Association for Computational Linguistics. URL https://aclanthology.org/W04-3250/ .[36] N. Lambert, J. Morrison, V. Pyatkin, S. Huang, H. Ivison, F. Brahman, L. J. V. Miranda, A. Liu, N. Dziri, X. Lyu, Y. Gu, S. Malik, V. Graf, J. D. Hwang, J. Yang, R. L. Bras, O. Tafjord, C. Wilhelm, L. Soldaini, N. A. Smith, Y. Wang, P. Dasigi, and H. Hajishirzi. Tulu 3: Pushing frontiers in open language model post-training. In Second Conference on Language Modeling ,2025. URL https://openreview.net/forum?id=i1uGbfHHpH .[37] R. Likert. A technique for the measurement of attitudes. Archives of psychology , 1932. [38] J. Lu, K. Ma, K. Wang, K. Xiao, R. K.-W. Lee, B. Xu, L. Yang, and H. Lin. Is LLM an overconfident judge? unveiling the capabilities of LLMs in detecting offensive language with annotation disagreement. In W. Che, J. Nabende, E. Shutova, and M. T. Pilehvar, editors, 
+
+Findings of the Association for Computational Linguistics: ACL 2025 , pages 5609–5626, Vienna, Austria, July 2025. Association for Computational Linguistics. ISBN 979-8-89176-256-5. doi: 10.18653/v1/2025.findings-acl.293. URL https://aclanthology.org/2025. findings-acl.293/ .[39] T. Mammadov, D. Klakow, A. Koller, and A. Zeller. Learning program behavioral models from synthesized input-output pairs. ACM Transactions on Software Engineering and Methodology ,2024. [40] L. Mei, J. Yao, Y. Ge, Y. Wang, B. Bi, Y. Cai, J. Liu, M. Li, Z.-Z. Li, D. Zhang, et al. A survey of context engineering for large language models. arXiv preprint arXiv:2507.13334 , 2025. [41] Microsoft Defender Security Research Team. CVE-2026-31431: Copy Fail vulnerability enables Linux root privilege escalation across cloud environments, May 2026. URL https: //tinyurl.com/udykzdwa . Accessed: 2026-05-05. [42] G. J. Myers, T. Badgett, T. M. Thomas, and C. Sandler. The art of software testing , volume 2. Wiley Online Library, 2004. [43] D. Neider and R. Roy. What is formal verification without specifications? a survey on mining ltl specifications. In Principles of Verification: Cycling the Probabilistic Landscape: Essays Dedicated to Joost-Pieter Katoen on the Occasion of His 60th Birthday, Part III , pages 109–125. Springer, 2024. [44] OpenAI. Hello gpt-4o. https://openai.com/index/hello-gpt-4o/ , May 2024. Ac-cessed: 2026-04-24. [45] S. G. Patil, T. Zhang, X. Wang, and J. E. Gonzalez. Gorilla: Large language model connected with massive APIs. In The Thirty-eighth Annual Conference on Neural Information Processing Systems , 2024. URL https://openreview.net/forum?id=tBRNC6YemY .[46] D. Peled, M. Y. Vardi, and M. Yannakakis. Black box checking. Journal of Automata, Languages and Combinatorics , 7(2):225–246, 2001. [47] L. Pinto, M. Andrychowicz, P. Welinder, W. Zaremba, and P. Abbeel. Asymmetric actor critic for image-based robot learning. arXiv preprint arXiv:1710.06542 , 2017. 13 [48] C. Raffel, N. Shazeer, A. Roberts, K. Lee, S. Narang, M. Matena, Y. Zhou, W. Li, and P. J. Liu. Exploring the limits of transfer learning with a unified text-to-text transformer. Journal of machine learning research , 21(140):1–67, 2020. [49] P. Sahoo, A. K. Singh, S. Saha, V. Jain, S. Mondal, and A. Chadha. A systematic survey of prompt engineering in large language models: Techniques and applications. arXiv preprint arXiv:2402.07927 , 1, 2024. [50] S. Sankaranarayanan, F. Ivancic, and A. Gupta. Mining library specifications using inductive logic programming. 2008 ACM/IEEE 30th International Conference on Software Engineering ,pages 131–140, 2008. URL https://api.semanticscholar.org/CorpusID:14607282 .[51] P. Schmidtova, S. Mahamood, S. Balloccu, O. Dusek, A. Gatt, D. Gkatzia, D. M. Howcroft, O. Platek, and A. Sivaprasad. Automatic metrics in natural language generation: A survey of current evaluation practices. In S. Mahamood, N. L. Minh, and D. Ippolito, editors, Proceedings of the 17th International Natural Language Generation Conference , pages 557–583, Tokyo, Japan, Sept. 2024. Association for Computational Linguistics. doi: 10.18653/v1/2024.inlg-main. 44. URL https://aclanthology.org/2024.inlg-main.44/ .[52] J. Schulman, F. Wolski, P. Dhariwal, A. Radford, and O. Klimov. Proximal policy optimization algorithms. arXiv preprint arXiv:1707.06347 , 2017. [53] A. Shatnawi, A.-D. Seriai, H. Sahraoui, and Z. Alshara. Reverse engineering reusable software components from object-oriented apis. Journal of Systems and Software , 131:442–460, 2017. [54] B. Siciliano, O. Khatib, and T. Kröger. Springer handbook of robotics , volume 200. Springer, 2008. [55] C. Spearman. The proof and measurement of association between two things. 1961. [56] G. Team, P. Georgiev, V. I. Lei, R. Burnell, L. Bai, A. Gulati, G. Tanzer, D. Vincent, Z. Pan, S. Wang, et al. Gemini 1.5: Unlocking multimodal understanding across millions of tokens of context. arXiv preprint arXiv:2403.05530 , 2024. [57] G. Team, T. Mesnard, C. Hardin, R. Dadashi, S. Bhupatiraju, S. Pathak, L. Sifre, M. Rivière, M. S. Kale, J. Love, et al. Gemma: Open models based on gemini research and technology. 
+
+arXiv preprint arXiv:2403.08295 , 2024. [58] H. Trivedi, T. Khot, M. Hartmann, R. Manku, V. Dong, E. Li, S. Gupta, A. Sabharwal, and N. Balasubramanian. AppWorld: A controllable world of apps and people for benchmarking interactive coding agents. In L.-W. Ku, A. Martins, and V. Srikumar, editors, Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 16022–16076, Bangkok, Thailand, Aug. 2024. Association for Computational Linguistics. doi: 10.18653/v1/2024.acl-long.850. URL https://aclanthology.org/2024. acl-long.850/ .[59] Y. Wang, Y. Zhang, Z. Qin, C. Zhi, B. Li, F. Huang, Y. Li, and S. Deng. ExploraCoder: Advancing code generation for multiple unseen APIs via planning and chained exploration. In W. Che, J. Nabende, E. Shutova, and M. T. Pilehvar, editors, Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 18124–18145, Vienna, Austria, July 2025. Association for Computational Linguistics. ISBN 979-8-89176-251-0. doi: 10.18653/v1/2025.acl-long.887. URL https://aclanthology. org/2025.acl-long.887/ .[60] Z. Z. Wang, A. Asai, X. V. Yu, F. F. Xu, Y. Xie, G. Neubig, and D. Fried. CodeRAG-bench: Can retrieval augment code generation? In L. Chiruzzo, A. Ritter, and L. Wang, editors, 
+
+Findings of the Association for Computational Linguistics: NAACL 2025 , pages 3199–3214, Albuquerque, New Mexico, Apr. 2025. Association for Computational Linguistics. ISBN 979-8-89176-195-7. doi: 10.18653/v1/2025.findings-naacl.176. URL https://aclanthology. org/2025.findings-naacl.176/ .14 [61] A. Wei, T. Suresh, J. Cao, N. Kannan, Y. Wu, K. Yan, T. S. F. X. Teixeira, K. Wang, and A. Aiken. CodeARC: Benchmarking reasoning capabilities of LLM agents for inductive program synthesis. In Second Conference on Language Modeling , 2025. URL https:// openreview.net/forum?id=Q5pVZCrrKr .[62] J. Woodcock, P. G. Larsen, J. Bicarregui, and J. Fitzgerald. Formal methods: Practice and experience. ACM computing surveys (CSUR) , 41(4):1–36, 2009. [63] M. Xiong, Z. Hu, X. Lu, Y. LI, J. Fu, J. He, and B. Hooi. Can LLMs express their uncertainty? an empirical evaluation of confidence elicitation in LLMs. In The Twelfth International Con-ference on Learning Representations , 2024. URL https://openreview.net/forum?id= gjeQKFxFpZ .[64] C. Xu, S. Guan, D. Greene, M. Kechadi, et al. Benchmark data contamination of large language models: A survey. arXiv preprint arXiv:2406.04244 , 2024. [65] A. Yang, A. Li, B. Yang, B. Zhang, B. Hui, B. Zheng, B. Yu, C. Gao, C. Huang, C. Lv, et al. Qwen3 technical report. arXiv preprint arXiv:2505.09388 , 2025. [66] J. Yang, A. Prabhakar, K. R. Narasimhan, and S. Yao. Intercode: Standardizing and benchmarking interactive coding with execution feedback. In Thirty-seventh Conference on Neural Information Processing Systems Datasets and Benchmarks Track , 2023. URL 
+
+https://openreview.net/forum?id=fvKaLF1ns8 .[67] Y. Yang, C. Zhong, K. Han, Z. Cheng, J. Xu, X. Zhou, H. Zhang, and B. Liu. Apisensor: Robust discovery of web api from runtime traffic logs. arXiv preprint arXiv:2603.23852 , 2026. [68] S. Yao, J. Zhao, D. Yu, I. Shafran, K. R. Narasimhan, and Y. Cao. React: Synergizing reasoning and acting in language models. In NeurIPS 2022 Foundation Models for Decision Making Workshop , 2022. URL https://openreview.net/forum?id=tvI4u1ylcqs .[69] C. Yin, T. Wu, Y. Shu, A. Gu, Y. H. Wang, J. Shao, xun jiang, and P. Li. Investigating advanced reasoning of large language models via black-box interaction, 2026. URL https: //openreview.net/forum?id=IGMX4Ybjs9 .[70] P. Yu, W. Liu, Y. Yang, J. Li, Z. Zhang, X. Feng, and feng zhang. Benchmarking LLM tool-use in the wild. In The Fourteenth International Conference on Learning Representations , 2026. URL https://openreview.net/forum?id=yz7fL5vfpn .[71] L. Zeng, F. Che, X. Huang, F. Ye, X. Xu, B. Yuan, and J. Fu. Veriequivbench: An equiv-alence score for ground-truth-free evaluation of formally verifiable code. arXiv preprint arXiv:2510.06296 , 2025. [72] Y. Zhang, M. Li, D. Long, X. Zhang, H. Lin, B. Yang, P. Xie, A. Yang, D. Liu, J. Lin, et al. Qwen3 embedding: Advancing text embedding and reranking through foundation models. arXiv preprint arXiv:2506.05176 , 2025. [73] L. Zheng, W.-L. Chiang, Y. Sheng, S. Zhuang, Z. Wu, Y. Zhuang, Z. Lin, Z. Li, D. Li, E. Xing, H. Zhang, J. E. Gonzalez, and I. Stoica. Judging LLM-as-a-judge with MT-bench and chatbot arena. In Thirty-seventh Conference on Neural Information Processing Systems Datasets and Benchmarks Track , 2023. URL https://openreview.net/forum?id=uccHPGDlao .[74] R. Zheng, S. Dou, S. Gao, Y. Hua, W. Shen, B. Wang, Y. Liu, S. Jin, Q. Liu, Y. Zhou, et al. Secrets of rlhf in large language models part i: Ppo. arXiv preprint arXiv:2307.04964 , 2023. [75] H. Zhu, P. A. Hall, and J. H. May. Software unit test coverage and adequacy. Acm computing surveys (csur) , 29(4):366–427, 1997. 15 A Python API Understanding Benchmark 
+
+A.1 Source datasets PAU consists of 3.9K train and 741 test instances, with their function bodies sourced from pre-existing benchmarks: 
+
+HumanEval consists of 164 hand-written Python programming problems released by OpenAI [14]. Each task includes a function signature, docstring, body, and unit tests, specifically designed to evaluate a model’s ability to solve self-contained algorithmic challenges. It is released under the MIT License. 
+
+MBPP (Mostly Basic Python Problems) contains 974 crowd-sourced tasks curated by Google Research [7]. These problems are designed for entry-level programmers and include a natural language description, a reference solution, and three automated test cases to verify functional correctness. It is released under the CC-BY 4.0 license. 
+
+CruxEval is a benchmark of 800 Python functions paired with input-output sets, developed to assess code reasoning and execution capabilities [23]. It requires models to perform both "input prediction" and "output prediction" tasks, testing understanding of program behavior beyond simple generation. It is released under the MIT License. 
+
+CodeAlpaca comprises 20,000 instruction-following samples generated using the self-instruct method for code-related tasks [13]. It covers a diverse range of programming activities, including code generation, editing, and optimization, to facilitate instruction tuning in large language models. It is released under the Apache License 2.0. This dataset is used to generate the training set alone. 
+
+A.2 Data Cleaning Function Identification Raw functions are extracted from each source dataset and filtered to retain only well-formed Python functions. For datasets that may contain multi-function files (e.g., H U-
+
+> MAN
+
+EVAL , MBPP), we isolate the primary target function while preserving any necessary helper definitions as preamble code. Functions involving non-Python constructs (e.g., Ruby end keywords or C-style braces) and functions that do not begin with a def statement are discarded at this stage. 
+
+Function Anonymization: To prevent models from identifying functions by name or signature rather than behavior, each function undergoes a standardized anonymization procedure. First, all import 
+
+statements are hoisted to the top of the function body. Docstrings are then stripped to remove any natural-language descriptions of the function’s behavior. Functions that import unsafe system-level modules ( os , sys , subprocess , shutil , socket , requests ) are discarded to avoid side effects during execution. The function name is renamed to test_func , and all argument names are replaced with positional aliases arg0 , arg1 , . . . , arg N . Return type annotations are stripped from the header. To preserve readability of the body under the original argument names, each anonymized argument is re-bound at the start of the function body via assignments of the form original_name = arg i.Finally, a call to a stub validate_input_args function is prepended to the body; this stub is later filled in by the validation stage. 
+
+Validation Function Generation and Executability Filtering: A two-phase filtering step ensures that each anonymized function can be executed deterministically. In the first phase, a language model generates a validate_input_args function for each anonymized function. The model is prompted with the original (pre-anonymization) function body as context, and is asked to identify the types and structural constraints on each argument and emit appropriate isinstance checks with typed exceptions. The generated validator is prepended to the anonymized function, forming the complete 
+
+test_func_validated artifact. Any function for which the combined code fails to compile or instantiate as a callable is dropped. In the second phase, we separately verify that each function is executable in isolation: we attempt to load each function into a sandboxed runner without any input, and discard any function whose definition itself raises an exception at load time. Functions that create new files or directories as a side effect of initialization are also detected and removed by comparing the working directory listing before and after instantiation. 16 You are given a function definition with several arguments. Your task is to first, identify the types and other fundamental constraints of the input variables that are required for the function to run without errors. Then, create a validate_input_args function that checks these constraints and raises appropriate exceptions if any of them are violated. Function: t e s t _ f u n c ( a r g 0 : L i s t [ f l o a t ] , a r g 1 : f l o a t ) −> b o o l : t h r e s h o l d = a r g 1 numbers = a r g 0 f o r i d x , elem i n e n u m e r a t e ( numbers ) : f o r i d x 2 , elem2 i n e n u m e r a t e ( numbers ) : i f i d x != i d x 2 : d i s t a n c e = a b s ( elem − elem2 ) i f d i s t a n c e < t h r e s h o l d : r e t u r n T ru e r e t u r n F a l s e Validation Function: d e f v a l i d a t e _ i n p u t _ a r g s ( a r g 0 : L i s t [ f l o a t ] , a r g 1 : f l o a t ) : i f n o t i s i n s t a n c e ( a r g 0 , l i s t ) : r a i s e T y p e E r r o r ( " a r g 0 must be a l i s t " ) f o r i t e m i n a r g 0 : i f n o t i s i n s t a n c e ( i t e m , f l o a t ) : r a i s e T y p e E r r o r ( " A l l e l e m e n t s i n a r g 0 must be f l o a t s " ) i f n o t i s i n s t a n c e ( a r g 1 , f l o a t ) : r a i s e T y p e E r r o r ( " a r g 1 must be a f l o a t " ) r e t u r n [STOP] Test Function: d e f t e s t _ f u n c ( a r g 0 , a r g 1 ) : \ " \ " \ " F i n d t h e s i m i l a r e l e m e n t s from t h e g i v e n two t u p l e l i s t s . \ " \ " \ " r e s = t u p l e ( s e t ( a r g 0 ) & s e t ( a r g 1 ) ) r e t u r n ( r e s ) Validation Function: d e f v a l i d a t e _ i n p u t _ a r g s ( a r g 0 : t u p l e , a r g 1 : t u p l e ) −> None : i f n o t i s i n s t a n c e ( a r g 0 , t u p l e ) : r a i s e T y p e E r r o r ( " a r g 0 must be a t u p l e " ) i f n o t i s i n s t a n c e ( a r g 1 , t u p l e ) : r a i s e T y p e E r r o r ( " a r g 1 must be a t u p l e " ) r e t u r n [STOP] Now, generate the validate_input_args function for the following function only, from the def validate_input_args portion to the return line. Make sure to include type annotations on the function definition. After that, say [STOP] Test Function: Figure 8: Validation function creation prompts 17 You are given a function definition. Your task is to create as many example inputs as you can to the function that satisfy the constraints, and also trigger the different branches of the function logic. Output as many examples as you can, that test different parts of the function. Output each example on a new line, in the format: Reasoning: An extremely brief reasoning for the kind of behavior these examples will trigger - (arg0, arg1, ..., argN) - (arg0, arg1, ..., argN) Reasoning: brief reasoning for kind of behavior - (arg0, arg1, ..., argN) - (arg0, arg1, ..., argN) - (arg0, arg1, ..., argN) - (arg0, arg1, ..., argN) [STOP] Function: d e f v a l i d a t e \ _ i n p u t \ _ a r g s ( a r g 0 ) : i f n o t i s i n s t a n c e ( a r g 0 , i n t ) : r a i s e T y p e E r r o r ( " a r g 0 must be an i n t e g e r " ) d e f t e s t \ _ f u n c ( a r g 0 ) : " " " I d e n t i f y non − p r i m e numbers . " " " v a l i d a t e \ _ i n p u t \ _ a r g s ( a r g 0 ) r e s u l t = F a l s e f o r i i n r a n g e ( 2 , i n t ( math . s q r t ( a r g 0 ) ) + 1 ) : i f a r g 0 % i == 0 : r e s u l t = Tru e r e t u r n r e s u l t Reasoning: Since the function tests prime numbers, and takes arguments a single integer, we first test with small prime numbers - (2) - (3) - (17) - (19) Reasoning: We can also test with small non-prime numbers - (4) - (6) - (21) [STOP] Note, the type checks in validate_input_args are bindings. So you must always ensure that the inputs you are generating satisfy those type checks. For example, if validate_input_args checks that an argument is a float, you MUST give a float in your examples, not an int. Now do this for the following function only. After that, say [STOP]. Function: Figure 9: Example creation prompts 
+
+Example Generation and Train/Test Split: For each surviving function, a language model is prompted to generate diverse input tuples that exercise different branches of the function logic. Gen-erated inputs are filtered to retain only those that (i) satisfy the validate_input_args constraints and (ii) execute without error, yielding a valid, serializable output. Functions for which no valid input can be produced are discarded. Retained examples are then partitioned into train and test splits. We allocate ntrain = 2 examples as few-shot demonstrations and require at least ntest = 5 held-out test examples per function; functions with insufficient coverage are dropped. To promote output diversity within the training set, we enforce that no two training examples share the same output value, and that at most one training example exhibits an identity mapping (i.e., input equals output). A final round-trip JSON serialisation check removes any rows that cannot be losslessly serialised and deserialised, ensuring downstream compatibility. All Language Model calls in the above pipeline use GPT-4o. The prompts for these steps are given in Figure 8 and Figure 9. 
+
+Coverage-based Filtering To verify that the generated test examples exercise the function’s logic rather than a single execution path, we measure branch coverage using Python’s coverage library. For each function, we write a self-contained script that imports the function, iterates over all held-out test examples, and calls test_func on each input. We then run coverage analysis across all functions, combine the parallel traces, and report per-branch coverage. Functions whose test examples achieve less than full branch coverage are flagged; the pipeline achieves 99% branch coverage on average across the retained benchmark. 18 0 20 40 60 80 100 120 Number of test instances 012345678Count Figure 10: Histogram over test suite sizes Table 1: Data statistics for counts of methods by number of input arguments in PAU .No of Input Args Count 1 377 2 311 3 52 4 1
+
+A.3 Final Benchmark 
+
+After the data cleaning, we are left with 741 instances of Python methods that can be queried with inputs and either return a value or raise TypeError with respect to the input parameters. Each contextual set has exactly two examples, which trigger different outputs from the method. The number of examples in the test suite varies by method, with an average test suite size of 7.45 . We show examples in Figure 11 and provide a histogram over test suite sizes in Figure 10. We present summary statistics regarding the degrees of the methods in our benchmark in Figure 1. 
+
+A.4 Data Contamination 
+
+Owing to the popularity of the benchmarks we use to source the methods in the test set, there is a high possibility that their method descriptions have been leaked in LM training corpora [64]. However, we note that since the evaluation setting of PAU does not provide the model with the original function names or the description, the impact of such contamination is limited. As indicated by Table 1, there are several methods with the same number of input arguments, and hence the header does not provide sufficient information to resolve the method description, even if it was pre-exposed to the Language Model. Additionally, the contextualizing examples are not taken from any benchmarks, but generated for PAU specifically, implying that the LMs do not have pre-trained associations between the contextualizing examples and the true description of the methods. Ultimately, the poor performance of frontier models on PAU gives the most substantial evidence that even if the predictions were pre-exposed during LM training, the PAU benchmark remains meaningfully challenging. For a discussion of how potential contamination and the simplicity of the test methods relate to the scope of our findings, see Section 7. 19 Code: d e f t e s t _ f u n c ( a r g 0 ) : v a l i d a t e _ i n p u t _ a r g s ( a r g 0 ) # r a i s e i n t T y p e E r r o r n = a r g 0 i f n%2 == 0 : r e t u r n T ru e e l s e : r e t u r n F a l s e Description: Checks if the given number ’arg0’ is even. It returns True if the number is even and False if it is odd. Contextualizing Examples: [["(4)", true], ["(-7)", "False"]] Test Suite: [["(-2)", true], ["(-3)", false], ["(7)", false], ["(15)", false], ["(3)", false], ["(2)", true], ["(-4)", true], ["(10)", true], ["(16)", true], ["(1)", false]] Code: d e f t e s t _ f u n c ( a r g 0 , a r g 1 ) : v a l i d a t e _ i n p u t _ a r g s ( a r g 0 , a r g 1 ) # r a i s e s t r t y p e r r o r # and p o s i t i v e i n t v a l u e e r r o r key = a r g 1 t e x t = a r g 0 c i p h e r t e x t = " " f o r c h a r i n t e x t : i f n o t c h a r . i s a l p h a ( ) : c i p h e r t e x t += c h a r c o n t i n u e o f f s e t = o r d ( ’ a ’ ) i f c h a r . i s l o w e r ( ) e l s e o r d ( ’A’ ) new_char = ( o r d ( c h a r ) − o f f s e t + key ) % 26 c i p h e r t e x t += c h r ( o f f s e t + new_char ) r e t u r n c i p h e r t e x t Description: Ciphers a given text using the Caesar cipher technique, where each letter in the input text ’arg0’ is shifted by a specified integer ’arg1’. Non-alphabetic characters are preserved unchanged. The function returns the resulting ciphertext. Contextualizing Examples: [["(¨ hello ¨, 3)", "khoor"], ["(äBcDeF ¨, 1)", "’bCdEfG’"]] Test Suite: [["( ¨ Test ¨, 0)", "Test"], ["(¨ 123 and ABC ¨, 4)", "123 erh EFG"], ["( ¨ XyZ ¨, 2)", "ZaB"], ["( ¨ World ¨, 5)", "Btwqi"], ["( ¨ Hello, World! ¨, 2)", "Jgnnq, Yqtnf!"]] Figure 11: Examples from PAU A.5 Addressing Impossibility of API Discovery: 
+
+Since the method arguments and return types can be highly compositional with respect to the basic Python types (e.g. Dictionaries of dictionaries of lists, etc.), type analysis is challenging to perform on aggregate. Over the test bed, the argument and return types of the methods include strings, integers, floats, dictionaries, lists, sets and compositions of these fundamental types. In general, the task of understanding a code API purely through black-box interaction is computation-ally intractable [46, 1]. Consider the test API: d e f t e s t ( x ) : r e t u r n x == random . u n i f o r m ( − 1 , 1 ) 20 Qwen3-Coder-Next Gemma-4-31B Deepseek Sonnet-4 Opus-4                     
+
+> Qwen3-Coder-Next Gemma-4-31B Deepseek Sonnet-4 Opus-4
+> 10.56 0.55 0.54 0.48 0.56 10.51 0.61 0.57 0.55 0.51 10.57 0.45 0.54 0.61 0.57 10.6 0.48 0.57 0.45 0.6 1
+> Rank Correlation of Models on Description Scores
+> 1.0
+> 0.5
+> 0.0 0.5 1.0
+
+Figure 12: Spearmann Correlation between ranks of test instances across models. Moderate correla-tion measures suggest that different models are successful at different test instances. This method is practically impossible to fully characterize, as an agent seeking to describe its behavior with a finite number of queries would (in expectation) never observe an output of ‘True’. However, we provide evidence that the poor performance of models on our benchmark is not due to the impossibility of the task, but rather an inability to effectively explore black box APIs. The first quantitative proof of this fact can be seen in the performance of the MAX aggregation setting (Figure 3), which achieves considerably higher scores than the individual model. Another way of viewing this result is through the correlation between the model success rates per test instance (Figure 12). Both of these results establish that different models struggle with different test instances, suggesting that there is considerable scope for improvement. At the very least, models can reasonably be expected to match the performance of the MAX setting, which would already require a considerable improvement in model capability. Our inspection of the instances that remain unsolved by every model also reveals clear cases of reasoning errors and insufficient exploration, suggesting that the flaw lies in the model rather than in the impossibility of the instance (Figure 13). Two annotators with graduate-level computer science training were able to reverse engineer the correct description of both instances shown through interaction alone. However, we acknowledge that we cannot guarantee that every test instance is genuinely recoverable through black-box interaction. We can state with confidence that the MAX setting demonstrates substantial headroom for every individual model on PAU , and that our qualitative analysis of error traces on unsolved instances suggests that the performance of the MAX setting itself can improve with more powerful models. 
+
+# B Evaluation Metrics 
+
+We provide the exact prompts used by the LLM-as-a-judge and description-to-code models in Figure 14. 
+
+B.1 Validating Robustness of Evaluation Metrics 
+
+Given our chosen LLM-as-a-judge model (Llama3-70B) and code-description model (Qwen3-Coder-30B-A3B), we conduct additional checks to verify the robustness of its score ratings. For all experiments below, we use the predicted descriptions for the DeepSeek, Gemini-3-Flash, GPT-4o and Claude-Opus models. 
+
+Robustness to prompt variation: The official prompt for the score judge provides two specific few shot examples to help guide score judgements. We additionally randomly sample five fresh pairs of (predicted description, true description) tuples from the available predicted descriptions, annotate them with a rating and provide these pairs as fewshot examples to make five alternate prompts. For the code generation model, we write five alternate prompts that request a generated description. We observe that using a different prompt has no effect on the relative ranking of the models by score, 21 Instance 214 
+
+True Description: Checks if the input string ‘arg0’ contains at least one uppercase letter that is preceded by a lowercase letter. It returns True if such a condition is met; otherwise, it returns False. 
+
+Contextual Examples 
+
+("TestString",) => True, ("12345",) => False 
+
+Explored Inputs :("Test123",) => True, ("hello",) => False, ("Hello",) => True, ("a",) => False, ("hEllo",) => True, ("ABC",) => False 
+
+Predicted Description: the function returns ‘true’ if the input string contains at least one uppercase letter, and ‘false’ otherwise. [Incorrect, contradicted by ("ABC",) => False] 
+
+Instance 283 
+
+True Description: Creates and returns a new dictionary that combines a specified number of copies (indicated by ‘arg1’) of the input dictionary (‘arg0’), effectively merging them into a single dictionary. If ‘arg1’ is 0, an empty dictionary is returned. 
+
+Contextual Examples 
+
+({’k’: 0}, 10) => {’k’: 0}, ({’k1’: 100, ’k2’: 200}, 5) => {’k1’: 100, ’k2’: 200} 
+
+Explored Inputs (selected, 19 in total): ({’a’: -1, ’b’: 0, ’c’: 5}, 0) => {}, ({’a’: 1, ’b’: 2, ’c’: 3}, 2) => {’a’: 1, ’b’: 2, ’c’: 3}, 
+
+({’a’: 1, ’b’: 2, ’c’: 3, ’d’: 4, ’e’: 5}, 3) => {’a’: 1, ’b’: 2, ’c’: 3, ’d’: 4, ’e’: 5} ,
+
+({’a’: 3, ’b’: 15, ’c’: 7}, 1) => {’a’: 3, ’b’: 15, ’c’: 7} , ({}, 5) => {} Predicted Description: the function returns the first ‘arg1’ items from the dictionary. [Incor-rect, contradicted by the highlighted inputs] Figure 13: Instances of PAU that remain unsolved by every model, with trajectories from Claude-4-Opus. In both cases, the final hypothesis is directly contradicted by examples the model itself queried (bold), which remained visible in its context. Two annotators with graduate-level computer science training were able to recover the correct description of both methods through interaction alone. with the variance of the average score across different prompts (description score variation 0.08 , code match score variation 0.02 ) proving substantially lower than the difference in average score between any two models. 
+
+Human Annotation and Powerful Judge: The first author of the paper manually annotated descrip-tion scores for a random subset of 50 predicted descriptions for each model and compared the implied ranking with the ranking of the judge model. For a subset of 25 of those predicted descriptions, we also wrote code snippets and used them to evaluate the code score. Additionally, we used GPT-5.5 (and Qwen3-Coder-Next for the coding model) to score /write code for the predicted descriptions and compared the implied rankings. In both cases, the rankings between models remained unchanged, showcasing the robustness of the judge and coding model. 
+
+# C Interactive Mode Baseline: 
+
+We implement the interactive mode with the prompts given in Figure 15. Examples of the common failure modes are shown in Figure 16. All models are evaluated with greedy sampling (however, we noticed persistent stochasticity in the responses of API-based models, despite setting the temperature to 0. Such results have been noted in other works [6] and are likely a consequence of cost optimization on the side of model providers). Every call permits the model to generate up to 1000 tokens. In practice, this limit is rarely reached. Models are limited to a maximum of 25 API calls before they must confirm their hypothesis. We perform several experiments to verify that the interactive mode is a fair estimate of a model’s ability to conduct interactive API discovery. We do this by implementing several alternative baseline 22 LLM-as-a-judge: You are given a function description and a hypothesized description of what the function does. Your task is to rate how accurate the hypothesized description is compared to the true description on a scale from 1 to 5, where 1 means "completely inaccurate" and 5 means "completely accurate". First, provide an extremely brief explanation (1 sentence) of why you gave that rating. Then, provide your rating in the format "Rating: X" where X is an integer between 1 and 5. Example: True Function Description: This function takes a list of integers and returns True if there are any two integers in the list that sum to zero, otherwise it returns False. Hypothesized Description: This function checks if there are two numbers in the list that add up to zero. Explanation: The hypothesized description accurately captures the functionality of the true description. Rating: 5 [STOP] True Function Description: calulates the nth fibonacci number Hypothesized Description: This function computes the factorial of a number. Explanation: The hypothesized description is incorrect as the fibonacci sequence and factorial are different mathematical concepts. Rating: 1 [STOP] Now, provide your rating for the following description only. You absolutely must follow the format shown in the examples above and no matter what, you must provide a rating between 1 and 5. True Function Description: [TRUE] Hypothesized Description: [HYPOTHESIS] Explanation (very short): Code Writing Model: You are an expert programmer. Your goal is to create a Python function called ‘test_func‘ that matches the following description: [DESCRIPTION] The header of the function must be: [HEADER] The function must satisfy the following input-output examples: [EXAMPLES] Now, write the complete code for the function ‘test_func‘ that meets the above requirements. You should structure your response as follows: Reasoning: <any brief thinking or reasoning you want to do before writing the code. This must be extremely brief and concise, just a sentence or two at most> Code: “‘python <your code here> “‘ [STOP] # make sure to include the [STOP] token at the end of your response to indicate that you have finished writing the code. Now, provide your reasoning and code below, and remember to end with [STOP]. Reasoning: Figure 14: Prompts used by judge and code writing models for evaluation approaches, as well as attempting to enhance the interactive mode with best practices from prompt engineering [49] and agentic memory with context engineering [40]. Our results establish that these simpler changes to the method do not substantially improve performance, demonstrating that the interactive mode is a reasonable proxy for model ability. Unless stated otherwise, all experiments below were conducted with the following models: Qwen3-1.7B, Qwen3-8B, GPT-4o-mini. 
+
+C.1 Prompt and Structure Variation 
+
+For each of the prompts used, we wrote three variations (semantically equivalent) and hence deployed three variants of the interactive mode baseline. The variance of the average description score across models (0 .0061) was far smaller than the average description score difference between models. Qualitatively, models produced similar descriptions for similar test instances, with minor variations in the specific words used to describe them and the inputs used to explore the API. We additionally tried two alternate structures of reasoning. 
+
+Batch Interactive Mode: We implement a batch interactive variant that replaces the single-input-per-iteration loop with a breadth-first exploration strategy. Rather than proposing one input and immediately reflecting on its result, the model is prompted to generate a small set of B = 3 candidate inputs per iteration, each explicitly targeting a different candidate hypothesis about the function’s behavior. All inputs are executed against the black-box function, and the full set of results is passed to a single synthesis call that eliminates inconsistent hypotheses and produces a revised hypothesis. This reduces the number of LLM calls per iteration from three to two while increasing the information gathered per round, potentially making it particularly effective early in exploration 23 Conceptualization: You are given a Python function with the following header: [HEADER] Your task is to try various inputs to discover what this function does. [CRITIQUE, empty unless we are running the RAG-based baseline] So far, you have tried the following inputs: [PREV] You then came up with the following running hypothesis: [HYPOTHESIS] Based on this, what kind of input will you use to test the function with next? Very briefly describe your next intended input only, and the properties it satisfies. How does this input help test the hypothesis? What is the expected output? Be extremely concise and short. Your response should be extremely short and concise, just a few sentences. After the response, say [STOP] Now provide your reasoning below and then say [STOP] Reasoning: Generation: You are given a Python function with the following header: header Your task is to try various inputs to discover what this function does. So far, you have tried the following inputs: [PREV] You then came up with the following running hypothesis: [HYPOTHESIS] Based on this, you wanted to try the following kind of input next: [REASONING]. Now, give the exact input to test the function with next. The input should be valid Python tuples and your output should follow the format below. Suggested Input: (arg0, arg1) [STOP] #(arg0, arg1) should be replaced with actual input values in your response and must be a valid python tuple. This is an example format for a two arg function. You should adjust the number of arguments as per the function definition. Now provide your suggested inputs below and then say [STOP] Suggested Input: Hypothesis Revision: You are given a Python function with the following header: header Your task is to try various inputs to discover what this function does. So far, you have tried the following inputs: [PREV] You then came up with the following running hypothesis: [HYPOTHESIS] You wanted to test this, with an input coming from the reasoning: [REASONING] Finally, you just tried the following inputs: [LAST_INPUTS] Based on this, can you conclude with very high confidence what the function does? If the function did not perform as you expected, the answer is likely no. If you think it is yes, then say YES and provide a concise description of its functionality. Else, say NO and provide a revised hypothesis of what you think the function may do, and some guidance on how to test this further. Format Example: Hypothesis Conclusion: YES/NO Summary: <your extremely concise summary or brief revised hypothesis here> [STOP] Now, provide your conclusion below, remember to say [STOP] after your summary. Hypothe-sis Conclusion: Figure 15: Interactive mode prompts when the hypothesis space is wide and a single input is unlikely to discriminate between competing explanations. The concluded/not-concluded decision is made at the synthesis step, and the loop terminates under the same conditions as the standard interactive baseline. 
+
+Structured Hypothesis Tracking: We implement a structured interactive variant that makes the model’s belief state explicit throughout exploration. Rather than maintaining a single free-form hypothesis, the model tracks a ranked list of H ≤ 5 mechanistic hypotheses, each annotated with a confidence score and a summary of supporting and missing evidence. Each iteration proceeds in three stages. 1. The model is prompted to enumerate or revise its hypothesis list given all prior results, assigning confidence scores and identifying what evidence each hypothesis still requires to be confirmed or falsified. 2. Given the full hypothesis list, the model designs B = 3 inputs that maximally discriminate between competing hypotheses, prioritizing edge cases and boundary conditions. All three inputs are executed against the black-box function. 3. Third, the model updates its hypothesis list in light of the new results, eliminating hypotheses inconsistent with the observed outputs and revising confidence scores accordingly. 24 True Description: Removes all occurrences of the ‘+’ character from the input string ’arg0’ and returns the modified string. 
+
+Contextual Examples 
+
+("hello") => hello, ("Hello",) => Hello, 
+
+Explored Inputs :("World",) => World ("world",) => world, (42,) => Error: arg0 must be a string, ("HELLO",) => HELLO, ("test",) => test Predicted Description: the function validates that arg0 is a string (raising an error if not) and returns the string unchanged. [Incorrect, misses ‘+’ functionality] True Description: Checks if the input string is not a decimal number [decimal ̸ = digit]. It returns True if the string contains non-decimal characters, otherwise it returns False. 
+
+Contextual Examples: 
+
+("abc",) => True, ("123") => False, 
+
+Explored Inputs :("!@#") => True, ("a1",) => True, ("",) => True, ("½",) => True Predicted Description: returns ‘not arg0.isdigit()‘ — it returns ‘true‘ if the string is not composed entirely of digit characters, and ‘false‘ if it is. [Incorrect, misses ‘.’ functionality] Figure 16: Models (examples from Claude-4-Opus) exhibiting shallow exploration, and hence failing to reveal the full functionality of the API method. In both cases, testing more extensive edge cases and varied inputs could have revealed behaviour that contradicted the model’s hypothesis. Instead, it queries the API with inputs that are similar to previous attempts, resulting in premature termination due to apparent confirmation of the hypothesis. First, Exploration terminates when the model either explicitly concludes with high confidence or only a single hypothesis survives with no simple falsifying test remaining. This structure enforces falsificationist discipline: each proposed input must be justified by which hypotheses it distinguishes, preventing the model from repeatedly probing variations of already-confirmed behavior. 
+
+Results: For both of these variations, we notice considerable performance degradations compared to the default interactive baseline for the Qwen3-1.7B and Qwen3-8B models. GPT-4o-mini achieved a similar score (2.419 vs 2.384) with the batch setting. However, it performs worse in the structured hypothesis tracking mode (2.12). A qualitative inspection revealed that creating more sophisticated prompt scaffold pipelines with complex expectations of the model required more brittle output parsing and led to long context buildups, which eventually degraded model performance. 
+
+C.2 Injecting Software Testing Specific Knowledge 
+
+Having seen evidence that more complex workflows would compromise model performance, we asked whether models could meaningfully improve when provided with software testing-specific guidance in the prompt. We replaced the ‘[CRITIQUE]‘ section of the reasoning prompt with the following text, drawing from best practices in black box software testing [42, 34]: 
+
+PARTITION THE INPUT SPACE FIRST. Do not probe random variations — identify the equivalence classes of the function’s domain and ensure you have at least one example from each. Typical partitions: empty/null inputs, singleton, small valid, large valid, boundary values, invalid types, negative/zero/maximum values. 
+
+25 USE CONTRASTING PAIRS. To isolate what a single argument controls, vary exactly one dimension at a time while holding all others fixed. If f(A, B) → X and f(A’, B) → X, then B is likely irrelevant to that behavior. This is the only reliable way to attribute behavior to a specific argument. TEST THE BOUNDARIES BEFORE THE MIDDLE. The most informative inputs are: the smallest valid input, the largest valid input, inputs just inside and just outside any apparent threshold, and the degenerate cases (empty list, zero, empty string, None). These reveal the function’s contract faster than any mid-range probe. PREDICT BEFORE YOU PROBE. Before submitting an input, state what you expect the output to be. If the actual output surprises you, your hypothesis is wrong — do not rationalize it. Discard the hypothesis and form a new one. AVOID REDUNDANCY. If a new input would produce the same output regardless of which of your current candidate hypotheses is true, it is uninformative. Choose inputs that produce different outputs under different hypotheses. DISTINGUISH SIMILAR BEHAVIORS AGGRESSIVELY. Common confusions: (is it sorting or filtering?), (is it checking membership or counting?), (is it a threshold or a modulo?), (is it working on the values or the indices?). Design inputs specifically to break these symmetries. DO NOT OVER-EXPLAIN NORMAL BEHAVIOR. Once a case is confirmed, stop testing it. Spend your remaining budget on unverified branches and failure modes. 
+
+Results: The addition of this prompt has an overall negative affect across all models evaluated (Qwen3-1.7B, Llama3-8B, Qwen3-8B, GPT-4o-mini). We also confirm this with evaluations of other models on a subset of the test set (Gemini-3-Flash, Claude-4-Opus). Qualitatively, the smaller models break down due to an increase in context length, while the more powerful systems seem to excessively focus on ‘similar looking pairs’ and do not engage in wider exploration of the API’s functionality. 
+
+C.3 RAG-based approach 
+
+Finally, we considered whether the limitation of the previous approach was that the prompt was too generic, with little guidance about how to best explore the particular test method at hand. We attempt to create a more sophisticated, memory-based context engineering system that can potentially serve the model with specific guidance on how to best explore the test API in question. To do so, we implement a memory baseline that augments the interactive mode with a retrieve-then-reflect mechanism inspired by episodic memory. The method proceeds in three stages. 
+
+Stage 1: Initial Exploration. The model first runs the interactive baseline on the test function, producing an initial hypothesis and a record of all input–output pairs it queried. 
+
+Stage 2: Retrieval. The initial hypothesis is embedded using Q WEN 3-E MBEDDING -8B [72] and compared against pre-computed embeddings of all training-set function descriptions via cosine similarity. The k = 5 most similar training functions are retrieved. 
+
+Stage 3: Critique and Re-exploration. For each retrieved training function—whose ground-truth description is known—the model re-runs the interactive exploration procedure and then generates a self-critique: it is shown its predicted description alongside the true description and the examples it chose to query versus examples that would have revealed the true behavior, and is asked to identify gaps in its exploration strategy. When multiple critiques are produced, they are consolidated into a single unified critique by a summarization call. The model then runs the interactive procedure a 26 You are given a Python function with the following header: def test_func(arg0, arg1): You have tried the following inputs to discover what this function does. [ Input: ("input test", "+") => Output: input+test, Error: None Input: ("", "-") => Output: ”, Error: None ] Based on this, describe what the function does in words. Respond in the format: Description: [your description here] [STOP] # make sure to put [STOP] after your description. Now, provide your description for the function: Description: Figure 17: Incontext mode prompt example second time on the original test function, initialised with its prior hypothesis and queried examples, and with the consolidated critique prepended to the reasoning prompt as a piece of additional guidance. This potentially allows the model to correct systematic blind spots in its exploration strategy identified from analogous functions in the training set. 
+
+Result: We did not observe a significant increase in performance when using additional memory. The performance of GPT-4o-mini and Qwen3-1.7B decreases marginally, as they end up incorrectly revising accurate hypotheses after the critiques are provided. Qwen3-8B improves marginally (+0 .015 ), however, this is not statistically significant at p < 0.2.
+
+C.4 Incontext Baseline 
+
+As described in Section 3, we use the incontext mode to quantify the extent to which access to an API improves a model’s understanding of its functionality. In particular, we use a similar prompt to the final step of the interactive mode (Figure 17), providing only the two contextual examples and requesting a direct prediction of the description. For the majority of models evaluated, performance in this setting is not significantly lower than the performance in the interactive mode (at p < 0.05 with a bootstrap t-test). We show results for the best performing models (Figure 18), establishing that even frontier models like Gemini-3-Flash struggle to use their interactive access to the fullest. 
+
+# D Asymmetric Actor Critic Details 
+
+D.1 Training Hyperparameters 
+
+We train using GRPO [15] via the SkyRL framework with the hyperparameters listed in Table 2. 
+
+D.2 Reward Schedule (Supervised Setting) 
+
+Each episode follows a fixed three-step cycle: reasoning → input proposal → reflection . Each step receives an independent scalar reward. We use three global constants: 
+
+λH = 2 .0, pparse = 0 .5, pmax  
+
+> len
+
+= 1 .0.
+
+Length penalty. All three steps include a length penalty: 
+
+rlen (x; τ, α ) = 
+
+
+
+0 |x|tok ≤ τ
+
+− min 
+
+ α (|x|tok − τ )2 α τ , p max 
+
+> len
+
+
+
+otherwise. (1) 
+
+Step 1 — Reasoning. The actor produces a brief rationale for which input to try next. 
+
+rreasoning = rreason judge + rlen (response ; τ =100 , α =0 .05) (2) where rreason judge ∈ [0 , 1] is the LLM judge’s rating (0–9 scale, divided by 9) of how informative the proposed input is for discriminating hypotheses. 27 incontext interactive incontext interactive incontext interactive incontext interactive incontext interactive incontext interactive incontext interactive 
+
+> 020 40 60 80 100
+> Score Spread (%)
+
+Qwen3-Coder-30B Deepseek GPT-4o GPT-5-mini Gemini-3-Flash Sonnet-4 Opus-4 
+
+1 2 3 4 5incontext interactive incontext interactive incontext interactive incontext interactive incontext interactive incontext interactive incontext interactive 
+
+> 020 40 60 80 100
+> CS Spread (%)
+
+Deepseek GPT-4o-mini GPT-4o GPT-5-mini Gemini-3-Flash Sonnet-4 Opus-4     
+
+> 0-19% 20-39% 40-59% 60-79% 80-100%
+
+Figure 18: Comparison between the incontext and interactive setting shows that models struggle to fully utilize the benefits of interactive API access. 
+
+Step 2 — Input Proposal. The actor proposes the exact Python argument tuple to pass to the black-box function. 
+
+rinput =
+
+
+
+−pparse = −0.5 parse failure 
+
++ λH
+
+2 Tmax 
+
+= +0 .025 clean execution 
+
+−pparse = −0.5 runtime error 
+
++ rlen (input ; τ =30 , α =0 .5) (3) The execution bonus is intentionally small ( 0.025 ) so it never competes with the hypothesis reward. The tight length threshold ( τ =30 ) penalizes verbose inputs. 
+
+Step 3 — Reflection (Hypothesis Update). The actor observes the execution result, declares 
+
+YES /NO on whether it has identified the function, and states its current hypothesis. 
+
+rreflect = ⊮[parse fail ] · (−pparse ) + rhyp (done ) + rlen (response ; τ =100 , α =0 .05) (4) 
+
+rhyp (done ) = λH ·  shyp + bterm (done , s hyp ) (5) where shyp = judge_rating /9 ∈ [0 , 1] is the LLM judge’s score of the current hypothesis against the ground-truth description, and 
+
+bterm (done , s ) = 
+
+
+
++1 .0 done = TRUE , s > 0.7 (correct termination) 
+
+−1.0 done = TRUE , s ≤ 0.7 (premature termination) 
+
++1 .0 done = FALSE , s < 0.3 (correctly continuing) 
+
+0 otherwise. (6) 28 Table 2: SkyRL training hyperparameters. 
+
+Hyperparameter Value 
+
+Model 
+
+Model dtype bfloat16 
+
+LoRA rank 16 LoRA alpha 16 
+
+Training 
+
+Epochs 5Update epochs per batch 1Train batch size 8Policy mini-batch size 8Micro train batch size per GPU 2Policy optimizer learning rate 1 × 10 −6
+
+Advantage estimator GRPO KL loss enabled Strategy FSDP2 
+
+Generation 
+
+Samples per prompt ( G) 8Max prompt length 512 tokens Max generation length 1024 tokens Max model context length 4096 tokens Generator backend vLLM GPU memory utilization 0.8 
+
+Environment 
+
+Max turns per episode 40 Function execution timeout 10 s 
+
+Checkpointing 
+
+Checkpoint interval 10 steps Eval interval 5 steps 
+
+Timeout. If the episode reaches Tmax = 40 steps, a terminal penalty of −1.0 is applied. 
+
+Summary. Table 3 enumerates every reward signal and its range. Table 3: Complete reward schedule in the supervised setting. 
+
+Step Signal Value / Range Source 
+
+Reasoning Judge score (reasoning quality) [0 , 1] LLM judge ( ÷ 9)Length penalty [−1, 0] τ =100 , α=0 .05 
+
+Input proposal Parse failure −0.5 hard rule Clean execution +0 .025 λH /(2 Tmax )
+
+Runtime error −0.5 hard rule Length penalty [−1, 0] τ =30 , α=0 .5
+
+Reflection Parse failure −0.5 hard rule Hypothesis score ( shyp ) [0 , 1] LLM judge ( ÷ 9)Termination bonus {− 1, 0, +1 } threshold on shyp 
+
+Hypothesis scale × 2.0 λH applied to above Length penalty [−1, 0] τ =100 , α=0 .05 
+
+Episode Timeout penalty −1.0 at T =40 turns 29 D.3 What Does the Asymmetric Critic Add? 
+
+To isolate the contribution of each component of AAC, we compare against four alternate training paradigms (Table 4): 
+
+DISTILL: Supervised fine-tuning on interactive trajectories generated by a more powerful model (GPT-4o-mini). This distils basic capabilities without RL. 
+
+CodeARC-SFT: Following Wei et al. [61], we generate trajectories on the PAU training set using the base model as a ‘teacher’ that is given the true function. We instruct the teacher to reason as if it were deriving the logic from its own intuition, without explicitly referring to the true function, and perform supervised fine-tuning on these trajectories (including reasoning) using prompts that do not reveal the true function. 
+
+FINAL: AAC without the intermediate, step-level rewards, i.e. the only reward is the LM-as-a-judge score of the hypothesis when the agent decides to terminate. 
+
+SYM-INFO: GRPO with the same reward schedule as AAC, but with rewards granted by a critic that does not see the ground truth, i.e. a symmetric actor critic. Table 4: Description score (LM-as-a-judge, 1–5) of AAC against alternate training paradigms. AAC is the only approach that improves substantially over the base model. Training on trajectories from an answer-aware teacher (CodeARC-SFT) or rewarding with a critic that lacks privileged information (SYM-INFO) actively harms performance. 
+
+Method Qwen3-1.7B Llama3-8B 
+
+Base 1.92 1.99 DISTILL 1.96 2.02 CodeARC-SFT 1.81 1.79 FINAL 1.86 1.91 SYM-INFO 1.22 1.34 AAC 2.04 2.13 
+
+AAC outperforms all alternatives, with each comparison isolating a distinct component of its success. SYM-INFO is particularly harmful, as the critic must judge hypotheses and exploratory inputs in an ungrounded manner, showing that the privileged information is vital. While FINAL uses only sound reward signals, we find that its loss does not converge when the signal is so sparse, showing that dense, step-wise guidance is necessary. DISTILL yields small gains, but falls short of AAC despite relying on a more powerful model for guidance. Most notably, CodeARC-SFT degrades performance below the base model, despite leveraging the same privileged information as AAC. When the teacher is aware of the true function, it rarely takes more than three queries to fully expose the API’s behaviour, and will often use only one query before terminating (the fine-tuned models make an average of 0.13 and 0.57 queries, respectively, compared to 12 .50 and 15 .27 after AAC-tuning). Qualitatively, the teacher queries exactly the boundary conditions of the function before concluding with a hypothesis. This problem goes deeper than the trajectories being off-policy: the process followed by a model that knows the true function is fundamentally different from the process of discovering it. An agent exploring an unknown function must be more exploratory and less precise, trying inputs that may yield surprising results and refine its hypothesis. The teacher trajectories are hence ‘too optimal’, and training on them biases the model towards making fewer queries and exploring the API less thoroughly. In contrast, AAC uses the privileged information only for reward assignment, while the text sequences on which the loss is optimised are always generated by the agent itself. This division of roles allows us to train on realistic exploration trajectories, while rewarding them with the benefit of privileged knowledge. 
+
+# E Computational Hardware 
+
+The inference for most of our experiments was run on a compute cluster with 8 NVIDIA A40 GPUs (approx 46068 MiB of memory) on CUDA version 12.6. The CPU on the cluster is an AMD EPYC 7502 32-Core Processor. Most experiments could be conducted with less than 16GB of GPU RAM. 30 AAC training of 8B models was run on a separate system with 2 NVIDIA H100 GPUs. Benchmark test run times vary drastically with the model used, ranging from 3 hours to 120 hours. For several large open source models (e.g. DeepSeek), we use OpenRouter for inference. 31
