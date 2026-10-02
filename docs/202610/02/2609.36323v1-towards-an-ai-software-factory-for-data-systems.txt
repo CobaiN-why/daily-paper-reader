@@ -1,0 +1,241 @@
+Title: Towards an AI Software Factory for Data Systems
+
+URL Source: https://arxiv.org/pdf/2609.36323v1
+
+Published Time: Wed, 30 Sep 2026 00:30:17 GMT
+
+Number of Pages: 6
+
+Markdown Content:
+# Towards an AI Software Factory for Data Systems 
+
+## Anna Pavlenko 1, Bogdan Crivat 1, Brandon Haynes 1, Carlo Curino 1, Fotis Psallidas 1, Jaro Slawinski 1,Johannes Freischuetz 1,2, Laura Pereira Sanchez 1, Markus Weimer 1, Mathieu Demarne 1, Matthias Jasny 1, Mauktik Gandhi 1, Max Bovykin 1, Mirco Milletari 1, Purbasha Ghosh 1, Qiushi Bai 1, Raghu Ramakrishnan 1, Rahul Pandita 3, Sergiy Matusevich 1, Shivaram Venkataraman 2, Subru Krishnan 1,Md. Tareq Mahmood 1,2, Tiemo Bang 1, Venkatesh Emani 1, Xuan Zhao 1, Yiwen Zhu 1
+
+1 Microsoft, 2 University of Wisconsin-Madison, 3 GitHub 
+
+ABSTRACT 
+
+AI-assisted coding tools deliver significant acceleration of coding, but only limited impact across the end-to-end software development lifecycle (SDLC)—an Amdahl’s law effect! In this paper, we discuss our progress towards building an AI SW Factory that accelerates all the stages of SDLC—Targeting, Coding, Reviewing, and Ops. The AI SW Factory produces a meta-data exhaust that enables self-improvement by fine-tuning model weights and updating our World Model (a rich data substrate). We focus on Data Systems and the important class of Evolutionary Coding Tasks (i.e., those with a measurable objective to hill-climb) and report on 1) scaled deployments at Microsoft (tens of reposito-ries) leading to 3× engineering efficiency above agentic coding and up to 22 × token efficiency , and 2) several open challenges. 
+
+1 INTRODUCTION 
+
+Coding has historically been a costly and complex human endeavor, and as such it has exhibited two defining characteristics. First, to ensure correctness and composability of large software systems, the field has developed engineering practices centered around “de-cision tracing” : a rich record of how humans reason about and resolve tasks (e.g., design docs, code versioning, documentation, PR discussions). This has enabled large engineering organizations to collaborate effectively on complex systems and evolve them for decades. Second, the inherent complexity of software development motivated the creation of automated tools such as compilers, linters, code style checkers, and testing frameworks, providing fine-grained feedback as early as possible during system development. These conditions have proven ideal for AI. The economic im-portance of coding has driven frontier labs to prioritize it; decision tracing has provided abundant, high-quality training data; and au-tomated feedback has enabled both reinforcement learning for fine-tuning and powerful agentic loops during inference. By mid-2026, agentic AI has made impressive strides in “solving” coding. However, from our vantage point in a large organization, we observe an Amdahl’s Law effect: even a dramatic 10 × improvement in coding productivity leads to only modest latency or throughput gains in the end-to-end software development life cycle (SDLC). To improve the whole SDLC, we need to tackle a few challenges: 
+
+Missing Data: The rich decision tracing that made automating coding possible is either missing or hard to correlate when looking across other stages of SDLC. 
+
+Missing Feedback and Verifiability: LLMs perform well sta-tistically in bridging the gap between ambiguous natural language and deterministic code. However, they lack formal grounding to support verifiability/testing of generated code with respect to AI Planning Loop Operational Feedback      
+
+> Target Code Build & Test Review Deploy Ops
+> AI Coding Loop AI Ops Loop
+> knowledge injection / self-improvement execution traces fine-tuned model knowledge injection / self-improvement execution traces knowledge injection / self-improvement
+> AI Deployment Loop
+> LLM Model
+> fine-tuning, reasoning, policy improvement
+> World Model
+> system knowledge, workflows, environment understanding
+
+Figure 1: A vision for an AI-enhanced software lifecycle. 
+
+(the inherently ambiguous, and possibly incomplete or inconsistent) natural language "specification" or intent. This limits the potential for automated feedback. Things get even harder when we look across other SDLC stages (e.g., choosing what to build, or estimate impact of a feature once deployed at scale). Such high ambiguity creates bottlenecks as human supervision remains critical. 
+
+Harder for Data Systems: This is further exacerbated for Data Systems , as they include unique challenges in addition to those shared with all software: (1) system behavior is heavily workload dependent (e.g., table instances, which are separate from code), (2) privacy commitments often prevent direct workload observa-tion, and (3) criticality of the workloads makes any experimental disruption challenging or even unacceptable. 
+
+AI Software Factory 
+
+In this paper, we discuss a long-term vision for an AI SW Fac-tory that optimizes the SDLC end-to-end and highlights concrete progress towards addressing these challenges. The general instance of this problem is rather hard, but we show significant progress for narrower but important scenarios. 
+
+Scoping: We focus on Data Systems , as they have stable public APIs (e.g., relational DBMS) and clear system semantics (e.g., ACID se-mantics for transactions), and Evolutionary Coding Tasks (ECT) ,i.e., coding problems for which we can define an automatically mea-surable objective (e.g., query latency). 
+
+By focusing on ECTs for Data Systems we incur less ambiguity: the presence of stable semantics and long-established optimization objectives allow us to automate more of the process by means of increased telemetry gathering and by constructing automated feedback mechanisms. This helps us address the Missing Data and Missing Feedback Challenges. On the other hand, by focusing on Data Systems we need to manage the increased concerns around arXiv:2609.36323v1 [cs.AI] 28 Sep 2026 Microsoft, UW-Madison, GitHub 
+
+workload dependency, mission criticality, and privacy. Next, we briefly summarize how we automate various stages of SDLC and how to build a learning loop on the entire SDLC (Figure 1). 
+
+Targeting. This phase involves determining which new features to build or which system components to optimize. The general problem is layered with ambiguity, but for ECTs on Data Systems we can leverage the right “data” to automate good targeting choices. In our experience, this involves two key ingredients: 
+
+• A rich World Model (§2.1), i.e., a knowledge base capturing the system structure and dependencies, business context, and how these concepts are grounded in observable telemetry. The World Model mediates access to telemetry and profiling, and is contin-uously evolved by processing incoming evidence (§3.1). 
+
+• A Targeting Agent that given (1) a code repository, (2) a high-level objective, and (3) access to the World Model: ranks potential optimization targets and constructs benchmarks to evaluate any code improvement (leveraging the World Model and its telemetry for an eyes-off production-derived eval). The agent maximizes expected ROI—as lift in target metrics per token spend. (§2.2) 
+
+Evolutionary Swarms. Current coding agents primarily oper-ate in linear or lightly multi-agent workflows, requiring significant human validation after short bursts of AI work. We introduce here a system named Darwin that employs evolutionary strategies to guide a swarm of agents to optimize software against a well-defined, measurable objective (per the ECT framing), reducing human re-liance. Darwin breaks down the overarching goal in a solution space search and efficiently picks which ideas to explore next (§2.3). Darwin is inspired by the original genetic+LLM approaches such as [1, 9, 12, 16, 17], but employs an agent-first approach to search that delivers up to 22 × better token efficiency (vs [17]). ECT style solutions have been successfully applied to focused systems re-search [2, 3], with this framework we broaden the scope to tackle systematic, large-scale optimization of production systems (§4). 
+
+Reviewing remains a critical and increasingly costly bottleneck as AI-generated code scales. The evidence-rich approach to target-ing and evolutionary coding helps boost confidence, but we argue for the need for systematic Flighting : i.e., executing new code along-side production and routing a copy of the user traffic to it. This gives us both a correctness check and performance comparison under real workloads. Automating the creation of a privacy-preserving, isolated flighting remains an open challenge (§2.4). 
+
+Ops Automation. Notwithstanding careful testing/flighting, some changes can only be fully validated at scale. We must therefore complement the impact of a faster paced SDLC by equally faster automated incident management, root-cause-analysis and auto-mitigation. We discuss significant progress in this direction (§2.5). 
+
+Self-Improvement Figure 1 visually highlights the self-learning loop of our AI SW Factory. By automating more of the SDLC pro-cess we drastically increase the quality and completeness of our “decision tracing.” For example, across the Targeting Agent and Dar-win we capture detailed telemetry for target decisions, benchmark selections, code changes, performance results, and even consider the impact of code to incidents once deployed in production. Impor-tantly, there are multiple ways to “learn” from the decision traces. For specific facts/skills we evolve the World Model (§3.1), while for stable capabilities we fine-tune the model weights (§3.2). This learning loop is a more recent addition to our system, so we have fewer concrete results in this submission, but we expect to have more by camera-ready / presentation time. 
+
+2 AI SW FACTORY: BUILDING BLOCKS 
+
+We now discuss in more detail the primary building blocks that comprise our AI Software Factory. 
+
+2.1 World Model 
+
+The World Model is our primary answer to the Missing Data chal-lenge called out in the introduction. It is the data-management substrate that grounds every step of Figure 1, capturing the evolv-ing shared understanding of workloads, system behavior, contracts, bottlenecks, KPIs, validated hypotheses, and evidence gaps. It is a bottom-up stack comprising a durable source of truth of raw artifacts, a layer of pipelines and materialized views , and a set of viewpoints 
+
+through which agents read and write. The source of truth is the durable system of record: the col-lection of raw artifacts everything else is derived from, such as workloads, benchmarks, design docs, wikis, troubleshooting guides (TSGs), logs, incidents, execution traces, and telemetry. For effi-ciency, pipelines transform this into materialized views . These views are rebuildable from source, although this can be expen-sive, complex, and require LLM-based distillation of knowledge. Agents read and write through viewpoints , which are purpose-specific interfaces (i.e., verifiable tools such as MCP servers, APIs, and AI-search endpoints) shown atop Figure 2 and layered over the materialized views. Each viewpoint selects the evidence for a decision, constrains how it is interpreted, and gates which conclu-sions are readmitted. Three further properties make this interface load-bearing: provenance tracking , which ensures auditability by grounding each action in a concrete retrieved item that the agent cites; token efficiency , via a compact, task-scoped context sup-plied by the viewpoints rather than raw corpora, which sharpens focus [19] and yields large savings (8 × on average and up to >100 ×;see Figure 3). Viewpoints also ensure access control at retrieval ,limiting information flow to the caller about what is allowed. World Models evolve as evidence accumulates, which we discuss in §3.1. 
+
+> Open Challenge: Generalizing World Model , we have had good success in creating World Models for specific scenarios in the Data Systems/ECT space, but supporting general purpose world model-ing and update is a hard and open problem.
+
+2.2 Hotspan: Targeting Agent 
+
+Hotspan is an agent harness that automates an engineer’s targeting 
+
+workflow: determining what to change (i.e., a target ) and how to measure its success. Hotspan distinguishes itself from vanilla agents by leveraging provenance and evidence grounded in the World Model to systematically identify potential optimization targets. To achieve this, its pipeline comprises the following steps: 
+
+Step 1: Priming. Hotspan first transforms ambiguous optimization goals (e.g., “make the service faster”) into actionable objectives. To do so, Hotspan generates true target metrics (e.g., query latency), identifies their constraints (e.g., throughput, cost), and surfaces any missing KPIs. This is a first steering point for a performance engineer to tune the objectives, if needed, and where we start tackling the Missing Feedback problem discussed in §1. Towards an AI Software Factory for Data Systems Workloads Bottlenecks Benchmarks Design docs Wikis TSGs Logs, incidents  
+
+> User Inputs
+> Database Graph Database
+> AI Reflection Inputs
+> Source of Truth (SOT)
+> Tool Set 2
+> Pipelines & Materialized Views
+> Telemetry Processing Code Processing PR
+> Processing
+> Execution Traces PRs, Review Comments
+> Tool Set 3
+> Input Clearing House
+> Viewpoints
+> Tool Set 1
+> Tool = MCP/API/AI
+> Search Endpoints, etc Users and AI Agents
+> Self-Evolve
+> Memory Processing
+> Tool Set 4
+
+Figure 2: World model architecture. Step 2: Enumeration. Next, Hotspan gathers evidence and pro-duces multiple targets. Hotspan queries several information chan-nels via World Model viewpoints (§2.1): (a) telemetry surfaces the most expensive regions, propagated appropriately through call graphs; (b) code analysis contributes semantic and control-/data-flow queries that elude naive text search, especially in large reposi-tories; and (c) code review mines pull requests, issues, and anti-patterns to keep targets consistent with the system’s architecture and style. A deduplication step then consolidates targets and aggre-gates evidence, boosting targets that are corroborated by multiple channels. Channels are extensible and their weights are adjustable. By leveraging multiple channels and correlating evidence across them, we mitigate the Missing Data problem. 
+
+Step 3: ROI prioritization. Enumerated targets are ranked by ex-pected return on investment, reusing enumeration signals through a cost-and-risk lens. The return is a frequency-weighted measure of objective improvement, grounded where possible in counter-factual impact estimates (below), while the investment combines three budgets: direct cost (bucketized estimate of token spend and testing/benchmarking cost), stability risk (customers, regions, and call volume on the affected path reported by telemetry, defect prop-agation through the data-flow graph, and incident history for the af-fected component), and human comprehension (reviewer effort). Ev-ery ROI ratio is weighted by evidence strength, so weakly grounded targets do not outrank well-supported ones. As shipped changes feed their true cost and risk, these outcomes flow back to sharpen later estimates via updates to the World Model. 
+
+Step 4: Packaging. Finally, Hotspan packages each selected target as an Evolutionary Coding Task to be optimized by Darwin (§2.3). To ensure optimizations yield real improvements in production, packaging couples the optimization target with an evaluation har-ness that provides fast and reliable feedback on correctness and performance. Packaging is the second point for engineers to steer the direction of agentic coding. Hotspan currently assembles this harness primarily from test and benchmark suites already present in the codebase. Increasingly, however, we use the counterfactual viewpoint below to evaluate against production-derived workloads. This approach embeds opti-mization targets into their own custom simulators for low-overhead evaluation against production workloads. The key insight is scoped fidelity —executing the bare optimization target and mocking all remaining components that directly interact with it with sufficient accuracy. We implement this as discrete event simulation for deter-minism and independence from wall clock time. The mock imple-mentation is guided by production telemetry to provide realistic inputs to the target and to measure fidelity by comparing production 10 −1 10 0 10 1 10 2
+
+> Per-query retrieval context (tokens ×1000, log scale) 0.0 0.5 1.0 CDF
+> 128K ctx
+> Raw corpus (est.) Summarized view Graph viewpoint
+
+Figure 3: Retrieval context needed for one decision 
+
+and simulation behavior. We are currently vibe-coding these simula-tors and iterating on the implementation until fidelity is acceptable. Full simulator generation is becoming feasible, since it is itself an Evolutionary Coding Task, but it hinges on the World Model to pro-vide extensive and reliable information about the targeted system. This counterfactual approach helps us further mitigate the Missing Feedback problem. 
+
+Open Challenges: Correctness and Estimating Gains Auto-matic benchmark generation and reliably proving that a change is semantically equivalent to the original program and aligned with the user intent, and estimating potential gains with (tighter) per-formance bounds are open challenges in the general case. 
+
+2.3 Darwin: Evolutionary Agentic Swarms 
+
+Coding agents exhibit a lopsided capability profile. They generate code quickly and cheaply but lack architectural taste and global self-supervision . We sidestep the former limitation by focusing on ECTs in existing (human-architected) systems. For the latter, exist-ing work partially addresses this in two ways. First, agentic coding tools (e.g., GitHub Copilot) support goal-directed local refinement but lack mechanisms for exploration and optimization across a broader solution space. Second, LLM-driven evolutionary search (e.g., OpenEvolve [17]) globally supervises individual one-shot LLM code generation but lacks local self-correction. Darwin addresses this limitation by synthesizing these two lineages: it runs an agen-tic, memetic variator 1 inside an agent-guided evolutionary loop, unifying in-session self-correction and the global objective search. Concretely, Darwin comprises a self-supervising agentic swarm 
+
+that choreographs tens to hundreds of coding agents to efficiently hill-climb a target objective on a repo-scale codebase. Comparing Darwin to OpenEvolve we observe a 22 × token efficiency on classi-cal problems like circle packing. 2 We argue that this enables us to perform Continuous Optimization (CO) : a standing, automated counterpart to CI/CD that continuously drives a codebase toward a measurable objective. Since Darwin is autonomous, CO can run on off-peak, unused GPU capacity, without direct human supervision. In the following subsections, we summarize Darwin’s core com-ponents and discuss larger scale production evidence in §4. 
+
+Memetic variation operators. Darwin implements its evolution-ary loop using a bounded agent session (of a powerful coding agent such as Copilot SDK) as its variation operator. This is a critical dif-ference from prior LLM-driven evolutionary approaches. Following the classical notion of memetic algorithms [11], each “mutation” is a full code – test – debug – reflect cycle executed inside an isolated sandbox: the agent clones a repo (or repos), receives a targeted optimization hypothesis, effectuates a change, runs test/benchmark suites, observes failures, debugs, iterates, and—critically— reflects ,   
+
+> 1Amemetic variator is a variation operator that produces a candidate which is locally refined before it enters the population.
+> 2We omit a more complete ablation study we performed due to space limitations. Microsoft, UW-Madison, GitHub
+
+emitting structured hypotheses about what worked and what to try next. Because agents see compiler errors, test failures, and run-time signals, candidates entering evolutionary selection are already locally debugged, dramatically reducing wasted evaluations. 
+
+Agents steer the search. In classical evolutionary computation the variation operator is uninformed and a fixed selection heuristic (e.g., MAP-Elites, UCB, MCTS [13]) is the main source of search intelligence. Darwin replaces the fixed selection heuristic with an 
+
+ideator pipeline of specialized agents that continuously reshape and guide the search landscape. First, a seeder agent periodically generates hypotheses for the task by performing a deep-research literature review and synthesizing novel hypotheses. Second, a 
+
+refiner agent continuously monitors the reflection hypotheses pro-duced by mutator agents and distills them into a set of actionable “future work.” Finally, a matcher agent jointly scores hypotheses and candidate mutations, enabling Darwin to sample jointly the 
+
+hypothesis to evaluate and the candidate to mutate in a single step. The search direction therefore emerges collectively from the agents 
+
+and is tastefully curated rather than based on a static algorithm. 
+
+Hypotheses as a shared data substrate. Darwin treats optimiza-tion hypotheses as first-class data objects . Each “hypothesis” is a structured, natural-language record with a managed lifecycle: cre-ation (by seeder or mutation agents), weighted sampling, refine-ment, matching, and retirement. This gives the swarm a persistent, cross-generation memory that prior systems lack. Two data-flow mechanisms make this memory pay off in a massively parallel swarm. First, a tabu -style mechanism [4] excludes already-explored hypotheses from sampling, preventing dozens of concurrent agents from redundantly re-discovering the same optimization. Second, an exploration-bonus rule adjusts each hypothesis’s effective weight by its historical usage and success via a contextual-bandit formula-tion that balances exploiting proven strategies against exploring untried ones (akin to agent speculation discussed in [10]). Finally, we observe that hypotheses serve as a stand-in for “step size,” al-lowing Darwin to adaptively tune the magnitude of each mutation, reduce cost (e.g., using small models where appropriate), and keep sessions within the model’s effective reasoning horizon — which has been shown to be much less than the nominal context length [6]. By combining Hotspan and Darwin we address (for ECTs on Data Systems) the Missing Feedback challenge described in §1.     
+
+> Open Challenges: Cost management for Darwin in noisy exper-imental settings (that may mislead search) and for targets with a slow inner loop. Formalizing search beyond our pragmatic/effective strategy to better understand explore/exploit trade-offs.
+
+2.4 Automated Reviewing 
+
+Reviewing remains a mostly open challenge, though we have made meaningful progress by creating agents that impersonate a subject matter expert based on guiding prompts extracted via the World Model, which, in turn, we learned from historical reviews. By agen-tically addressing this feedback prior to human review, we have anecdotally shortened reviewing cycles. We are currently gathering more systematic evidence.   
+
+> Open Challenge: Flighting is key to further accelerate reviewing. Building flighting (even for Data Systems) remains a largely manual process, as it is security and privacy impacting core infrastructure.
+
+2.5 AutoSRE: Automated Ops 
+
+No matter how well software is vetted in testing, review, and pre-production environments, it can still cause incidents in production due to scale, diverse workloads, or cloud weather. To keep up with the acceleration discussed so far, we must simi-larly improve the AI-to-human toil ratio for Ops. Our prior AI-aided SRE work [20] achieved significant efficiency gains. Scaling this life cycle demands a far higher degree of automation in detecting, triaging, and resolving incidents. This is our goal with AutoSRE. AutoSRE is a concrete instantiation of the World Model of Sec-tion 2.1 specialized to the Ops loop, including self-evolution (§3.1), and it is how we handle Missing Data and Feedback for Ops itself. 
+
+Incidents, graph, and viewpoint. The durable system of record for Ops is the stream of production incidents and their attachments: incident-management (ICM) tickets, alerts and firing telemetry, troubleshooting guides (TSGs), mitigation histories, and investiga-tion discussion. Because raw traces are expensive to reason over, Au-toSRE distills historical investigations into an incident-investigation graph: an LLM step parses each resolved incident into a small, fixed schema of problem , action , and observation nodes linked by causal and temporal edges, clustering recurring patterns into reusable workflow fragments (as we discuss in [19]). This graph is a derived, rebuildable, cheaper to traverse materialized view (§2.1) and the primary viewpoint agents touch. Given a live incident, triage and resolution agents enter the graph at nodes matching the symptoms and traverse the highest-evidence paths to retrieve the problem framings, actions, and expected observations that resolved similar incidents in the past, instead of exposing the entire history. The AutoSRE World Model self-evolves as we discuss in §3.1. 
+
+3 AI SW FACTORY: SELF-EVOLUTION 
+
+The significant increase in automation across SDLC stages pre-sented so far provides us with a non-linear benefit: extensive and well-correlated decision tracing! Automated agents and tools metic-ulously capture every outcome and step of their work, yielding curated data that includes feedback and objective measurement. We now describe how we can “learn” from these traces by updating the World Model (§3.1) and fine-tuning the LLM itself (§3.2). 
+
+3.1 Evolving the World Model 
+
+The World Model is a living knowledge base, evolved by both di-rect user input and implicit AI reflections. Inspired by continual-learning agent architectures (e.g., Voyager [18]), the AI SW Factory persists and reuses knowledge from prior engineering activities to continually improve. It does so in the following ways: 
+
+Clearing house. Both user and AI reflection inputs collected from user-agent interactions pass through a clearing house (Figure 2), ensuring that the viewpoints are trustworthy, governed, and com-pliant. This matters because some of the raw input comes from user-agent interactions (e.g., chat transcripts, logs, screenshots, telemetry) that may carry confidential content, which must be de-tected, redacted, and tiered before being fed into the shared World Model. The clearing house leverages the following mechanisms: 
+
+• Tiering with privacy isolation: context is partitioned by scope, sensitivity, and maturity. Each tier is physically isolated with its own storage, retention, and access policy. Towards an AI Software Factory for Data Systems 
+
+• Promotion under consent: personal context is promoted to higher tiers if explicitly consented and repeatedly observed. 
+
+• Reviewable updates: applied as WAL-style entries staged through a submitted →approved/rejected/needs-revision →processed life-cycle with sequence numbers for time-travel and rollback. 
+
+• Simple revert: since every materialized view is derived from a source of truth, rolling back an entry just replays the log to the desired point and rebuilds the downstream views. Collectively these mechanisms convert the execution traces across the SDLC into durable self-improvement : successful trajectories reinforce useful workflows, failures expose stale steps, and reviewed corrections enter shared context, while ensuring end-to-end access control and privacy. This closes the self-evolving loop of Figure 1. 
+
+Self-evolving AIOps loop. As an example, consider the AutoSRE use case of §2.5. Each automated investigation is itself an execu-tion trace (the path taken through the graph, the actions tried, the observations, whether the incident was mitigated). These traces are admitted back through the clearing house and evolve the graph via an ant-colony-optimization (ACO) mechanism [19]: successful paths deposit “pheromones” reinforcing the edges and workflows that worked, unused paths decay, and novel resolutions synthesize new nodes and edges. Over many incidents, the graph automati-cally reorganizes toward the trajectories that resolve production problems, continually improving AutoSRE. 
+
+Open Challenge: Calibrating trust. World Model updates are re-viewed today; this is safe but costly. Navigating this trade off as we gain confidence in our World Model is an open challenge. 
+
+3.2 Evolving the LLM: Fine-tuning Loop 
+
+The second mechanism updates the model weights . Whereas the World Model (§2.1) captures temporary, revisable facts and skills, the fine-tuning loop internalizes stable capabilities —the kind of judgment we want the model to exercise by default, cheaply, on every future run. We observe that the improved decision tracing discussed above turns each Hotspan (§2.2) + Darwin (§2.3) run into a free supervised signal : evolutionary search does not merely produce a winning artifact, it produces a fully-ordered lineage of candidate edits, each grounded in a natural-language hypothesis and scored by an automatic, production-derived objective. Our thesis is that better tracing yields a better model : the richer and more objectively-grounded the trace, the stronger the learning signal we can distill back into the weights. 
+
+Open Challenge: Formalize and explore learning . What we discuss next is our first take on the problem. We believe there is an interest-ing open research challenge to effectively leverage the full signal from our long SDLC traces. 
+
+From lineage to preferences. We turn Darwin lineages into train-ing data without any human labeling. Every mutation step records a 
+
+parent program and one or more child programs, each of which is ex-ecuted and scored against the task objective. Two children and their parent form a naturally-labeled comparison: the higher-scoring edit is chosen , the lower-scoring sibling is rejected , and the shared parent context is the prompt . Because both responses are expressed as parent →child diffs rather than whole programs, the same recipe scales uniformly from a single-file kernel to a multi-file server                                      
+
+> Codebase Code Exp. Darwin Exp. Gains Inv.
+> Dataverse High None 2×throughput 4×mem reduction 2–4 h Fabric Data Agent High Low 10% accuracy boost 3 h Fabric Data Warehouse Low High 2.6 ×GPU kernel speedup 4 h Xbox None High 2×code gen speed-up 16 h Copilot CLI None High 9% token reduction 12% reduced cost 40 h NL2DAX None High 63% prompt size reduction 7% accuracy boost 4 h Experimental LSM tree None Low 1600 ×speedup 3 h
+
+Table 1: Darwin Anecdotal Evidence 
+
+change, and the model learns to prefer good edits over plausible-but-worse ones; effectively, we frame the problem as a preference learning task. We focus on edits that significantly improve upon their ancestors. Crucially, the train/eval split is performed by run 
+
+(and ensuring Darwin has avoided repeated explorations of the same idea), so no lineage leaks across the split and held-out pairs. 
+
+Training. We fine-tune with offline Direct Preference Optimization (DPO) [15]. We adapt a small open model (Qwen3.6 27B [14]) with a lightweight LoRA adapter [7]. This off-policy strategy approximates the full Reinforcement Learning loop; the natural next step is to use Darwin itself as the rollout generator and reward model, driving the on-policy evolution (a là AlphaProof [5]). 
+
+From preferences to behavior. We see that the tuned model can 
+
+rank edits; we next ask whether the learned preference changes how it acts as a coding agent in Darwin. Deploying the fine-tuned LoRA adapter on circle_packing [12], the tuned policy reaches the base policy’s best solution quality with 72.5% fewer mutator agents 
+
+(11 vs. 40) and ultimately attains a modestly higher valid score (sum of radii 2 .631 vs. 2 .618, a +0.48% gain that closes by 75% the remaining distance to optimal). We attribute this matched-quality speedup to a trajectory prior due to preference training. 
+
+Why this matters. We read these results as early but concrete evidence that end-to-end decision traces unlock real learning: im-proving the tracing improves the model . Scaling this signal from a single high-signal ablation to the full diversity of real-software runs, and to the fully on-policy loop is ongoing work. 
+
+4 REAL-WORLD EVIDENCE 
+
+Having described our long-term vision, including implemented and future ideas, we now discuss our impact so far in terms of production, OSS, and anecdotal evidence. 
+
+Anecdotal evidence. We have applied Darwin across a broad range of systems. On circle_packing [12], Darwin cost 22 × less than MAP-elites [13] and 17 × less than [17]. Table 1 reports further evidence of systems we applied it to, the level of codebase expertise by the engineer performing the work, their familiarity with Darwin, gains obtained, and time invested. For example, in Fabric DW we optimize a hash-join GPU kernel. In a matter of hours Darwin derived 40+ software variations, with the best stacking 5 distinct optimizations to deliver a 2.6 × speedup (beyond the production kernel shipping in [8]). More broadly, we made two surprising observations. First, Darwin delivered high ROI in nearly every scenario we applied it. Second, either tool or codebase expertise alone were sufficient to obtain meaningful results in a matter of hours. The first observation might be biased by our ability to instinctively pick problems that are a good fit for Darwin, so we further validate it over a large set of OSS projects and report on large scale production deployment. Microsoft, UW-Madison, GitHub 1.0 1.2 1.4 1.6 1.8 2.0 2.2 2.4 
+
+> Speedup
+> rabbitmq etcd nginx faiss (IVF) scx_cosmos duckdb memcached snappy dragon fl ybadgerdb faiss_hnsw mysql wiredtiger bzip3 postgresql brotli hoard redis jemalloc lucene
+> Application
+> Whisker (1.5x IQR) IQR Median No speedup
+
+Figure 4: Darwin improvements of OSS projects. OSS evidence. We apply Darwin to 45 widely-deployed OSS sys-tems. For each, we impose a $2,500 budget for LLM inference calcu-lated using public API prices. Darwin selects the best-performing mutation, and we report its gains distribution across multiple work-loads. We obtained positive (though sometimes modest) improve-ments across every system we targeted. For the best-performing 20 systems we obtain an average 13.8% performance gain (Figure 4). To gauge whether our roughly $100K of tokens was well spent, we look at the potential impact if these gains were to be conserva-tively deployed on 10% of the production instances of the top-20 projects in our set. Estimating impact is inherently hard, so we focus on resource savings (and therefore only on throughput-oriented gains). Using a couple of different methods to estimate OSS project deployment footprint we arrived at estimates of annual savings in the $230M–$616M range . Even if our estimates are off by 10 ×–100 ×, it is easy to justify the small investment. This is strong motivation for Continuous Optimization (CO) in data systems. How-ever, even stronger evidence comes from observing the outcome of CO in large-scale production environments, as we discuss next. 
+
+Production evidence. Our production toolchain is internally named 
+
+Autoperf , and a dedicated performance team is focused on applying it systematically to repositories across Dynamics / Power platform / Agent 365 (currently tens of repositories with more onboarded daily) with the goal of improving performance and infrastructure efficiency. Autoperf leverages a manually-curated World Model (§2.1), a version of Hotspan that uses channels from production telemetry and the Azure Profiler (§2.2), a scale-out deployment of the Darwin evolutionary swarm (§2.3), and an automated adver-sarial reviewing mechanism to lower the cost of manual reviewing (§2.4). Autoperf’s output is input to engineering review queues. Working with the performance team leadership we estimate that about 43% of the team’s time was spent using Autoperf on appli-cation scenarios (57% was in infra building and repo onboarding activities). Focusing on the application work, the team has delivered an astonishing 0.35 PRs per engineer-hour . This is estimated to be 4.7 × more than manual development , and 3× higher than today’s best agentic coding tools . Figure 5 shows a CDF of gains from the PRs produced by the team, and a breakdown of what type of code changes led to them. These gains range from latency and throughput to reduction of CPU/memory utilization 
+
+(1.72 × median, and 90th %ile of 10 ×).
+
+Figure 5: Production Evidence for Autoperf. 
+
+5 CONCLUSIONS 
+
+In this paper, we put forth a vision for an AI SW Factory that automates more of the SDLC. We report on an early implementation and its impact both on OSS and Microsoft production-level, large-scale deployments. While many open challenges remain, ECTs for Data Systems have delivered gains far exceeding those of agentic coding alone and easily justified the token cost. This convinces us that we are on the right track to accelerate the SDLC end-to-end and boosts our confidence on the bet of an AI Software Factory! 
+
+REFERENCES 
+
+[1] Lakshya A Agrawal, et al. 2026. GEPA: Reflective Prompt Evolution Can Outper-form Reinforcement Learning. In ICLR .[2] Audrey Cheng, et al. 2025. Barbarians at the Gate: How AI is Upending Systems Research. arXiv preprint arXiv:2510.06189 (2025). [3] Audrey Cheng, et al. 2025. Let the Barbarians In: How AI Can Accelerate Systems Performance Research. arXiv preprint arXiv:2512.14806 (2025). [4] Michel Gendreau. 2003. An Introduction to Tabu Search. In Handbook of Meta-heuristics , Fred Glover et al. (Eds.). https://doi.org/10.1007/0-306-48056-5_2 [5] Google DeepMind. 2024. AI achieves silver-medal standard solving International Mathematical Olympiad problems. https://tinyurl.com/deepmind-math. [6] Cheng-Ping Hsieh, et al. 2025. RULERv2: From Basic Retrieval to Complex Reasoning, A Bottom-Up Benchmark for Long-Context Evaluation. In NeurIPS Workshops . https://openreview.net/forum?id=ZU9tRffRSA. [7] Edward J. Hu, et al. 2022. LoRA: Low-Rank Adaptation of Large Language Models. In International Conference on Learning Representations (ICLR) . arXiv:2106.09685. [8] Matteo Interlandi, et al. 2026. CoddSpeed: Hardware Accelerated Query Process-ing in Microsoft Fabric (SIGMOD) . Best Industry Paper Award. [9] Robert Tjarko Lange, et al. 2025. ShinkaEvolve: Towards Open-Ended and Sample-Efficient Program Evolution. arXiv preprint arXiv:2509.19349 (2025). [10] Shu Liu, et al. 2026. Supporting Our AI Overlords: Redesigning Data Systems to be Agent-First. In CIDR .[11] Pablo Moscato et al. 2003. A Gentle Introduction to Memetic Algorithms. In 
+
+Handbook of Metaheuristics . https://doi.org/10.1007/0-306-48056-5_5 [12] Alexander Novikov, et al. 2025. AlphaEvolve: A coding agent for scientific and algorithmic discovery. arXiv preprint arXiv:2506.13131 (2025). [13] Justin K. Pugh, et al. 2016. Quality Diversity: A New Frontier for Evolutionary Computation. Frontiers in Robotics and AI (2016). [14] Qwen Team. 2026. Qwen3.6. https://github.com/QwenLM/Qwen3.6. Alibaba. [15] Rafael Rafailov, et al. 2023. Direct Preference Optimization: Your Language Model is Secretly a Reward Model. In NeurIPS . arXiv:2305.18290. [16] Bernardino Romera-Paredes, et al. 2024. Mathematical Discoveries from Program Search with Large Language Models. Nature 625, 7995 (2024), 468–475. [17] Asankhaya Sharma. 2025. OpenEvolve: Open-source implementation of AlphaE-volve . https://github.com/codelion/openevolve [18] Guanzhi Wang, et al. 2024. Voyager: An Open-Ended Embodied Agent with Large Language Models. In ICLR .[19] Yiwen Zhu, et al. 2026. GraphMind: From Operational Traces to Self-Evolving Workflow Automation. arXiv:2605.17617 [cs.AI] https://arxiv.org/abs/2605.17617 [20] Yiwen Zhu, et al. 2026. ENCO: Deploying Production-Scale Engineering Copilots. In SIGKDD . https://doi.org/10.1145/3770854.3783949
