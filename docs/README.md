@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-10-02</span>
+      <span class="dpr-home-dashboard-kicker">2026-10-03</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 25 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 13 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>14</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>5</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>8</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-10-02 22:50:18 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-10-03 22:37:57 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>2026-10-02 日报精选 25 篇，精读 14 篇、速读 11 篇，聚焦编码智能体与 AI 软件工程评测。最值得看的是两篇 9 分精读：《From Dead Code and Static Requirements to Working Engines》探讨用编码智能体复活遗留代码，《StateTape》则关注长周期编码智能体的证据生命周期建模。普通读者可先从这两篇入手，再顺着速读里的智能体设计库、AI 代码评审可信度与 LLM4SE 统计评估三条线了解评测方法。</p>
+<p>今日筛选13篇AI前沿论文，精读5篇、速读8篇，聚焦AI生成代码的环境可复现性与自主ML工程Agent框架。最值得关注的是最高分9.0的《Code That Works, Environments That Don&#x27;t》，它专门测量AI生成软件的环境复现难题，以及8.0的《How Much of a Harness Does a Strong Agent Need》对强Agent自主ML工程所需支撑的追问。普通读者可先从这两篇精读入手，再按兴趣速览GitHarness、HPC Agent系统与编码Agent可复用指导三篇。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -78,12 +78,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">14 篇</strong>
+    <strong class="dpr-home-dashboard-count">5 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="From Dead Code and Static Requirements to Working Engines: Software Revival with Coding Agents">From Dead Code and Static Requirements to Working Engines: Software Revival with Coding Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="StateTape: Action-Conditioned Evidence Lifecycle Modeling for Long-Horizon Coding Agents">StateTape: Action-Conditioned Evidence Lifecycle Modeling for Long-Horizon Coding Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Towards an AI Software Factory for Data Systems">Towards an AI Software Factory for Data Systems</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Code That Works, Environments That Don&#x27;t: Measuring Environment Reproducibility in AI-Generated Software">Code That Works, Environments That Don&#x27;t: Measuring Environment Reproducibility in AI-Generated Software</span></li><li><span class="dpr-home-dashboard-paper-title" title="How Much of a Harness Does a Strong Agent Need for Autonomous ML Engineering?">How Much of a Harness Does a Strong Agent Need for Autonomous ML Engineering?</span></li><li><span class="dpr-home-dashboard-paper-title" title="Incident-Arena: Getting agents to the last nine of reliability">Incident-Arena: Getting agents to the last nine of reliability</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>14</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>5</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -91,12 +91,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">11 篇</strong>
+    <strong class="dpr-home-dashboard-count">8 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Can Agents Design Libraries for Agents?">Can Agents Design Libraries for Agents?</span></li><li><span class="dpr-home-dashboard-paper-title" title="CRJudgeBench: Can AI Detect Plausible but Invalid Code Reviews?">CRJudgeBench: Can AI Detect Plausible but Invalid Code Reviews?</span></li><li><span class="dpr-home-dashboard-paper-title" title="SafeLLM4SE: Statistical Evaluation and Reporting for LLM-based Software Engineering Systems">SafeLLM4SE: Statistical Evaluation and Reporting for LLM-based Software Engineering Systems</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="GitHarness: Git Init Your Harness Working Memory for Perpetual User Requirements">GitHarness: Git Init Your Harness Working Memory for Perpetual User Requirements</span></li><li><span class="dpr-home-dashboard-paper-title" title="Towards Efficient HPC Systems for Agents: Challenges and Opportunities">Towards Efficient HPC Systems for Agents: Challenges and Opportunities</span></li><li><span class="dpr-home-dashboard-paper-title" title="From Verification Failures to Reusable Guidance for Coding Agents">From Verification Failures to Reusable Guidance for Coding Agents</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>11</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>8</strong></span></div>
 </section>
 </div>
 
