@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-10-04</span>
+      <span class="dpr-home-dashboard-kicker">2026-10-06</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 8 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 11 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>1</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>4</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>7</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-10-04 21:56:17 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-10-06 00:33:26 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日精读1篇、速读7篇，共8篇论文，重点聚焦编码智能体能否从零构建代码仓库。最值得看的是9.0分的《Zero2Repo》，直击编码智能体的仓库级构建能力；速读中提示压缩与文本生成评估也值得顺带关注。普通读者可先读《Zero2Repo》了解智能体边界，再按需浏览速读论文的方法思路。</p>
+<p>今日共筛出 11 篇（精读 4、速读 7），焦点落在 AI 编程智能体与开发者工作流。最值得看的是拿下 10.0 分的《GTDD：面向 AI 编程智能体的生成式测试驱动开发与对抗测试》，以及 9.0 分的智能体可持续性系统对比。普通读者可先读这两篇，再按兴趣扫一眼速读中的长上下文压测与多模型检索集成。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -78,12 +78,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">1 篇</strong>
+    <strong class="dpr-home-dashboard-count">4 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Zero2Repo: Can Coding Agents Build Repositories from Scratch?">Zero2Repo: Can Coding Agents Build Repositories from Scratch?</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="GTDD: Generative Test-Driven Development for AI Coding Agents with Adversarial Testing">GTDD: Generative Test-Driven Development for AI Coding Agents with Adversarial Testing</span></li><li><span class="dpr-home-dashboard-paper-title" title="Engineering Sustainable Agents: A Systematic Comparison of Agentic LLMs for Developer Workflows">Engineering Sustainable Agents: A Systematic Comparison of Agentic LLMs for Developer Workflows</span></li><li><span class="dpr-home-dashboard-paper-title" title="XRepoSkill: Learning Transferable Skills for Software Engineering Agents">XRepoSkill: Learning Transferable Skills for Software Engineering Agents</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>4</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -94,7 +94,7 @@
     <strong class="dpr-home-dashboard-count">7 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Streamlined Reflective Evolution for Task-Adaptive Self-Refinement Pipelines">Streamlined Reflective Evolution for Task-Adaptive Self-Refinement Pipelines</span></li><li><span class="dpr-home-dashboard-paper-title" title="PC-SubMax: Efficient Prompt Compression via Regularized Submodular Maximization">PC-SubMax: Efficient Prompt Compression via Regularized Submodular Maximization</span></li><li><span class="dpr-home-dashboard-paper-title" title="Coherence-Aware Distributional Evaluation of Open-Ended Text Generation">Coherence-Aware Distributional Evaluation of Open-Ended Text Generation</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Making the Invisible Visible: A Framework for Reflective AI Use in Software Engineering Education">Making the Invisible Visible: A Framework for Reflective AI Use in Software Engineering Education</span></li><li><span class="dpr-home-dashboard-paper-title" title="MERGE: Multi-LLM Ensemble for Retrieval via Generative Enrichment">MERGE: Multi-LLM Ensemble for Retrieval via Generative Enrichment</span></li><li><span class="dpr-home-dashboard-paper-title" title="LongHarness Bench: Stress-Testing Language Model Harnesses for Long-Context Reasoning">LongHarness Bench: Stress-Testing Language Model Harnesses for Long-Context Reasoning</span></li></ul>
   </div>
   <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>7</strong></span></div>
 </section>
