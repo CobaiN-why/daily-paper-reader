@@ -1,0 +1,974 @@
+Title: Software World Models: From Consequence Prediction to Decision Value
+
+URL Source: https://arxiv.org/pdf/2610.04940v1
+
+Published Time: Tue, 06 Oct 2026 01:22:03 GMT
+
+Number of Pages: 29
+
+Markdown Content:
+Preprint 
+
+# SOFTWARE WORLD MODELS : FROM CONSEQUENCE 
+
+# PREDICTION TO DECISION VALUE 
+
+Tongli Su 1,∗ Yuntong Hu 1,∗ Liang Zhao 1,2,†
+
+Bowen Zhu 2 JayaSai Somasundaram 2 Hasibul Haque 21Emory University 2CausalDynamics.com 
+
+## ABSTRACT 
+
+A coding agent may safely modify one repository while silently breaking down-stream services, libraries, or datastores that depend on it. Exhaustively running integration tests after every agent action is impractical, so the agent must pre-dict these failures before executing them. Existing software world models predict the agent’s own observations, while static change-impact analysis only identifies where a change may propagate. We instead introduce the Software World Model 
+
+(SWM), which models the broader system affected by a code change and pre-dicts its blast set : the components that the change will break. SWM follows three stages: explore, learn, and act. Explore executes candidate changes from restored system states, prioritizing regions where observed failures contradict the dependency graph. Learn fine-tunes a language model on these execution out-comes to predict downstream breakage. Act converts sampled predictions into per-consumer break probabilities for change ranking, proactive migration, and de-ciding when another execution is worth its cost. On held-out synthetic systems, SWM improves blast-set F1 from 0.431 for static reachability to 0.571 ± 0.037 ,more than halves ranking regret, and improves migration return at all nine evalu-ation checkpoints. The two methods are complementary: reachability is stronger on dependencies represented in the graph, while SWM recovers failures caused by couplings the graph misses. Experiments on held-out real libraries further show that predicting structured failure outcomes, rather than only scalar risk, is impor-tant for downstream decision quality. 
+
+## 1 INTRODUCTION 
+
+A real software system comprises interdependent repositories, services, libraries, and datastores. These components are coupled through APIs, schemas, shared data, and configuration. A coding agent, however, typically works inside one repository and verifies its changes with that repository’s tests (Jimenez et al., 2024; Yang et al., 2024; Wang et al., 2025). A change can therefore be locally correct while silently breaking a downstream consumer , a component that depends on the changed interface. Every local check can pass while that consumer fails when the system runs. Before landing a change, the agent needs to anticipate its blast set , the components that the change breaks. Executing every potentially affected component would reveal the blast set, but does not scale (Memon et al., 2017; Machalica et al., 2019). Classical change-impact analysis instead identi-fies what a change may affect from an extracted dependency graph (Bohner & Arnold, 1996; Rother-mel & Harrold, 1997), but not whether a particular consumer actually breaks. Our static baseline, typed reachability (reachability below), marks consumers connected to the changed interface by de-pendency paths. It cannot distinguish a consumer that tolerates a change from one that does not, and misses failures through couplings the extractor did not recover. We call couplings missing from the extracted graph hidden channels . A silent break is a downstream failure missed by repository tests. More fundamentally, any predictor computed from the extracted graph and change alone carries an error floor given by variation in outcomes among systems sharing that observation (Remark 1). 
+
+> ∗
+
+Equal contribution. †Corresponding author: liang.zhao@emory.edu .
+
+1arXiv:2610.04940v1 [cs.LG] 4 Oct 2026 Preprint OFFLINE · executable training worlds · execution is spent once ONLINE · predict first 1 Explore 2 Learn 3 Act             
+
+> collect executed consequences Software World Model (SWM) training consequence-aware inference
+> explorer candidate changes
+> ABC
+> restored state same state, different outcomes ok breaks
+> blind-spot acquisition :budget goes where reachability was wrong change typed relations whole graph
+> Software World Model (SWM)
+> SC-GRPO
+> predicts
+> blast set agent feedback
+> coding agent candidate changes
+> ABC
+> sample N×e.g., break probability for B svc-a svc-b db migrate above
+> rank changes
+> migrate consumers
+> buy one more execution
+> corpus SWM
+
+Figure 1: SWM closes the loop from exploring executable software worlds, to learning their change-conditioned consequences, to improving the coding agent that acts in them. 
+
+Existing software world models address the complementary problem: they learn what the agent it-self will observe. CWM learns from execution traces and agent interactions (Copet et al., 2025), SWE-World predicts execution and test feedback (Sun et al., 2026), and Qwen-AgentWorld predicts tool-call observations across agent domains (Zuo et al., 2026). Their state is the agent-visible envi-ronment, their action is a tool invocation, and their target is the returned observation. For a locally consistent change, however, that observation can be correct while a downstream service outside the workspace breaks. We instead model the software system the agent changes , rather than only the environment it observes. This shift raises three coupled challenges. Experience : downstream consequences are revealed only by executing affected components, and ordinary agent trajectories observe only one change from each state. Representation : consequences depend on both what the change does and how other components use the changed interface, under incomplete structural observability. Decision use :the learned knowledge must improve the agent’s decision before the costly execution that would otherwise reveal the failure. We introduce the Software World Model (SWM), a learned consequence predictor, and an Explore, Learn, Act framework to build and use it (Figure 1). Explore executes counterfactual changes from restored software states to collect their downstream consequences, concentrating limited execution on informative interventions. Learn trains the coding model on these executed consequences, using the proposed change and typed software relations to learn change-conditioned system dynamics. 
+
+Act returns this learned world knowledge to the same coding agent before future changes, allowing it to anticipate affected consumers rather than discover them only after execution. The learned consequences are reused for later decisions (Section 3). Different exploration policies produce different training experience, with targeted exploration most useful at small budgets. Training on executed consequences improves the same coding agent under a fixed inference interface: it identifies more affected consumers and ships fewer downstream failures on held-out software worlds. Further analysis shows that explicit structure and learned dynamics are complementary. Reachability is strongest on recorded dependency channels, while learned experi-ence helps where structure is incomplete. Downstream decision value also depends on which errors a world model makes, not forecast accuracy alone (Section 4). Our contributions are: • Software world modeling. We formulate system-level consequence prediction for coding agents and characterize why partial software structure alone cannot determine downstream behavior (Re-mark 1). • Explore, Learn, Act. We introduce a framework that actively collects counterfactual software experience, trains SWM on change-conditioned consequences, and uses the learned dynamics to improve the agent’s decisions before execution (Section 3). 2Preprint • Agent improvement. We show that learning from executed consequences improves the same coding agent on held-out software worlds, and analyze how exploration, observability, and model errors determine downstream decision value (Section 4). 
+
+## 2 PROBLEM FORMULATION 
+
+2.1 THE SOFTWARE WORLD 
+
+A software world is an executable system with checks and available actions. Its environment E
+
+evolves a true state st = ( G⋆t , x t). Here G⋆t is the true System-Surface Graph, a typed, directed multigraph G = ( V, E, ρ, ω ) with nodes V , edges E, and two layers. The system layer holds com-ponents and shared resources; the surface layer holds their interfaces, such as endpoints, symbols, and schemas. The map ω assigns each surface node its owner, and ρ : E → R labels each edge with its dependency channel, the kind of coupling it represents (Appendix D.3). The behavioural part is a latent execution state xt : V → { ok , broken }, revealed only by running something. 2.2 AGENT , ACTIONS AND OBSERVATIONS 
+
+An agent follows π(at | ht) with history ht = ( o0, a 0, . . . , o t) and actions A = Aint ∪A probe ∪A rep :repository changes (interventions), execution checks (probes), and repairs. The agent observes 
+
+ot =  Gt, o cons 
+
+> t
+
+, Gt = ex( st), (1) where Gt extracts dependencies across the system but omits component code and some couplings (the hidden channels), and ocons  
+
+> t
+
+records feedback from checks already run. Changes keep the edited repository’s code and tests consistent, so local checks pass by construction; downstream checks do not run by default. Training worlds can be reset, with each executed intervention and its checks consuming one unit of budget b. Deployment has no reset: local checks cost nothing extra, while each additional check costs cchk (Appendix D.9). 2.3 SOFTWARE WORLD MODELING 
+
+The problem is to anticipate a candidate change’s system-wide consequences before executing it. Define its blast set as the components whose execution state changes, 
+
+B(st, a t) = { v ∈ V : xt+1 (v)̸ = xt(v) when at is executed in st }. (2) Given ht and at, a software world model estimates 
+
+p  B(st, a t), o cons  
+
+> t+1
+
+ht, a t
+
+ (3) over the blast set and check feedback. At the forecast step , a change lands; its prediction is made beforehand and scored against all executed downstream effects. The label ∆st = B(st, a t) denotes this blast set rather than the full state difference. The predictive objective is to assign high likelihood to executed consequences, 
+
+max  
+
+> p
+
+E(ht, a t) ∼ D f
+
+h
+
+log p  B(st, a t), o cons  
+
+> t+1
+
+ht, a t
+
+i
+
+, (4) where Df contains forecast-step records from the executed corpus D. Its practical value is whether these forecasts improve candidate selection and consumer protection before a change lands; Ap-pendix D.7 specifies the evaluation criteria. Learning and using this distribution raises three unique challenges: 
+
+C1. Experience. Executed consequences are costly to acquire. A limited budget must expose failures missed by reachability and compare alternative changes from the same state, beyond one observed trajectory. 
+
+C2. Representation. Predicting breakage requires relating changes to consumer behavior despite missing couplings. The graph alone leaves an irreducible error floor (Remark 1); learning must use executed outcomes and represent residual uncertainty. 
+
+C3. Decision use. Before execution reveals failures, comparable consumer risks must support change selection, preventive migration, and decisions about paid checks. 3Preprint 
+
+Algorithm 1 The SWM framework. Explore and Learn run once, offline; Act runs online before each change. 
+
+Input: training worlds, budget b, explorer πe, pretrained language model M , initial executed corpus D, sample count N , costs cact , c dmg , c chk .
+
+Explore (offline; Section 3.1)  
+
+> 1:
+
+while the explorer has spent fewer than b executions do  
+
+> 2:
+
+choose states whose pending interventions have the highest ˆd on D (7)  
+
+> 3:
+
+at each chosen state st, πe proposes At; execute every a ∈ At from the restored st and add B(st) to D
+
+(5)  
+
+> 4:
+
+end while 
+
+Learn (offline; Section 3.2)  
+
+> 5:
+
+fine-tune M on D into Wϕ by supervision or group relative policy optimization (GRPO; 10) 
+
+Act (online, before each change; Section 3.3)  
+
+> 6:
+
+the agent proposes candidate changes At in its repository  
+
+> 7:
+
+sample Wϕ N times per candidate; select a⋆t by predicted consequence (12)  
+
+> 8:
+
+compute βu for a⋆t (11); while a check pays (Proposition 1), check the consumer with the largest expected saving and condition β on the answer  
+
+> 9:
+
+migrate each u with βu > c act /c dmg ; land a⋆t
+
+## 3 EXPLORE , L EARN , A CT : T HE SWM F RAMEWORK 
+
+To address these challenges, we propose an Explore, Learn, Act framework that builds and uses SWM (Figure 1; Algorithm 1). For the experience challenge, Explore executes counterfactual changes from restored training states, concentrating limited execution on informative downstream consequences (Section 3.1). For the representation challenge, Learn trains a consequence predictor that combines each change with typed dependencies and observed health to anticipate system-wide effects (Section 3.2). For decision use, Act brings these learned consequences back to the coding agent to guide candidate selection, preventive migration, and additional checking before a change is committed (Section 3.3). Explore and Learn run offline; their executed experience supports later agent decisions. The primary study uses the trained weights directly as the agent (Section 4.1); the decision rules below separately test how sampled predictions guide action. 3.1 EXPLORE : BRANCH FROM RESTORED STATES WHERE REACHABILITY FAILS 
+
+Explore answers the experience challenge by building the corpus that Learn trains on. An explorer 
+
+πe is a policy that proposes changes in a training world; we evaluate the executed records it col-lects within budget b. Section 4 compares exploration policies at matched budgets; Appendix D.5 describes exploration on real software. The exploration stage combines two operations. Blind-spot acquisition, which selects executions where previous outcomes contradicted reachability, picks the states to branch from, and at each, counterfactual branching has the explorer propose candidate changes that the environment executes in full. Counterfactual branching supplies same-state com-parisons; the real-library acquisition comparison appears in Figure 6. 
+
+Counterfactual branching. Given a state, the explorer proposes At = {a1 
+
+> t
+
+, . . . , a Kt } spanning distinct roles (the action it prefers, a plausible alternative, a risky one, a subtly wrong one, a recov-ery), and the environment executes all of them from the same restored state, 
+
+B(st) =   st, a kt , ∆skt , o cons ,k t+1 
+
+ Kk=1 . (5) We call B(st) a branch set . Branch sets use the explorer as a sampler of candidates and make observable the quantity that ranking compares. Because the environment executes every akt from the same restored st, the corpus records, for any two candidates, 
+
+∆sit − ∆sjt = B(st, a it) − B(st, a jt ) (6) with the state held fixed. No confound between what an action does and the state a policy happened to reach enters the comparison. A single-trajectory corpus cannot support Equation 6: it observes one action per state, so a difference in outcomes conflates the action with the state. 4Preprint 
+
+Blind-spot acquisition. The structural limit in Remark 1 motivates collecting outcomes that the graph alone does not determine. Let R(G, a ) denote typed reachability (Equation 15). Writing P
+
+for the pending interventions, the explorer selects 
+
+A⋆ ∈ arg max  
+
+> A⊆P ,|A|≤ b
+
+X
+
+> a∈A
+
+ˆd tgt( a), ˆd(v) = cPr 
+
+h
+
+B(s, a )̸ = R(G, a ) tgt( a) = v
+
+i
+
+, (7) where the explorer estimates ˆd from the executions already in D. When Explore branches from the states of the selected interventions, each branch set spends K units of b, so the selection admits at most b/K states. Components with high ˆd are reachability blind spots: past executions frequently disagreed with the graph-based prediction. The criterion needs no label for the candidates it selects: past disagreement between execution and reachability serves as a proxy for where the next label is informative. This rule differs from the decision-aware exploration policy in the primary experiments, which also uses model uncertainty and novelty (Appendix A). 3.2 LEARN : FINE -TUNE A LANGUAGE MODEL ON EXECUTED CONSEQUENCES 
+
+Consequence predictor. Learn fine-tunes a language model Wϕ on executed outcomes. Given the history and a candidate change, it predicts the blast set and check feedback, 
+
+Wϕ : ( ht, a t) 7 −→   d∆st, ˆocons 
+
+> t+1
+
+, (8) where hats denote predictions. The forecast-step blast set is the primary target, and check and repair steps supply auxiliary labels (Appendix D.11). Wϕ predicts one step ahead; recursive rollout is a separate extension (Appendix D.12). 
+
+Text input. The default predictor reads a text representation Ssem  
+
+> t
+
+, formed by serialisation τ of the typed neighbourhood within r hops of the change (at most m edges, the retrieval budget), together with the action and the observed health ηt (component statuses revealed by earlier checks), 
+
+Ssem  
+
+> t
+
+= τ  N r,m t (at), a t, η t
+
+. (9) Typed relations distinguish calls, imports, reads, and subscriptions, which reachability reduces to reached or not; they also retain weaker traces of hidden channels. On real libraries, adding each consumer’s usage of the changed symbol raises hidden-channel F1 from 0.142 to 0.198 (Figure 6a). The input ablation in Figure 8c adds dependency relations to the same observed graph to measure which information helps prediction. The model emits one structured object holding the predicted blast set, outcome class (no break, silent break, or a break detected by repository tests), check feedback, and the dependency channel explaining the failure, which puts candidate actions on a common scale (Qian et al., 2026). 
+
+Training on executed outcomes. A short supervised warmup teaches the output format. Its loss combines language modeling with auxiliary losses on the blast set, the outcome class and the fraction of healthy services; the decision rules do not use the last of these outputs (Appendix D.10). The model then undergoes group relative policy optimization (GRPO) (Shao et al., 2024) to a reward that a program scores against the executed transition, 
+
+RWM (ˆ y) = wf Rformat + wsF1
+
+  c∆s, ∆s + wo1[ˆ c = c] + wm 12
+
+ F tok 1 (ˆ o, o ) + chan(ˆ y), (10) with format, blast-set, outcome-class and observation/channel terms (Appendix D.13); no learned reward model enters. Figure 8a compares this recipe with matched supervised training on the same corpus. 
+
+Graph-conditioned variant. This variant conditions the same language model on the whole ex-tracted graph: a relational graph convolutional encoder (Schlichtkrull et al., 2018) reads the graph, and a few learned queries over its node embeddings produce graph tokens , continuous embeddings that precede the text input. Structure-coupled GRPO (SC-GRPO), our extension of GRPO, trains the encoder and the language model jointly on the reward of Equation 10, with one gradient-norm clip per module (Appendix D.13; Appendix D.10). The companion decision and mechanism analyses pool this variant with the default model (nine checkpoints); Table 8 compares the two head-to-head, and Appendix D.13 isolates the effect of per-module clipping. 5Preprint Breaking Static Hidden       
+
+> 0.0 0.2 0.4 0.6
+> Share of executed records
+> 0.23 0.37 0.16 0.36 0.57 0.24
+> 0.0 0.5
+> Forecast-step blast-set F1
+> SFT only GRPO, per-module clip GRPO, graph tokens GRPO, shared clip Risk control Typed reachability 7B zero-shot Predict nothing 0.608 0.607 0.583 0.571 0.671 0.431 0.336 0.167
+> 0.4 0.6 0.8
+> Return
+> Supervised-risk belief plan World-model belief plan Reachability plan 0.794 0.757 0.685 perfect foresight
+> (a) Explore (real libraries) (b) Learn (held-out synthetic) (c) Act (migration tasks)
+> Random choice Blind-spot ranked
+
+Figure 2: Companion evidence across Explore, Learn, and Act. (a) Fractions of locally passing real-library perturbations that break a consumer, contradict static prediction, or expose a hidden channel. (b) Blast-set F1 on 90 held-out synthetic forecasts; dots mark the mean and mean ± three-seed half-range. (c) Explicit-belief planning on 40 migration tasks, with perfect foresight as a reference. The panels use separate evaluation populations. 3.3 ACT : CONSULT THE PREDICTOR BEFORE A CHANGE LANDS 
+
+Before landing a change, the agent proposes candidates At and samples Wϕ for each candidate to rank changes, decide whether to pay for another check, and migrate consumers at risk. A preventive migration updates a consumer to remain compatible with the pending change; a repair restores a consumer after it has broken. Only the checks the agent buys cost execution. 
+
+Break probabilities. Over the consumer set Ct, sampling N predicted blast sets estimates each consumer’s break probability βu. We call these probabilities the belief and use the factorized ap-proximation 
+
+ˆp B | ht, a t
+
+ = Y
+
+> u∈Ct
+
+β1[u∈B] 
+
+> u
+
+(1 − βu)1−1[u∈B], βu = 1
+
+> N
+
+PNn=1 1u ∈ c∆s(n), (11) where 1[·] is an indicator. A structural predictor such as R supplies only βu ∈ { 0, 1}, which is the formal sense in which reachability cannot express a preference between two candidates it marks alike. 
+
+Ranking. Wϕ imagines each candidate, and the agent lands only the best, 
+
+a⋆t = arg max 
+
+> a∈At
+
+U  Wϕ(ht, a ), (12) with U the negative predicted blast size, or the predicted return for migration plans. 
+
+Preventive migrations and paid checks. The belief Equation 11 converts preventive action into a decision under uncertainty rather than a traversal of a set. 
+
+Proposition 1 (One-step decision rules under the belief) . Let cact be the cost of migrating a con-sumer, cdmg the cost of leaving it broken, and cchk the cost of checking it. Under the factorisation Equation 11 the expected-cost-minimising one-step choices are migrate u ⇐⇒ βu > cact 
+
+cdmg 
+
+, check u ⇐⇒ cchk + βucact < min  cact , β ucdmg 
+
+, (13) 
+
+and the agent checks the consumer with the largest expected saving until no check pays. 
+
+After each check, the agent conditions the belief on the answer by reweighting the sampled blast sets that agree with it (Appendix C.3). 6Preprint Both rules use the same break probabilities for preventive migration and paid checks. A set-valued predictor restricts them to βu ∈ { 0, 1}; probabilistic predictions instead support decisions at the cost thresholds in Equation 13 (Appendix C.3). 
+
+## 4 EXPERIMENTS 
+
+4.1 EXPERIMENTAL SETUP 
+
+Models and comparisons. All backbones in the main agent comparison have 3B parameters. We compare the base Qwen2.5-Coder-Instruct agent, its consequence-trained SWM counterpart, and our CWM and Qwen-AgentWorld implementations on synthetic worlds and held-out real libraries. Baseline adaptation is described in Appendix D.6. The synthetic ablations hold the base checkpoint, training recipe, and acting interface fixed while varying the training corpus. Random samples eli-gible targets; Coverage cycles through change types; Expert uses true-graph consumer information; Decision-aware combines uncertainty, disagreement with reachability, and novelty. 
+
+Matched synthetic evaluation. A training record pairs one executed change with its conse-quences. Each 360-record corpus has three training seeds. Random and decision-aware exploration also use 100- and 200-record budgets. These 24 trained arms and the base checkpoint run on the same 40 tasks from seven held-out worlds, yielding 1,000 episodes. Each agent first lists candidate consumers for a fixed change, then selects consumers to migrate. Decoding is greedy, and execu-tion accounting is identical. The trained checkpoint acts directly, without external predictions or additional policy fine-tuning. 
+
+Metrics and uncertainty. Return is J = 1 − 0.25 nbroken − 0.05( nfixes + 1) : the counts are services left broken and preventive migrations, and the extra action ships the change. Candidate recall is the fraction of truly affected consumers in the first call’s list. The main table reports means; standard deviations are retained in Table 5. Synthetic ablations average three seeds within each task and bootstrap paired return differences by world, using 10,000 resamples. These intervals apply to the synthetic ablations, not the real-library comparison. Full task accounting and seeds appear in Appendix A.2; implementation and metrics are in Appendix D.7. Companion prediction and explicit-belief studies use separate populations and the configuration in Table 13. 4.2 MAIN RESULTS : D OES LEARNING A SOFTWARE WORLD IMPROVE THE AGENT ?
+
+Exploration determines the experience available for learning. Different policies expose the learner to different software consequences. Targeted exploration concentrates execution on breaking and locally invisible transitions (Figure 3a). These corpus differences also change prediction at matched budgets: with 100 records, decision-aware acquisition yields blast-set F1 of 0.529 , versus 
+
+0.399 for random acquisition. The complete curves show that prediction quality need not grow monotonically with the record count (Appendix A.1). Table 1: Mean agent performance on synthetic and real-library worlds. Return subscripts give gains over the base agent. Standard deviations appear in Table 5.                                  
+
+> Agent Synthetic Real libraries Return ↑Recall ↑Broken ↓Return ↑Recall ↑Broken ↓
+> Base agent 0.721 0.444 0.600 0.453 0.276 0.387
+> CWM 0.740 +0 .019 0.533 0.499 0 .548 +0 .095 0.381 0.351
+> Qwen-AgentWorld
+> 0.754 +0 .033 0.559 0.447 0 .571 +0 .118 0.446 0.360
+> SWM (Ours) 0.773 +0 .052 0.586 0.363 0 .613 +0 .160 0.499 0.309
+
+Differences are computed before rounding the displayed means. CWM (Copet et al., 2025) and Qwen-AgentWorld (Zuo et al., 2026) are adapted as described in Appendix D.6. 
+
+Learning executed consequences improves the same coding agent. 
+
+Consequence training raises synthetic mean return from 0.721 to 
+
+0.773 (Table 1). All four full-budget corpora im-prove return: each paired interval is positive, as are the point gains for all twelve training seeds (Appendix A.2). 
+
+The trained agent an-ticipates more failures 
+
+7Preprint Breaking Silent break 0.0 0.2 0.4 0.6 0.8            
+
+> Share of 360 records
+> 25 100 200 360
+> Executed training records
+> 0.1 0.2 0.3 0.4 0.5 0.6 0.7
+> Held-out blast-set F1
+> Rand. Cov. Exp. DA 0.00 0.02 0.04 0.06 0.08 0.10
+> Return gain over base
+> (a) Acquired experience (b) Consequence learning (c) Agent gain
+> Random Coverage Expert Decision-aware
+
+Figure 3: Exploration, consequence learning, and agent improvement. The prediction study in (b) reports three-seed half-ranges; the agent study in (c) reports paired world-bootstrap 95% intervals and individual seed means. 
+
+before acting. On both datasets, the trained agent identifies more affected consumers and leaves fewer services broken. Re-turn also charges for migrations, so its gain reflects the balance between prevention cost and avoided damage. These measurements support improved anticipation and action without isolating their indi-vidual contributions (Appendix A.3). 
+
+The same performance pattern holds on real libraries. SWM has higher mean return and can-didate recall, with fewer broken services, than the base agent and both world-model baselines on each dataset (Table 1). On held-out real libraries, mean return rises from 0.453 to 0.613 . This extends the observed benefit beyond procedural systems. Real-library prediction and exploration diagnostics appear in Appendix A.4. 4.3 ABLATION : W HAT MAKES SOFTWARE -W ORLD LEARNING WORK ?Table 2: Consequence training improves the base agent on 40 matched tasks. Trained rows average three seeds at 360 records; brackets give paired world-bootstrap 95% intervals for return dif-ferences, computed before rounding. 
+
+Training corpus Return ↑ ∆ return [95% interval] 
+
+Base agent 0.721 n/a Random 0.772 +0 .050 [+0 .021 , +0 .088] 
+
+Coverage 0.768 +0 .046 [+0 .012 , +0 .089] 
+
+Expert 0.780 +0 .059 [+0 .029 , +0 .095] 
+
+Decision-aware 0.765 +0 .044 [+0 .010 , +0 .087] 
+
+Targeted exploration helps most at the smaller tested budgets. Decision-aware ac-quisition has a larger point gain than random acquisition at 100 and 200 records. At 100 records, only its interval against the base agent excludes zero. The gap narrows with more experience, and the or-dering reverses at 360 records (Figure 7). The pattern sug-gests a sample-efficiency bene-fit. Intervals compare each pol-icy with the base agent, rather than with the other policy. Full results are in Appendix B.1. 
+
+Several exploration policies supply useful training data. All four full-budget corpora improve return under the same training recipe (Table 2). Expert exploration gives the largest gain but uses privileged graph information. Random acquisition also helps, so the observed benefit is not confined to the targeted acquisition rule. This tests the consequence-training pipeline; an ordinary fine-tuning control would be needed to isolate its objective. 8Preprint 
+
+Richer state helps only when relevant information remains accessible. Adding runtime rela-tions lowers learned F1 at the default input budget. Doubling that budget raises runtime-input F1 from 0.469 to 0.592 , above the smaller static input. The pattern is consistent with competition for limited context (Appendix B.2). Training-recipe comparisons, including graph tokens and gradient clipping, are reported separately in Appendix B.3. 4.4 ANALYSIS : W HAT DO WE LEARN ABOUT SOFTWARE WORLD MODELING ?
+
+Structure and learned experience resolve complementary uncertainty. Reachability has higher F1 on direct propagation, while learned predictions recover more hidden-channel failures in both evaluated hidden-channel populations. This contrast supports combining explicit dependencies with executed experience to predict failures the graph misses (Appendix C.1). 
+
+Prediction accuracy alone does not determine decision value. At matched blast-set F1, learned beliefs produce better migration plans than a noise-perturbed oracle, but incur higher ranking regret. Pairwise ranking accuracy also correlates more strongly with regret than aggregate set F1. The rever-sal shows why decision evaluation must account for where prediction errors occur (Appendix C.2). 
+
+The value of prediction depends on the alternatives to execution. The main agent comparison favors SWM, but companion studies expose its boundaries. A supervised risk scorer has higher in-distribution forecast F1 and belief-plan return. Cheap checks of every consumer can also outperform the learned belief plan. These comparisons use different interfaces from the main agent evaluation. Their mixed outcomes bound the benefit by the available structure, execution cost, and decision rule (Appendix C.3). 
+
+## 5 RELATED WORK 
+
+Agent World Models. Learned world models let agents train inside or consult imagined fu-tures (Richens et al., 2025; Ha & Schmidhuber, 2018; LeCun et al., 2022; Hafner et al., 2025a;b; Gu et al., 2024; Chae et al., 2025). Software world models predict execution or tool feedback (Copet et al., 2025; Sun et al., 2026; Zuo et al., 2026; Guo et al., 2025; Zhang et al., 2026), while executable environments supply experience for agent training (Jimenez et al., 2024; Yang et al., 2025; Pan et al., 2025; Badertdinov et al., 2025). Our target is the downstream system affected by a change, including failures outside the agent’s workspace. We learn these consequences from execution and evaluate their value for subsequent decisions. 
+
+Software Change Modeling. Change-impact analysis and regression-test selection use depen-dencies to identify potentially affected components (Bohner & Arnold, 1996; Rothermel & Harrold, 1997; Memon et al., 2017; Salis et al., 2021; Reyes et al., 2024). Graph-conditioned language mod-els provide structural context through graph representations (Perozzi et al., 2024; He et al., 2024; Hu et al., 2025; Chen et al., 2024; Li et al., 2023). SWM uses this structure to predict whether a par-ticular change actually breaks a consumer. Its evaluation connects to decision-focused prediction, where quality depends on the decisions a forecast induces (Elmachtoub & Grigas, 2022). 
+
+## 6 CONCLUSION 
+
+Coding agents should reason beyond the repository they edit. They should also anticipate how their changes affect the broader software system. We introduced Software World Models and an 
+
+Explore–Learn–Act framework for this goal. Our experiments show that learning executed con-sequences improves the same coding agent under a fixed inference interface. The trained agent identifies more affected consumers and leaves fewer downstream services broken. We also find that structure and experience provide complementary information. Explicit dependencies are reliable when the relevant structure is observed, while learned dynamics help when that structure is incom-plete. Finally, forecast accuracy alone does not determine decision value. The location and type of prediction errors also matter. These results point toward coding agents that do more than react to failures. By exploring and learning their software worlds, agents can anticipate the consequences of future changes before acting. 9Preprint 
+
+## AI U SE STATEMENT 
+
+Generative AI tools were used to assist with code implementation, debugging, experiment orches-tration, and language editing. All generated code was reviewed by the authors and validated through the project’s test and execution pipelines. AI tools were not used to generate experimental labels or reported results: software-world consequences were obtained from executed environments, and all reported numbers were computed from saved experimental outputs. The authors take full responsi-bility for the methodology, analysis, claims, and manuscript. 
+
+## ETHICS STATEMENT 
+
+This work studies coding agents that predict the downstream consequences of software changes. Our experiments use procedurally generated systems and permissively licensed open-source software; they involve no human subjects, personal data, or user-generated content. The proposed techniques may help identify cross-component failures before software changes are deployed, but similar capa-bilities could also reveal structural weaknesses in software systems. Our experiments are restricted to systems and environments under the experimenter’s control. We encourage deployment only with appropriate authorization, access controls, and human oversight for consequential software changes. 
+
+## REPRODUCIBILITY STATEMENT 
+
+Training and evaluation worlds are disjoint, corpus generation is seeded, and each reported train-ing condition retains its data split, configuration, random seeds, and model checkpoint. Executed transitions—rather than model-generated judgments—serve as supervision for downstream conse-quences. For the main agent experiments, we retain per-task outputs and report results across train-ing seeds with world-clustered uncertainty estimates. The appendices document the software worlds and graph schema, exploration and evaluation protocols, model training details, decision accounting, and complete experimental results. 
+
+## REFERENCES 
+
+Ibragim Badertdinov, Alexander Golubev, Maksim Nekrashevich, Anton Shevtsov, Simon Karasik, Andrei Andriushchenko, Maria Trofimova, Daria Litvintseva, and Boris Yangel. SWE-rebench: An automated pipeline for task collection and decontaminated evaluation of software engineering agents. In Advances in Neural Information Processing Systems , volume 38, pp. 26420–26466, 2025. doi: 10.52202/085713-0788. URL https://arxiv.org/abs/2505.20411 .Shawn A. Bohner and Robert S. Arnold. Software Change Impact Analysis . Wiley-IEEE Computer Society Press, 1996. ISBN 9780818673849. Hyungjoo Chae, Namyoung Kim, Kai Tzu-iunn Ong, Minju Gwak, Gwanwoo Song, Jihoon Kim, Sunghwan Kim, Dongha Lee, and Jinyoung Yeo. Web agents with world models: Learning and leveraging environment dynamics in web navigation. In International Conference on Learning Representations , 2025. URL https://proceedings.iclr.cc/paper_ files/paper/2025/hash/a00548031e4647b13042c97c922fadf1-Abstract-Conference.html .Runjin Chen, Tong Zhao, Ajay Kumar Jaiswal, Neil Shah, and Zhangyang Wang. LLaGA: Large language and graph assistant. In Proceedings of the 41st International Conference on Machine Learning , volume 235 of Proceedings of Machine Learning Research , pp. 7809–7823. PMLR, 2024. URL https://proceedings.mlr.press/v235/chen24bh.html .Jade Copet, Quentin Carbonneaux, Gal Cohen, Jonas Gehring, Jacob Kahn, Jannik Kossen, Felix Kreuk, Emily McMilin, Michel Meyer, Yuxiang Wei, et al. Cwm: An open-weights llm for research on code generation with world models. arXiv preprint arXiv:2510.02387 , 2025. Adam N. Elmachtoub and Paul Grigas. Smart predict, then optimize. Management Science , 68(1): 9–26, 2022. doi: 10.1287/mnsc.2020.3922. 10 Preprint Yu Gu, Kai Zhang, Yuting Ning, Boyuan Zheng, Boyu Gou, Tianci Xue, Cheng Chang, Sanjari Srivastava, Yanan Xie, Peng Qi, et al. Is your llm secretly a world model of the internet? model-based planning for web agents. arXiv preprint arXiv:2411.06559 , 2024. Shangmin Guo, Omar Darwiche Domingues, Raphaël Avalos, Aaron Courville, and Florian Strub. World modelling improves language model agents. arXiv preprint arXiv:2506.02918 , 2025. David Ha and Jürgen Schmidhuber. World models. arXiv preprint arXiv:1803.10122 , 2018. URL 
+
+https://arxiv.org/abs/1803.10122 .Danijar Hafner, Jurgis Pasukonis, Jimmy Ba, and Timothy Lillicrap. Mastering diverse control tasks through world models. Nature , 640(8059):647–653, 2025a. doi: 10.1038/s41586-025-08744-2. URL https://www.nature.com/articles/s41586-025-08744-2 .Danijar Hafner, Wilson Yan, and Timothy Lillicrap. Training agents inside of scalable world models. 
+
+arXiv preprint arXiv:2509.24527 , 2025b. Xiaoxin He, Yijun Tian, Yifei Sun, Nitesh V. Chawla, Thomas Laurent, Yann LeCun, Xavier Bres-son, and Bryan Hooi. G-Retriever: Retrieval-augmented generation for textual graph understand-ing and question answering. In Advances in Neural Information Processing Systems , volume 37, pp. 132876–132907, 2024. doi: 10.52202/079017-4224. Yuntong Hu, Zhihan Lei, Zheng Zhang, Bo Pan, Chen Ling, and Liang Zhao. GRAG: Graph retrieval-augmented generation. In Findings of the Association for Computational Lin-guistics: NAACL 2025 , pp. 4145–4157. Association for Computational Linguistics, 2025. doi: 10.18653/v1/2025.findings-naacl.232. URL https://aclanthology.org/2025. findings-naacl.232/ .Carlos E Jimenez, John Yang, Alexander Wettig, Shunyu Yao, Kexin Pei, Ofir Press, and Karthik Narasimhan. Swe-bench: Can language models resolve real-world github issues? In The Twelfth International Conference on Learning Representations , 2024. Yann LeCun et al. A path towards autonomous machine intelligence version 0.9. 2, 2022-06-27. 
+
+Open Review , 62(1):1–62, 2022. Junnan Li, Dongxu Li, Silvio Savarese, and Steven Hoi. BLIP-2: Bootstrapping language-image pre-training with frozen image encoders and large language models. In Proceedings of the 40th International Conference on Machine Learning , volume 202 of Proceedings of Machine Learning Research , pp. 19730–19742. PMLR, 2023. URL https://proceedings.mlr.press/ v202/li23q.html .Mateusz Machalica, Alex Samylkin, Meredith Porth, and Satish Chandra. Predictive test selection. In 2019 IEEE/ACM 41st International Conference on Software Engineering: Software Engineer-ing in Practice (ICSE-SEIP) , pp. 91–100, 2019. doi: 10.1109/ICSE-SEIP.2019.00018. Atif Memon, Zebao Gao, Bao Nguyen, Sanjeev Dhanda, Eric Nickell, Rob Siemborski, and John Micco. Taming google-scale continuous testing. In 2017 IEEE/ACM 39th International Confer-ence on Software Engineering: Software Engineering in Practice Track (ICSE-SEIP) , pp. 233– 242, 2017. doi: 10.1109/ICSE-SEIP.2017.16. Jiayi Pan, Xingyao Wang, Graham Neubig, Navdeep Jaitly, Heng Ji, Alane Suhr, and Yizhe Zhang. Training software engineering agents and verifiers with SWE-gym. In Proceedings of the 42nd International Conference on Machine Learning , volume 267 of Proceedings of Machine Learning Research , pp. 47717–47737. PMLR, 2025. URL https://proceedings.mlr.press/ v267/pan25g.html .Bryan Perozzi, Bahare Fatemi, Dustin Zelle, Anton Tsitsulin, Mehran Kazemi, Rami Al-Rfou, and Jonathan Halcrow. Let your graph do the talking: Encoding structured data for llms. arXiv preprint arXiv:2402.05862 , 2024. URL https://arxiv.org/abs/2402.05862 .11 Preprint Cheng Qian, Emre Can Acikgoz, Bingxuan Li, Xiusi Chen, Yuji Zhang, Bingxiang He, Qinyu Luo, Gokhan Tur, Dilek Hakkani-Tür, Yunzhu Li, and Heng Ji. Current agents fail to lever-age world model as tool for foresight. In Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 13686–13723. As-sociation for Computational Linguistics, 2026. doi: 10.18653/v1/2026.acl-long.623. URL 
+
+https://aclanthology.org/2026.acl-long.623/ .Frank Reyes, Yogya Gamage, Gabriel Skoglund, Benoit Baudry, and Martin Monperrus. BUMP: A benchmark of reproducible breaking dependency updates. In Proceedings of the 31st IEEE International Conference on Software Analysis, Evolution and Reengineering , 2024. doi: 10. 1109/SANER60148.2024.00024. URL https://arxiv.org/abs/2401.09906 .Jonathan Richens, David Abel, Alexis Bellot, and Tom Everitt. General agents contain world mod-els. In Proceedings of the 42nd International Conference on Machine Learning , volume 267 of 
+
+Proceedings of Machine Learning Research , 2025. URL https://arxiv.org/abs/2506. 01622 .Gregg Rothermel and Mary Jean Harrold. A safe, efficient regression test selection technique. ACM Transactions on Software Engineering and Methodology , 6(2):173–210, 1997. doi: 10.1145/ 248233.248262. Vitalis Salis, Thodoris Sotiropoulos, Panos Louridas, Diomidis Spinellis, and Dimitris Mitropoulos. PyCG: Practical call graph generation in python. In Proceedings of the 43rd IEEE/ACM Interna-tional Conference on Software Engineering , 2021. URL https://arxiv.org/abs/2103. 00587 .Michael Schlichtkrull, Thomas N. Kipf, Peter Bloem, Rianne van den Berg, Ivan Titov, and Max Welling. Modeling relational data with graph convolutional networks. In The Semantic Web – 15th International Conference, ESWC 2018 , volume 10843 of Lecture Notes in Computer Science , pp. 593–607. Springer, 2018. doi: 10.1007/978-3-319-93417-4_38. Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, YK Li, Yang Wu, et al. Deepseekmath: Pushing the limits of mathemati-cal reasoning in open language models. arXiv preprint arXiv:2402.03300 , 2024. Shuang Sun, Huatong Song, Lisheng Huang, Jinhao Jiang, Ran Le, Zhihao Lv, Zongchao Chen, Yiwen Hu, Wenyang Luo, Wayne Xin Zhao, et al. Swe-world: Building software engineering agents in docker-free environments. arXiv preprint arXiv:2602.03419 , 2026. Xingyao Wang, Simon Rosenberg, Juan Michelini, Calvin Smith, Hoang Tran, Engel Nyst, Rohit Malhotra, Xuhui Zhou, Valerie Chen, Robert Brennan, et al. The openhands software agent sdk: A composable and extensible foundation for production agents. arXiv preprint arXiv:2511.03690 ,2025. John Yang, Carlos E Jimenez, Alexander Wettig, Kilian Lieret, Shunyu Yao, Karthik Narasimhan, and Ofir Press. Swe-agent: Agent-computer interfaces enable automated software engineering. 
+
+Advances in Neural Information Processing Systems , 37:50528–50652, 2024. John Yang, Kilian Lieret, Carlos E. Jimenez, Alexander Wettig, Kabir Khandpur, Yanzhe Zhang, Binyuan Hui, Ofir Press, Ludwig Schmidt, and Diyi Yang. SWE-smith: Scaling data for soft-ware engineering agents. In Advances in Neural Information Processing Systems , volume 38, pp. 107402–107452, 2025. doi: 10.52202/085713-3239. URL https://arxiv.org/abs/ 2504.21798 .Kai Zhang, Xiangchao Chen, Bo Liu, Tianci Xue, Zeyi Liao, Zhihan Liu, Xiyao Wang, Yuting Ning, Zhaorun Chen, Xiaohan Fu, Jian Xie, Yuxuan Sun, Boyu Gou, Qi Qi, Zihang Meng, Jianwei Yang, Ning Zhang, Xian Li, Ashish Shah, Dat Huynh, Hengduo Li, Zi Yang, Xuefei Cao, Lawrence Ke-unho Jang, Shuyan Zhou, Jiacheng Zhu, Huan Sun, Jason E. Weston, Yu Su, and Yifan Wu. Agent learning via early experience. In Proceedings of the 43rd International Conference on Machine Learning , 2026. URL https://openreview.net/forum?id=N3dXUHY5dD .12 Preprint Yuxin Zuo, Zikai Xiao, Li Sheng, Fei Huang, Jianhong Tu, Yuxuan Liu, Tianyi Tang, Xiaomeng Hu, Yang Su, Qingfeng Lan, Yantao Liu, Qin Zhu, Yinger Zhang, Bowen Yu, Haiquan Zhao, Haiyang Xu, Jianxin Yang, Jiayang Cheng, Junyang Wang, Lianghao Deng, Mingfeng Xue, Tianyi Bai, Yang Fan, Yubo Ma, Yucheng Li, Zeyu Cui, Zhihai Wang, Zhihui Xie, Zhuorui Ye, An Yang, Dayiheng Liu, Jingren Zhou, and Ning Ding. Qwen-agentworld: Language world models for general agents. arXiv preprint arXiv:2606.24597 , 2026. URL https://arxiv.org/abs/ 2606.24597 .13 Preprint 
+
+## A COMPLETE EVIDENCE FOR MAIN RESULTS 
+
+The main comparison is reported in Table 1. This appendix separates acquisition, controlled agent improvement, behavioral measurements, and real-library diagnostics. Companion prediction and explicit-belief studies use their own populations; Table 3 summarizes those results without pooling them with the main agent comparison. Table 3: Exploration, forecast, and explicit-decision results. Each row uses its stated population and comparator.                                          
+
+> Component Evaluation Score Comparator or context Gain or evidence
+> Explore Real hidden-channel yield
+> 0.244 random: 0.157 +55%
+> Learn Synthetic blast-set F1 (supervised recipe)
+> 0.608 ±0.016 reachability: 0.431 +0 .177
+> Learn Synthetic hidden-channel F1
+> 0.304 reachability: 0.189 +61%
+> Learn Real-library hidden-channel F1
+> 0.198 ±0.038 reachability: 0.137 +45%
+> Act Candidate-ranking regret ↓
+> 0.593 reachability: 1.430 −59%
+> Act Belief-plan return ↑0.757 reachability: 0.685 +0 .072
+> Analysis Pairwise accuracy and regret correlation
+> ρ=−0.93 blast-set F1: −0.56 larger correlation magnitude
+
+A.1 EXPLORATION AND CONSEQUENCE LEARNING 
+
+Acquisition protocol. The decision-aware corpus uses the product acquisition rule 
+
+a⋆ = arg max  
+
+> a∈P
+
+uep (a) udec (a) unov (a), (14) where uep , udec , and unov measure variation across trained models, disagreement with reachability, and lack of previously executed changes of the same type, respectively. The decision-aware corpus starts with 60 random records, one per training world. Each of three rounds scores 960 candidate transitions (16 per world) and executes the top 100. For each consumer, model uncertainty is the standard deviation of predicted break probabilities across three model seeds (16 samples per model); the score averages these deviations. Reachability disagreement sums the absolute difference between mean break probability and the binary reachability indicator over con-sumers predicted to break by any model or marked by reachability. Novelty is 1/(1 + n), where 
+
+n counts prior executions with the same action kind, target kind, and fan-in bucket (the number of incoming observed edges, capped at three). Their product implements Equation 14. The 25- and 50-record prefixes contain only initial random data. Random, coverage, and expert corpora are separate exploration baselines; all four full-budget corpora contain 360 records. Random samples eligible tar-gets without using true consumer information. Coverage additionally cycles through change types. Expert selects targets using the true graph, so it is a privileged synthetic-data reference, not a policy available under partial observability. 
+
+Companion prediction study. SWM-15 and SWM-19 evaluate held-out synthetic forecasts under the configuration in Table 13. Figure 4 includes every available exploration/budget cell; absent cells are unevaluated, not interpolated. The random 360-record endpoint uses the matched-recipe rerun in SWM-15. A.2 MATCHED AGENT IMPROVEMENT 
+
+The controlled synthetic campaign evaluates 24 trained arms and the same base checkpoint on 40 tasks. Table 4 retains every training seed and its paired interval. Appendix D.8 specifies aggregation and the world-cluster bootstrap; Appendix B.1 reports means by corpus and budget. 14 Preprint Table 4: All 24 trained arms on the same 40 tasks; base-agent return is 0.721 . Intervals are the source campaign’s per-seed paired world-cluster 95% intervals. 
+
+Corpus Records Seed Return ∆ return 95% interval 
+
+Random 100 0 0.749 +0 .028 [−0.009 , +0 .072] 
+
+Random 100 1 0.754 +0 .033 [+0 .005 , +0 .067] 
+
+Random 100 2 0.731 +0 .010 [−0.023 , +0 .052] 
+
+Random 200 0 0.755 +0 .034 [+0 .011 , +0 .065] 
+
+Random 200 1 0.769 +0 .048 [+0 .018 , +0 .086] 
+
+Random 200 2 0.778 +0 .056 [+0 .025 , +0 .094] 
+
+Random 360 0 0.778 +0 .056 [+0 .025 , +0 .095] 
+
+Random 360 1 0.777 +0 .056 [+0 .025 , +0 .099] 
+
+Random 360 2 0.760 +0 .039 [+0 .011 , +0 .071] 
+
+Coverage 360 0 0.765 +0 .044 [+0 .006 , +0 .093] 
+
+Coverage 360 1 0.770 +0 .049 [+0 .012 , +0 .088] 
+
+Coverage 360 2 0.767 +0 .046 [+0 .007 , +0 .092] 
+
+Expert 360 0 0.774 +0 .052 [+0 .025 , +0 .082] 
+
+Expert 360 1 0.781 +0 .060 [+0 .030 , +0 .099] 
+
+Expert 360 2 0.786 +0 .065 [+0 .032 , +0 .107] 
+
+Decision-aware 100 0 0.768 +0 .046 [+0 .014 , +0 .084] 
+
+Decision-aware 100 1 0.762 +0 .041 [+0 .009 , +0 .080] 
+
+Decision-aware 100 2 0.764 +0 .043 [+0 .009 , +0 .086] 
+
+Decision-aware 200 0 0.768 +0 .046 [+0 .007 , +0 .094] 
+
+Decision-aware 200 1 0.782 +0 .061 [+0 .031 , +0 .096] 
+
+Decision-aware 200 2 0.779 +0 .058 [+0 .029 , +0 .096] 
+
+Decision-aware 360 0 0.774 +0 .052 [+0 .023 , +0 .091] 
+
+Decision-aware 360 1 0.760 +0 .039 [−0.001 , +0 .086] 
+
+Decision-aware 360 2 0.762 +0 .041 [+0 .005 , +0 .087] 
+
+15 Preprint 25 50 100 200 360              
+
+> Executed training records
+> 0.1 0.2 0.3 0.4 0.5 0.6
+> Blast-set F1
+> 25 50 100 200 360
+> Executed training records
+> 0.5 1.0 1.5 2.0
+> Ranking regret
+> Rand. Cov. Exp. DA
+> 0.0 0.1 0.2 0.3 0.4 0.5 0.6
+> Blast-set F1  0.40 0.48 0.54 0.53
+> (a) Blast-set F1 (b) Ranking regret (c) F1 at 100 records
+> Random Coverage Expert Decision-aware
+
+Figure 4: Exploration affects prediction and ranking differently. (a) Blast-set F1 and (b) ranking regret across execution budgets; points are three-seed means and error bars are half-ranges. (c) The 100-record comparison. Coverage and expert exploration were not evaluated at 360 records; the first 60 decision-aware records are random. Higher F1 and lower regret are better. 0.00 0.05 0.10           
+
+> Paired return gain
+> Rand. 0 Rand. 1 Rand. 2 Cov. 0 Cov. 1 Cov. 2 Exp. 0 Exp. 1 Exp. 2 DA 0 DA 1 DA 2 0.0 0.1 0.2
+> Recall gain over base
+> 0.0 0.1 0.2 0.3
+> Base minus trained (a) Return gain (b) Recall gain (c) Failure reduction
+> Random Coverage Expert Decision-aware
+
+Figure 5: All twelve full-budget training seeds improve agent return, candidate recall, and services left broken relative to the base checkpoint. Panel (a) includes paired world-cluster 95% intervals; (b–c) show per-seed mean changes on the same tasks. A.3 ANTICIPATION AND POST -CHANGE FAILURES 
+
+Candidate recall is measured before preventive migrations. Broken-service counts measure the out-come after the change lands. All twelve full-budget seeds improve both measures relative to the base checkpoint, as well as return. These observations locate behavioral changes but do not decompose causal contributions of prediction, proposal, and action selection. A.4 REAL -LIBRARY RESULTS 
+
+A set-valued prediction lists all affected consumers in one response; a per-consumer prediction an-swers separately for each consumer. Record-order context retains the input record’s ordering, while change-focused context prioritizes information around the changed interface. Consumer-usage vari-16 Preprint Table 5: Complete agent means and standard deviations for the main comparison. Values are means, with standard deviations in superscripts where available. Return subscripts show the mean differ-ence from the base agent within each dataset. Recall measures affected-consumer coverage; broken services are counted per task. 
+
+Agent Synthetic worlds Real libraries Return ↑ Recall ↑ Broken ↓ Return ↑ Recall ↑ Broken ↓
+
+Base agent 0.721 0.444 0.600 0.453 0.276 0.387 
+
+CWM (Copet et al., 2025) 0.740 ±0.006 +0 .019 0.533 ±0.007 0.499 ±0.020 0.548 ±0.005 +0 .095 0.381 ±0.005 0.351 ±0.014 
+
+Qwen-AgentWorld (Zuo et al., 2026) 
+
+0.754 ±0.006 +0 .033 0.559 ±0.022 0.447 ±0.027 0.571 ±0.005 +0 .118 0.446 ±0.018 0.360 ±0.022 
+
+SWM (Ours) 0.773 ±0.008 +0 .052 0.586 ±0.017 0.363 ±0.021 0.613 ±0.006 +0 .160 0.499 ±0.015 0.309 ±0.018 
+
+Differences are computed before rounding the displayed means. Baseline training is described in Appendix D.6. 0.0 0.5 
+
+Blast-set F1  
+
+> 1.5B backbone risk scorer typed reachability change-focused + consumer usage + usage + blind-spot set-valued answer predict nothing record-order control action-only logistic 0.675 0.672 0.671 0.668 0.661 0.655 0.644 0.536 0.536 0.524 Base Random Blind-spot
+> 0.6 0.7 0.8
+> 0.67 0.67 0.67 0.78 0.80 0.84
+> Blast-set F1 Consumer AUROC
+> Breaking Static wrong Hidden channel
+> 0.0 0.2 0.4 0.6 0.8
+> Share of executed records
+> 0.23 0.37 0.16 0.36 0.57 0.24
+> Random Blind-spot
+
+(a) Held-out real prediction (b) Training with exploration (c) Executed exploration    
+
+> headline interface learned variants references hidden-channel F1
+
+Figure 6: Real-library prediction and executed exploration. (a) Blast-set F1 on 984 held-out records; hollow markers show F1 on the 137 graph-missed breaking records. Error bars retain the reported three-seed spreads; unmarked learned variants are single runs. (b) Prediction after adding random or blind-spot exploration, with base-corpus seed spreads. (c) Acquisition yields from 450 candidate perturbations per policy on three training worlds, conditional on passing local checks. Consumer AUROC measures discrimination among broken and unbroken consumers. ants additionally include how the dependent code uses the changed symbol. Consumer AUROC measures ranking of broken versus unbroken consumers; the Brier score measures squared error of their break probabilities. Figure 6 connects prediction to executed exploration. Consumer-usage context improves hidden-channel F1 even though aggregate F1 changes little. The all-negative control also attains substantial aggregate F1, making the breaking-record and consumer-level diagnostics necessary for interpreting the overall score. 17 Preprint Table 7: All corpus budgets in the agent comparison, averaged over three seeds. Intervals are paired world-bootstrap 95% intervals against base-agent return 0.721 .                                                    
+
+> Corpus Records Return ∆return [95% interval] Candidate recall Broken services
+> Random 100 0.745 +0 .023 [ −0.008 ,+0 .062] 0.573 0.342 Random 200 0.767 +0 .046 [+0 .018 ,+0 .082] 0.594 0.342 Random 360 0.772 +0 .050 [+0 .021 ,+0 .088] 0.569 0.383 Coverage 360 0.768 +0 .046 [+0 .012 ,+0 .089] 0.573 0.375 Expert 360 0.780 +0 .059 [+0 .029 ,+0 .095] 0.603 0.342 Decision-aware 100 0.765 +0 .043 [+0 .013 ,+0 .081] 0.607 0.342 Decision-aware 200 0.776 +0 .055 [+0 .023 ,+0 .094] 0.598 0.350 Decision-aware 360 0.765 +0 .044 [+0 .010 ,+0 .087] 0.586 0.367
+
+Table 6: Additional interface diagnostics on the same 984 held-out records. Columns retain the recorded “Extracted breaks” and “Silent” measures; blast-set and hidden-channel F1 appear in Figure 6a.                 
+
+> Interface Extracted breaks Silent
+> Set-valued, record-order context 0.417 0.841 Per-consumer, record-order context 0.000 1.000 Per-consumer, change-focused context 0.586 0.808 + consumer usage 0.575 0.780 + usage and blind-spot round 0.576 0.805 Alternative 1.5B backbone 0.689 0.799 Typed reachability 0.675 0.808
+
+Exploration yields and prob-ability quality. Local checks pass for 337 random and 332 blind-spot perturbations; these are the denominators for panel (c). Blind-spot selection in-creases all three yields, but its downstream benefit is metric-dependent: it gives the high-est consumer AUROC, whereas the random round gives the low-est Brier score. Brier scores for the base, random-augmented, and blind-spot-augmented cor-pora are 0.177, 0.143, and 0.164; their hidden-channel F1 values are 0.142, 0.161, and 0.145. These differences prevent interpreting the AUROC gain as an improvement in every aspect of probability quality. 
+
+## B COMPLETE ABLATIONS 
+
+B.1 EXPLORATION POLICY AND EXECUTION BUDGET 
+
+The paired synthetic comparison changes the training corpus and budget under a fixed agent in-terface. The three training seeds are averaged within each task before world-cluster resampling. Prediction learning curves are in Appendix A.1; this subsection reports agent decisions. B.2 STATE INFORMATION AND INPUT BUDGET 
+
+The input configurations in Figure 8c are nested: tree includes ownership relations; imports 
+
+adds package and symbol dependencies; calls adds API calls and schema relations; semantic 
+
+includes all extracted static relations; and runtime adds simulated deployment settings and calls missed by static extraction. These are graph-input configurations, not different prediction targets. 
+
+Coverage and input budget. For the five input configurations in panel (c), mean edge counts are 27.3, 42.2, 46.9, 70.0, and 96.7; traversal precision is 1.000, 1.000, 1.000, 0.778, and 0.803, while recall is 0.167, 0.250, 0.495, 0.574, and 0.691. The richer runtime input improves traversal coverage but reduces learned F1 at the default retrieval budget; increasing that budget recovers performance. 18 Preprint 100 200 360 
+
+Executed training records   
+
+> −0.025 0.000 0.025 0.050 0.075 0.100
+> Paired return gain
+> 100 200 360
+
+Executed training records   
+
+> 0.40 0.45 0.50 0.55 0.60 0.65
+> Candidate recall
+> 100 200 360
+
+Executed training records 
+
+> 0.3 0.4 0.5 0.6
+> Broken services / task
+
+(a) Agent return (b) Candidate recall (c) Shipped failures   
+
+> Base agent Random Decision-aware
+
+Figure 7: Training budget and agent behavior on the same 40 tasks. Return gains use paired world-bootstrap 95% intervals; candidate recall and broken-service counts show three-seed half-ranges, with the base agent as the dashed reference. 0.0 0.5 
+
+Forecast-step blast-set F1   
+
+> relation/action risk action-kind logistic text, supervised only text, per-module clip graph tokens + text text, shared clip outcome reward only GNN-only head change only, no state oracle traversal typed reachability 7B zero-shot predict nothing 3B zero-shot 1.5B zero-shot 0.671 0.573 0.608 0.607 0.583 0.571 0.461 0.384 0.056 0.659 0.431 0.336 0.167 0.143 0.116
+> Direct Hidden forecast Hidden executed
+> 0.0 0.2 0.4 0.6 0.8
+> Blast-set F1
+> 0.72 0.30 0.35 0.80 0.19 0.21 SWM Reachability tree imports calls semantic runtime 0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8
+> Blast-set F1
+> budget 60
+> Oracle SWM Traversal
+
+(a) Complete forecast baselines (b) Propagation mechanism (c) State-representation ladder    
+
+> learned headline recipe supervised / reference oracle traversal
+
+Figure 8: Forecast accuracy depends on both propagation mechanism and input information. (a) Baselines on 90 held-out synthetic forecast steps; error bars show three-seed half-ranges, and un-marked learned variants are single diagnostic runs. (b) Direct and hidden-channel F1 across nine checkpoints, with 360, 315, and 819 seed-record pairs in the three groups, respectively. (c) Nested graph inputs under identical labels; the star increases the runtime input budget from 30 to 60. Oracle traversal restores hidden graph channels. B.3 TRAINING RECIPE AND REPRESENTATION 
+
+Figure 8 compares prediction recipes, propagation mechanisms, and input configurations. Rela-tion/action logistic regression has the highest aggregate F1 in this companion study. Learned pre-dictors improve on reachability for hidden channels but trail it on direct propagation, so their value depends on the mechanism being predicted. 19 Preprint Table 8: Per-module against shared gradient clipping for the companion recipe, three paired training seeds, forecast-step blast-set F1 on the 90 held-out synthetic forecast steps. The graph-token arm uses Kg =8 learned attention queries and per-module clipping.                               
+
+> Configuration Seed 0 Seed 1 Seed 2 Mean ±half-range Learned configurations text input, per-module clip 0.642 0.614 0.565 0.607 ±0.039
+> graph tokens +text input, per-module clip 0.621 0.549 0.579 0.583 ±0.036
+> text input, shared clip (preregistered) 0.565 0.537 0.611 0.571 ±0.037
+> Structure typed reachability 0.431 0.431 0.431 0.431
+
+Three-seed consequence learning. Table 8 reports all seeds for the text-input and graph-token recipes. Their mean blast-set F1 values range from 0.571 to 0.607 , above typed reachability’s 0.431 .Seed identifiers denote training repetitions, not bit-reproducible statistical pairs; the table retains the full variation. Per-module clipping controls the influence of auxiliary gradient norms and is an optimizer design, rather than a bound on policy divergence. 
+
+## C ANALYSIS AND FAILURE MODES 
+
+C.1 DIRECT AND HIDDEN PROPAGATION 
+
+Figure 8b compares the same learned checkpoints with reachability within each propagation pop-ulation. Reachability performs better on direct channels, while learned predictions perform better on hidden channels. The counts repeat each record across nine checkpoints; they are not counts of independent worlds. Across the nine checkpoints, 482 of 565 missed positives (85%) and 353 of 366 false positives (96%) lie outside typed reachability. Even when the blast set is correct, outcome classification is correct on only 243 of 297 cases (82%). These diagnostics distinguish missing structural coverage from errors in predicting consequences. C.2 FORECAST ERRORS AND DECISION VALUE 
+
+The correlation in Table 3 is Spearman correlation between pairwise ranking accuracy and ranking regret across checkpoints and controls; pairwise accuracy excludes equal-damage pairs and gives half credit to predicted ties. Figure 9c compares learned predictions with a noise-perturbed oracle at matched blast-set F1. Rank-ing and migration depend on where errors occur, which motivates directly measuring agent decisions in the primary experiment rather than using blast-set F1 as a substitute. At matched ranking F1 of 0.525, the perturbed oracle incurs less regret than the learned checkpoints. In planning, the direction reverses at matched F1 of 0.546: learned beliefs yield higher return, including relative to an oracle with F1 0.593. A low-fidelity oracle at F1 0.213 still has ranking regret 1.343, below reachability’s 1.430. The supervised controls change less under the clean-to-full-noise intervention: ranking regret rises from 0.165 to 0.258, and planning return falls from 0.794 to 0.764. Thus matching set accuracy does not match the decision consequences of errors. 20 Preprint 0.6 0.8     
+
+> Return
+> perfect foresight supervised-risk plan N=64, learned N=64, isotonic N=32 N=64, temperature N=8 reachability plan 0.873 0.794 0.757 0.754 0.754 0.752 0.75 0.685
+> 0.00 0.05 0.10
+> Feedback paid per task
+> 0.70 0.75 0.80 0.85 0.90
+> Return
+> perfect foresight
+> unsure every canary calibrated belief plan Learned Matched Higher F1 Reach. 0.00 0.25 0.50 0.75 1.00 1.25 1.50 1.75
+> 0.59 0.43 1.43 0.76 0.69 0.74 Ranking regret Planning return
+> (a) Belief planning (b) Paid feedback (c) Fidelity and decisions
+
+Figure 9: Explicit-belief decisions and prediction-error diagnostics. (a) Mean return for preventive-migration plans on 40 held-out tasks; N is the number of sampled blast sets. The learned N = 64 
+
+error bar is the three-seed standard error. (b) Return versus mean expenditure on paid checks: shape identifies the check strategy and filled markers denote calibrated beliefs; the displayed error bar is a standard error. (c) Noise-perturbed oracles matched to learned F1 have lower ranking regret but lower planning return. Ranking and planning use separate populations; lower regret and higher return are better. C.3 EXECUTION COSTS AND EXPLICIT -BELIEF DECISIONS 
+
+Use consequence probabilities to choose preventive actions. We apply the rules in Proposition 1 to sampled break probabilities. A paid check reveals one consumer’s outcome; a system-wide trial execution (called a canary in Figure 9) reveals the complete blast set. Each observation conditions the sampled belief before the remaining migrations are chosen. 
+
+Measured consequences support better plans than reachability. Figure 9a–b compares plan-ning and feedback on 40 held-out tasks. Sampled learned beliefs achieve return 0.757 at N = 64 ,versus reachability’s 0.685 . The supervised-risk and perfect-foresight references are included along-side all calibration and paid-feedback arms, so additional information is evaluated together with its execution cost. 
+
+Evaluation protocol. A perfect-foresight plan uses the true blast set before the change. The learned rows average three training seeds except the marked temperature scaling run; ± is their standard error. Calibration adjusts predicted break probabilities using training worlds only: iso-tonic calibration fits a monotone mapping, whereas temperature scaling rescales prediction logits. Costs follow Appendix D.7; per-consumer checks cost either 0.01 or 0.02. In that order, uncali-brated “check where unsure” gives (return, mean expenditure) of (0.764, 0.012) and (0.760, 0.005); calibrated checks give (0.775, 0.046) and ( 0.738 ± 0.015 , 0.005). Checking every consumer gives (0.826, 0.046) and (0.780, 0.092). Always running a canary gives (0.823, 0.050); uncalibrated and calibrated belief-triggered canaries give (0.823, 0.010) and (0.818, 0.032), respectively. C.4 STRUCTURAL LIMITS OF CONSEQUENCE PREDICTION 
+
+The typed-reachability baseline follows consumer-dependency paths backwards from the nodes modified by the change, tgt( at):
+
+R(Gt, a t) = {u ∈ V : u has a consumer-dependency path to tgt( at)}, (15) It is a deterministic function of the extracted graph and the change; Appendix D.3 defines the de-pendency relations it follows. 21 Preprint To locate where accuracy beyond reachability must come from, we call a predictor structural if it uses only the extracted graph and the action, that is, measurable with respect to (Gt, a t); reachability is one, and so is any learned model restricted to these inputs. 
+
+Remark 1 (Structural predictors carry irreducible error) . Let f be any predictor with values in 
+
+[0 , 1] V that is measurable with respect to (Gt, a t), as the indicator vector of R is. Then f is constant on states sharing an extracted graph, and for the squared loss ℓ(B, f ) = ∥1B −f ∥2 on the indicator vector of B, whose expectation the conditional mean minimises, 
+
+Eℓ B(st, a t), f (Gt, a t) ≥ E Var  B(st, a t) Gt, a t
+
+ . (16) 
+
+where Var sums the per-component variances. The right-hand side is nonzero for two reasons, both properties of the environment rather than of the estimator. Consumers differ in whether they tolerate a change on a dependency they share, and the extractor drops channels that carry 34 .8% of the broken consumers at our forecast steps (Appendix D.4). 
+
+The bound applies to learned models too: the expected loss is the floor plus the expected squared distance between f and the conditional mean of 1B given (Gt, a t). No predictor restricted to these inputs can remove the floor; it can only represent it, as a graded break probability per consumer. A predictor can narrow the distance, and reachability leaves it wide by marking every reachable consumer as broken, tolerant or not, and every consumer reached only through a hidden channel as safe. Narrowing it requires executed supervision where reachability is wrong; going below the floor requires information outside the graph, such as executed outcomes in ht. The evaluated SWM also reads the observed health ηt, the component health that earlier checks revealed (Section 3.2). When 
+
+ηt carries no further information about B, SWM’s floor equals the structural one, and SWM can only narrow the distance and represent the floor. 
+
+## D WORLDS , P ROTOCOL , AND REPRODUCIBILITY 
+
+This appendix first defines the software world and its extracted graph. It then specifies corpus gen-eration, evaluation populations, metrics, and pre-registration. Implementation and model variants follow in Appendix D.9, decision protocols in Appendix C.3, and complete result tables in Ap-pendix A. D.1 SOFTWARE WORLDS 
+
+We use four complementary families of executable software worlds (Table 9). The procedural sys-tems provide disjoint training and evaluation populations with controlled hidden channels. Acme exercises the same interfaces in a compact multi-repository service system. Online Boutique pro-vides a polyrepository application built from real services and contracts. The real-library worlds pair an upstream project with selected downstream packages that depend on it; their own test suites measure consequences. D.2 WORLD CONSTRUCTION AND EVOLUTION 
+
+Each world is frozen at an identified baseline and exposes a declarative action catalog. An action contains its target surface, materialized patch, expected local checks, and the checks that can observe downstream effects. Before every transition, the harness restores the baseline, verifies its health, applies exactly one selected patch, and reruns the declared checks. The resulting transition stores the pre-change observation, action identity, patch hash, local outcome, downstream blast set, check feedback, and restoration receipt. Repeating a transition starts from the same restored state. Evolution occurs only through verified transitions. During counterfactual exploration, several can-didates branch from one shared state and only the selected branch extends the agent history. During sequential exploration, the next request receives the outcomes of earlier selected actions but never sees validation or test outcomes. A trained world model may then forecast the remaining candidates. Its frozen forecasts are returned to the coding agent, which selects the next action before the harness executes it. 22 Preprint Table 9: Software worlds used for exploration, training, and evaluation. Each change must pass the changed repository’s own checks before downstream outcomes are measured. 
+
+World Composition Changed interface Executed signal 
+
+Procedural systems 4–7 services, shared library, datastore, events, configuration and access control Nine change families over typed relations Repository suites, service health, checks, and true blast sets Acme Four repositories with three Flask services and one shared library API, dependency, database, event, configuration, flag and permission changes Local suites plus end-to-end checks Online Boutique Ten repositories containing nine Go, Node and Python microservices gRPC contracts, service wiring, data and latency changes Repository tests, service health, direct and web journeys Real-library worlds Marshmallow with four dependents; OpenTelemetry semantic conventions with four instrumentation packages Locally consistent upstream API and contract changes Frozen upstream and downstream repository test suites 
+
+D.3 SYSTEM -S URFACE GRAPH SCHEMA 
+
+Node kinds and edge relations are tabulated in Table 10 and Table 11. Table 10: Node kinds. Every surface-layer node has exactly one owning system-layer node, which identifies the component that owns each interface. 
+
+Layer Kind Meaning 
+
+System 
+
+repo a version-controlled repository 
+
+service a deployable component 
+
+library a shared importable component 
+
+database a datastore instance 
+
+table a table or collection 
+
+topic an event stream 
+
+config a configuration value a component depends on 
+
+flag a feature flag 
+
+external a third-party dependency Surface 
+
+endpoint an HTTP/gRPC route a service exposes 
+
+symbol an exported function or class 
+
+schema a data contract 
+
+column a table column 
+
+scope an authorisation permission 
+
+D.4 CORPUS GENERATION 
+
+Systems. Each system contains 4–7 services and one shared-library repository with three exported symbols. Services have 2–3 endpoints, a feature flag, and a timeout configuration. A datastore with two columns is attached to 75% of services. Synchronous calls form a directed acyclic graph over the service order, with edge probability 0.35 . Event topics are published by 40% of services and consumed by 30% of the others. Cross-service column reads occur with probability 0.18 , modeling the shared-database antipattern. Half the services have authorisation scopes. Across the held-out corpus, 34 .8% of broken consumer references in the 90 forecast-step blast sets are reached only through a dropped channel. 23 Preprint Table 11: Edge relations. The consumer relations are those along which breakage propagates back-wards, and are the ones the reachability baseline traverses.                                                              
+
+> Relation src →dst Recovered from Consumer
+> contains repo →service/library repository layout
+> depends_on repo/service →library manifest, lockfile ✓
+> imports_symbol service →symbol import statements ✓
+> provides service →endpoint route declarations
+> calls_api service →endpoint client call sites ✓
+> publishes service →topic bus client calls
+> consumes service →topic bus client calls ✓
+> conforms_to endpoint/topic →schema schema registry ✓
+> reads /writes service →table/column SQL, migrations ✓
+> guarded_by service →flag/config configuration references ✓
+> requires_scope endpoint →scope auth middleware ✓
+> field_of column →table DDL
+
+Extractor model. Channels are dropped from the observed graph at per-relation rates reflecting real extraction failure modes: reads 0.60 (class-level data attributes), calls_api 0.35 (attribute-chain resolution on a client object), consumes 0.30 (topics bound as wire literals), guarded_by 
+
+and requires_scope 0.10 , imports_symbol 0.05 , depends_on 0.00 (manifests parse re-liably). Every dropped edge leaves a weaker dependency trace in the observed graph: a repository-level depends_on edge to the provider, plus a base-URL or topic-name configuration node for API and event channels. These traces can help predict failures without restoring the missing dependency path (Section 2.3). 
+
+Propagation. Breakage is computed deterministically on the true graph, according to the change type. field renames break callers whose recorded fields_read includes the renamed field. Sym-bol renames and breaking dependency upgrades break importers. Column renames break cross-service readers. Event-key renames break consumers. Route moves and new authorisation require-ments break callers. Flag flips break callers of the owning service with probability 0.5 through a behavioural channel with no edge; timeout tightenings break callers whose fan-out is at least 2
+
+through a latency channel, likewise edgeless. Breakage cascades one further hop with probability 
+
+0.40 . A broken consumer’s own suite catches it with probability 0.12 , which is what makes most breaks silent. 
+
+Rollouts. Executed-path rollouts have four steps: apply the change (the forecast step, whose target is the latent blast set), run the repository suites, run the end-to-end checks, repair one consumer. Branched corpora execute K explorer-proposed candidates from the same state instead, labelled 
+
+chosen , alternative , risky , subtly_wrong , recovery .D.5 REAL -WORLD CORPORA 
+
+Sources and construction. The real-application families in Table 9 follow the restore, execute, and verify procedure in Appendix D.2. An upstream change must pass its own test suite before the frozen downstream suites measure its effects. 
+
+Real-library corpus and exploration. The real-library study trains on three training worlds built from upstream projects and their dependent packages and evaluates prediction on 984 held-out records drawn from libraries disjoint from those worlds. Within the 984 records, 137 breaking records are missed by the extracted graph, which gives a real-data hidden-channel population. Ex-ecuted exploration follows the acquisition protocol of the synthetic study: each policy scores 450 
+
+candidate perturbations per round, and the executed round is added to the training corpus (Figure 6). 24 Preprint Because the downstream suites are the projects’ own tests, a break recorded here is a real test failure rather than a simulated propagation event. 
+
+Relation to the synthetic population. The synthetic agent comparison uses procedural systems with controlled propagation and inexpensive counterfactual execution. The real-library comparison in Table 1 extends the agent evaluation. Companion prediction and exploration studies use organic dependencies and repository suites (Figure 6a); Appendix D.7 describes the feasibility study for agent use. D.6 COMPARISON METHODS 
+
+For the main comparison, we trained 3B adaptations of CWM and Qwen-AgentWorld following the training procedures described in their papers (Copet et al., 2025; Zuo et al., 2026). These are our implementations at a common model size: the original CWM has 32B parameters, while Qwen-AgentWorld releases 35B-A3B and 397B-A17B mixture-of-experts models (the suffix gives active parameters). Table 12 separates structural, supervised, generative, and oracle references. All repository-level methods receive the same observed state and action whenever their input contract permits it. Table 12: Comparison methods and their roles. Learned controls are fitted only on training worlds. Oracle rows use information unavailable at decision time.              
+
+> Family Method Input and output Role
+> Structural Typed reachability Extracted graph and changed target; reachable consumers Reachability baseline Supervised risk Action-only logistic Change kind and target count; consumer probabilities Action-prior control Supervised risk Relation/action logistic Action features, typed degrees, coverage and hops; consumer probabilities Strong tabular control Neural structure Graph neural network (GNN) only System-Surface Graph; blast set Graph encoder without language generation Generative Zero-shot code models Serialized state and change; parsed blast set Task training against model scale Bounds Empty, true-graph traversal, and oracle consequence No failure, inaccessible structure, or executed outcome Lower and upper references
+
+D.7 EVALUATION PROTOCOL AND PRE -REGISTRATION 
+
+Exploration yields. A yield is the fraction of executed records satisfying the stated condition: breaking yield counts changes that break at least one consumer, and hidden-channel yield counts breaking records missed by reachability. Static-prediction error counts any mismatch between the reachability set and the executed blast set. Real-library yields use records whose upstream checks pass; corpus size and denominators accompany each table. 
+
+Blast-set F1. Each evaluation record carries the change, the recovered graph, and the blast set observed when the change was executed in the true system. Blast-set F1 compares the predicted and executed blast set, computed per record and averaged over records (record-mean); the companion forecast population is the 90 step-0 forecast steps of the held-out evaluation systems. The direct-channel group contains failures on recovered dependency paths; the hidden-channel group contains at least one missing dependency channel. Behavioral/latency records have no hidden channel but depend on response behavior or timing; no-break records contain no downstream failure. These groups concern graph coverage, whereas silent/visible labels concern detection by repository tests. 25 Preprint 
+
+Decision accounting. A migration episode scores return = 1 − 0.25 nbroken − 0.05 ( nfixes + 1) −
+
+feedback. Here nbroken counts services broken when the change ships, and nfixes counts consumers migrated before shipping. Feedback is the total cost of paid checks at the stated price (e.g. 0.02 for a consumer check). Belief plans (Figure 9) threshold sampled break probabilities at the cost ratio and execute the result; hard-selector rows execute a fixed prediction as the plan. 
+
+Ranking. Each of the 90 choice sets presents the executed branches of one counterfactual as candi-dates. Top-1 is the fraction of sets whose safest executed candidate is ranked first; pairwise accuracy is the fraction of candidate pairs ordered correctly; regret is the expected number of broken services above the best candidate under uniform tie-averaging. 
+
+Agent exploration. The action catalog and split are frozen before the first request. At each step the tool-using agent may inspect only eligible training candidates, selects one action, and receives only that action’s executed downstream observations. Acquisition is measured by verified transitions, repository test suites executed, breaking yield, hidden-channel yield, and the utility of the resulting training corpus. Validation and test outcomes are never returned to the explorer. 
+
+Training from acquired experience. Agent-selected and matched control corpora use the same optimizer, update count, model initialization, and evaluation actions. Training seeds measure opti-mization variation; exploration seeds measure acquisition variation and are not conflated. A check-point is evaluated only after its training receipt, configuration, corpus hash, and output parser have been archived. 
+
+Companion decision protocols. Besides the direct agent evaluation in Appendix A, we distin-guish three protocols. Ranking chooses among candidates whose outcomes are later executed. Be-lief planning converts sampled consequence frequencies into migrations and paid checks. The real-world agent protocol freezes forecasts before returning them to the coding agent, records whether the response consulted them, saves the selected patch before execution, and then verifies patch iden-tity, restoration, and downstream outcomes. The companion real-world coding-agent protocol tests end-to-end feasibility. It is distinct from the comparative agent results in Table 1. 
+
+Prediction-noise diagnostic. We perturb true blast sets to compare error patterns at matched blast-set F1. Each prediction-noise axis is swept over eleven noise levels (Figure 9c). The induced blast-set F1 is not evenly spaced, so a comparison “at matched blast-set F1” interpolates the noise-perturbed oracle’s curve at the learned model’s own mean F1 rather than reading the two curves at the same noise level. The same nine checkpoints have mean blast-set F1 0.587 on the 90 forecast steps, 
+
+0.525 on the 340 executed ranking candidates and 0.546 on the 40 planning tasks. Both decision evaluations use this interpolation: the ranking population at F1 0.525 and the planning population at F1 0.546 . On the ranking axis a grid level also falls within one step ( 0.503 ), so that side does not depend on the interpolation; on the planning axis no level falls between F1 0.484 and 0.603 , so the interpolation is load-bearing there. D.8 MATCHED AGENT ACCOUNTING AND TRAINING PROTOCOL 
+
+Evidence source and accounting. The controlled synthetic campaign is SWM-20, frozen at source revision 3fadee6b67ec of the research repository. In paper revision 
+
+2e32829 , evidence/loop_source.json stores the 25-arm summary, all 1,000 per-task records, source paths and checksums, companion summaries, and the training configuration. 
+
+scripts/build_loop_evidence.py verifies identical task IDs, episode counts, and return accounting, then recomputes Table 2 and Table 7. The source summaries round some means to four decimals; paper values are computed from episodes before rounding. Seven distinct world IDs occur in the 40-task synthetic sample (a migration task specifies a system state and one pending change). We sample those seven clusters with replacement 10,000 times (random seed 20260926), retain ev-ery task in each sampled cluster, and recompute the task-weighted paired mean. Training seeds are averaged within each task before this bootstrap; individual seed estimates remain visible in Table 4. 
+
+Training and acting protocol. All exploration conditions share the update counts, input budgets, adapters, and reward weights in Table 13. Low-rank adaptation (LoRA) uses dropout 0.05. The 26 Preprint backbone and two-call acting interface are specified in Section 4.1. Candidate proposals in this interface are consumers, whereas At in the ranking protocol contains alternative changes. D.9 IMPLEMENTATION SCOPE 
+
+Training worlds reset; deployment does not. The reset and execution-cost assumptions are de-fined in Section 2. SWM targets the regime in which checking every affected consumer costs more than the breaks that per-consumer break probabilities let the agent avoid. At the prices of Ap-pendix C.3 ( cchk ≤ 0.02 against 0.25 per broken consumer), checking every consumer still beats migrating by predicted break probability with the evaluated predictor. We assume that deployment systems and changes follow the training distribution, and generalization beyond that distribution is not assumed. This appendix specifies the consequence-predictor configuration and graph-conditioned variants; Appendix A gives the agent-training protocol. D.10 TRAINING CONFIGURATION AND HYPERPARAMETERS 
+
+Table 13: Consequence-predictor configuration. The default serialises retrieved state as text; graph-conditioned variants are specified in Appendix D.13. 
+
+Predictor configuration 
+
+input text input (2 hops; ≤ 30 
+
+edges) graph mode none (no graph tokens) base Qwen2.5-Coder, 0.5B Instruct adapters LoRA r=16 , α=32 
+
+target modules q, k, v, o projections precision bfloat16 prompt budget 768 tokens answer budget 192 tokens 
+
+Reward weights 
+
+wf format 0.2 
+
+ws blast set 1.0 
+
+wo outcome 0.0 
+
+wm observation/channel 0.0 
+
+GRPO 
+
+steps 250 learning rate 1 × 10 −5
+
+group size G 6prompts per step 2micro-batch size 1clip range 0.2 KL coefficient 0.02 KL estimator low-variance k3
+
+loss aggregation token-mean graph encoder not used gradient clip 1.0 shared/global norm 
+
+Supervised warmup 
+
+steps 200 learning rate 2 × 10 −4
+
+batch size 4
+
+λs affected nodes 1.0 
+
+λo outcome 0.5 
+
+λv healthy fraction 0.5 
+
+Node features. Concatenation of a node-kind one-hot ( 14 ), an observed-health one-hot ( 3), an action-target indicator ( 1), an action-kind one-hot ( 12 ), and a length-64 hashed bag of the identifier’s alphanumeric tokens, using a stable hash so features are reproducible across processes. Identifiers such as col:users.users.email carry real signal about what a node is and who owns it. 
+
+R-GCN update rule. Starting from input embeddings h(0)  
+
+> v
+
+, the encoder aggregates relation-specific messages (Schlichtkrull et al., 2018): 
+
+u(l) 
+
+> v
+
+= W (l)self h(l) 
+
+> v
+
++ 1
+
+dv
+
+X
+
+> r∈R enc
+
+X 
+
+> u∈N rv
+
+W (l) 
+
+> r
+
+h(l) 
+
+> u
+
+,h(l+1)  
+
+> v
+
+= LayerNorm  h(l) 
+
+> v
+
++ ReLU( u(l) 
+
+> v
+
+).
+
+27 Preprint Here Renc includes forward, reverse and self-loop relation types; N rv lists incoming neighbours of type r, counting edges, and dv = max(1 , P 
+
+> r
+
+|N rv |) is their total count. The W matrices are learned transformations; biases and training-time dropout are omitted. Normalisation is per node, across all relations, as in the implementation. 
+
+Affected-node head. A per-node multilayer perceptron scores whether each node is affected, 
+
+mv = MLP ψ
+
+ h(L)
+
+> v
+
+, (17) where h(L) 
+
+> v
+
+is node v’s embedding after L graph layers. Attention over all node embeddings pro-duces graph tokens; this head supplies an auxiliary prediction of whether each node is affected. 
+
+Graph-token scaling. The projector output is layer-normalised and scaled to the root-mean-square magnitude of the token embedding matrix. This keeps graph tokens on the scale of the language model’s text embeddings during joint training. These runs use one A100-80GB GPU. Gradient accumulation provides the effective batch sizes listed in Table 13. D.11 PROMPT AND OUTPUT FORMAT 
+
+The user turn contains the retrieved subgraph around the change (nodes grouped by kind, edges as typed triples, and the observed health), followed by the action, its target, and a natural-language description of the change. The system turn fixes the output contract: a single JSON object with fields delta (the service identifiers that break), outcome (one of no_break , silent_break ,
+
+visible_break ), observation (what the checks will report), and mechanism (which chan-nel carries the breakage and why repository-level checks miss it). At check steps, delta instead lists newly revealed failures; at repair steps it lists repaired services. These auxiliary targets describe check and repair outcomes, not the forecast-step blast set. The blast-prediction metric uses forecast steps only. Prompts exceeding the budget are truncated from the middle of the edge list, so the contract at the head and the action at the tail are always preserved. D.12 PREDICTION HORIZON 
+
+The evaluated model predicts one transition from the observed state and refreshes its input after execution. Candidate ranking compares these one-step forecasts. Recursive latent dynamics are outside the evaluated model family. D.13 FACTORIZATION AND THE SC-GRPO UPDATE RULE 
+
+The variant of Section 3.2 couples a graph encoder to the language model. It factorises the transition, 
+
+Tt = gψ (Sstruct  
+
+> t
+
+)
+
+| {z }
+
+> graph tokens
+
+pθ
+
+ ∆st, o cons  
+
+> t+1
+
+| Ssem  
+
+> t
+
+, T t
+
+| {z }
+
+> behavioural consequence
+
+, (18) where Sstruct  
+
+> t
+
+encodes the extracted graph with the node features in Appendix D.10, and ϕ = ( ψ, θ ):the graph encoder gψ is a four-layer relational graph convolutional network (Schlichtkrull et al., 2018) with relation-specific messages and auxiliary outcome and value heads, and the behavioural factor pθ is the same language model as the text-input model. The graph representation reaches the language model as graph tokens: Kg learned queries Q ∈ RKg ×d cross-attend over the node embeddings, 
+
+Tt = Pψ
+
+ Attn( Q, H (L), H (L)), pθ (·) = LM θ
+
+ · | [Tt; emb( Ssem  
+
+> t
+
+)] , (19) where d is the node-embedding width, H(L) stacks those embeddings, and Pψ projects into the language model’s token space (Li et al., 2023). The token budget is fixed and no node is excluded by a selection step, so the tokens summarise the whole system while the text input carries the detail near the change. Vanilla GRPO optimises a language model alone, and the coupled policy is not one: Equation 18 joins a graph encoder to the language model through the graph tokens, and the encoder carries aux-iliary structural losses of its own during supervised warmup. We therefore train the variant with 28 Preprint 
+
+structure-coupled GRPO (SC-GRPO), which changes the update in the two places the hybrid policy forces. First, the reward gradient trains both factors: each micro-batch of the surrogate backprop-agates into a detached copy of the graph tokens T , the token gradients are accumulated, and a single backward pass carries their sum through the encoder, so the structural factor is shaped by the same verifiable reward as the language model at the cost of one encoder traversal per step. Sec-ond, gradient-norm clipping is per module during both supervised warmup and GRPO: let J be the text loss: negative log-likelihood during supervised warmup, or the negative clipped GRPO surro-gate plus its KL penalty during GRPO. Let Laux be the weighted auxiliary losses during supervised warmup and zero during GRPO. Writing Πγ for clipping a gradient’s Euclidean norm to at most γ,
+
+∇ψ J =
+
+ ∂T ∂ψ 
+
+⊤ X
+
+> μ
+
+∇T Jμ,
+
+˜gθ = Π γ (∇θ J ), ˜gψ = Π γ
+
+ ∇ψ (J + Laux ).
+
+(20) Here T is the graph-token tensor, μ indexes token-weighted micro-batch losses, and ˜gθ , ˜gψ are the gradients passed to the optimiser. Clipping applies separately to the parameter groups defined in Equation 18, rather than to their combined norm. Training-seed results appear in Table 8; single-run differences need not exceed seed variation. 29
