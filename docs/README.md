@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-10-06</span>
+      <span class="dpr-home-dashboard-kicker">2026-10-07</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 24 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 17 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
-    <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>2 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>7</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>17</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-10-06 23:43:47 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-10-07 23:40:21 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,10 +69,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日共生成 24 篇推荐（精读 7 篇，速读 17 篇）</p>
-<p>精读：《GTDD: Generative Test-Driven Development for AI Coding Agents with Adversarial Testing》（10.0/10）, 《Engineering Sustainable Agents: A Systematic Comparison of Agentic LLMs for Developer Workflows》（9.0/10）</p>
-<p>速读：《MemTrace: State-Consistent Memory for Long-Horizon Coding Agents》（8.0/10）, 《Software World Models: From Consequence Prediction to Decision Value》（8.0/10）, 《Small Agents with Semantic Search: Efficient Multilingual Code Localization》（8.0/10）</p>
-<p>这些结果覆盖了当下较热的方向，建议先看精读区论文的关键问题与方法。</p>
+<p>今日扫完17篇论文，精读6篇、速读11篇，主线聚焦LLM驱动的软件测试与多智能体编码协作。</p>
+<p>最值得看的是两篇9.0分精读：LLM测试生成的信息源、策略与质量证据，以及并行编码智能体的协调验证与调度规划。</p>
+<p>普通读者可先读这两篇精读，再顺带扫一眼8.0分的CheckerBench与AI编写软件保障案例，建立对AI写码可信度的整体判断。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -81,12 +80,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">7 篇</strong>
+    <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="GTDD: Generative Test-Driven Development for AI Coding Agents with Adversarial Testing">GTDD: Generative Test-Driven Development for AI Coding Agents with Adversarial Testing</span></li><li><span class="dpr-home-dashboard-paper-title" title="Engineering Sustainable Agents: A Systematic Comparison of Agentic LLMs for Developer Workflows">Engineering Sustainable Agents: A Systematic Comparison of Agentic LLMs for Developer Workflows</span></li><li><span class="dpr-home-dashboard-paper-title" title="Teaching Agents to Code Reliably">Teaching Agents to Code Reliably</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="LLM-Based Test Generation: Information Sources, Generation Strategies, and Quality Evidence">LLM-Based Test Generation: Information Sources, Generation Strategies, and Quality Evidence</span></li><li><span class="dpr-home-dashboard-paper-title" title="Verifying Coordination in Parallel Coding Agents: NP-Bench and a Scheduling Planner">Verifying Coordination in Parallel Coding Agents: NP-Bench and a Scheduling Planner</span></li><li><span class="dpr-home-dashboard-paper-title" title="Catching Developers in the Flow: Low-Latency Agentic Program Repair at Google Scale">Catching Developers in the Flow: Low-Latency Agentic Program Repair at Google Scale</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>7</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>6</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -94,12 +93,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">17 篇</strong>
+    <strong class="dpr-home-dashboard-count">11 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="MemTrace: State-Consistent Memory for Long-Horizon Coding Agents">MemTrace: State-Consistent Memory for Long-Horizon Coding Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="Software World Models: From Consequence Prediction to Decision Value">Software World Models: From Consequence Prediction to Decision Value</span></li><li><span class="dpr-home-dashboard-paper-title" title="Small Agents with Semantic Search: Efficient Multilingual Code Localization">Small Agents with Semantic Search: Efficient Multilingual Code Localization</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="CheckerBench: Can Long-Horizon Agents Synthesize Static-Analysis Checkers?">CheckerBench: Can Long-Horizon Agents Synthesize Static-Analysis Checkers?</span></li><li><span class="dpr-home-dashboard-paper-title" title="Harness Engineering for Software Engineering via Modular Executable Dev-Primitives">Harness Engineering for Software Engineering via Modular Executable Dev-Primitives</span></li><li><span class="dpr-home-dashboard-paper-title" title="A Case Study in Assuring AI-Written Software">A Case Study in Assuring AI-Written Software</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>17</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>11</strong></span></div>
 </section>
 </div>
 

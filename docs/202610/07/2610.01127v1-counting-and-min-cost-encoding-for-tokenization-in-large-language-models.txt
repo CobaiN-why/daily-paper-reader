@@ -1,0 +1,528 @@
+Title: Counting and Min-Cost Encoding for Tokenization in Large Language Models
+
+URL Source: https://arxiv.org/pdf/2610.01127v1
+
+Published Time: Fri, 02 Oct 2026 01:04:56 GMT
+
+Number of Pages: 22
+
+Markdown Content:
+Preprint. Technical Report. 
+
+# Counting and Min-Cost Encoding for Tokenization in Large Language Models 
+
+Shuming Shi 1, Xiang Zhang 1, Hao Yu 2, Wenbo Fei 2, Changjian Wang 1,Zhan Wang 2, Guoqing Pang 2, Guangye Yu 1, Quan Lu 1, Ning Jiang 11Mashang Consumer Finance Co., Ltd., China 
+
+> 2
+
+National-Mathematics Artificial Intelligence Institute in Chongqing (NMAII), China 
+
+# Abstract 
+
+Mainstream large language models (LLMs) rely on a tokenizer to encode text into a token sequence. Different tokenizers may yield token sequences of substantially different lengths for the same text. With a fixed model architecture, shorter token sequences correspond to lower inference time. We propose a tokenizer training approach named Counting and Filtering (CNF) and a text encoding algorithm called Min-Cost Encoding (MCE). MCE defines a cost function over a text segment, and determines the best segmentation by globally minimizing the overall segmentation cost. CNF builds a raw vocabulary by directly counting valid substrings, and then constructs the final vocabulary through a filtering step based on actual token usage when segmenting the training corpus with MCE. The CNF-MCE conbination offers several advantages over BPE (the most widely used tokenizer algorithm for LLMs so far), including higher token effi-ciency, greater scalability, and lower dependency. Across six text categories and two vocabulary-size groups, CNF-MCE consistently achieves better compression than the evaluated BPE tokenizers. With a 250K vocabulary, CNF-MCE increases compression rate by 26% and 30% on English web text over the o200k base and qwen250k tokenizers. Experiments scaling the vocabulary to 1M entries on English web text demonstrate sustained improvements over BPE, with a token efficiency improvement of over 60% and vocabulary utilization rising from 52.9% to 96.9%. The MCE algorithm does not depend on a merge list (as in BPE) or token probability (as in Uni-gramLM), making it applicable to a wide range of vocabularies, including those built from BPE, UnigramLM, CNF, and others. Language models trained from scratch at the 1.8B and 8B scales achieve comparable average performance to models using the BPE tokenizers across 11 benchmarks. These results demonstrate that CNF-MCE can improve token efficiency significantly while maintaining competitive downstream performance. 
+
+# 1 Introduction 
+
+Transformer-based large language models (LLMs) cannot process raw text directly. They rely on a tokenizer to convert input text to a sequence of tokens, a process referred to as text encoding, tokenization, or segmentation. Similarly, the output token IDs produced by LLMs are converted back into text through a decoding process. A tokenizer is primarily defined by a vocabulary, an encoding algorithm, and a decoding algorithm. The choice of tokenizers directly affects both the efficiency and performance of LLMs. For the same text, different tokenizers may produce token sequences of substantially different lengths. With a fixed model architecture, shorter token sequences correspond to lower inference time. Token efficiency is commonly quantified by the compression rate , expressed as the average amount of raw text (e.g., UTF-8 bytes) encoded per token; a higher rate therefore indicates a shorter token sequence (Meister, 2026; Liu et al., 2025a). An important objective in tokenizer design is therefore to improve compression rate under a fixed vocabulary budget while preserving or improving downstream model performance. 1arXiv:2610.01127v1 [cs.CL] 1 Oct 2026 Preprint. Technical Report. Widely used tokenizer training methods face structural limitations in optimizing compres-sion under a fixed vocabulary budget. Byte Pair Encoding (BPE) constructs its vocabulary through a sequence of order-dependent merges (Sennrich et al., 2016). Forming a long token requires introducing intermediate merge products, some of which may remain underutilized while continuing to consume vocabulary capacity (Chizhov et al., 2024). Hard pretokeniza-tion boundaries further prevent tokens from spanning multiple pretokens. Recent methods such as SuperBPE (Liu et al., 2025a) relax this boundary constraint but retain sequential merge-based construction. UnigramLM avoids merge ancestry, but it requires probability estimation over a segmentation lattice and iterative likelihood-based pruning (Kudo, 2018; Land, 2026). These approaches therefore tie vocabulary construction to either sequential merge operations or iterative refinement. This raises a natural question: can we significantly improve token efficiency under a fixed vocabulary budget without relying on merges or repeated vocabulary refinement? To address this question, we propose a tokenizer training approach named Counting and Filtering (CNF ) and a text encoding algorithm called Min-Cost Encoding (MCE ). In MCE, a cost function is defined for a segment in a piece of text, and the best segmentation is determined by globally minimizing the overall segmentation cost. Our cost function does not rely on merge information (as in BPE) or token probability estimation (as in UnigramLM), making MCE applicable to a wide range of vocabularies. CNF consists of two phases. In the counting phase, a raw vocabulary is built by calculating the occurrences of valid substring candidates in the training corpus and selecting the m most frequent ones. In the filtering phase, the training corpus is first segmented by MCE based on the raw vocabulary. Then the segmentation frequency of each token is calculated and the final vocabulary is constructed by filtering out from the raw vocabulary the tokens with low segmentation frequencies. Note that CNF encodes the training corpus only once, which makes the filtering step very efficient. This non-iterative CNF procedure shifts vocabulary selection from raw occurrence frequency to realized usage under MCE, yielding a vocabulary aligned with actual token usage. We evaluate our method using intrinsic tokenizer metrics across multiple text domains and vocabulary sizes, as well as downstream task performance. Our method achieves consistently better compression than the evaluated BPE tokenizers. Particularly, the MCE encoding algorithm on our mix250k vocabulary achieves 26.7% and 32.4% higher token efficiency than the o200k base and qwen250k tokenizers respectively. Experiments scaling the vocabulary to 1M entries on English web text demonstrate sustained improvements over BPE, with a token efficiency improvement of over 60% and vocabulary utilization rising from 52.9% to 96.9%. Language models trained with our tokenizers at the 1.8B and 8B scales achieve comparable average downstream performance across 11 English benchmarks to models trained with the BPE tokenizers. Our main contributions are as follows: • We introduce CNF, a merge-free vocabulary construction method that builds a raw vocabulary by counting valid substring occurrences and selects the final vocabulary through a single filtering step based on realized token usage under MCE. • We propose MCE, a segmentation algorithm that globally minimizes an encoding cost that combines token count with penalties for partial-word boundary crossings. MCE can be applied to a wide range of vocabularies, including those built from BPE, UnigramLM, CNF, and other methods. • We demonstrate improved compression and a range of intrinsic tokenizer properties, sustained compression gains with high vocabulary utilization as vocabulary size increases, and comparable average downstream performance to the evaluated baselines. 
+
+# 2 Related work 
+
+Subword tokenization. BPE (Sennrich et al., 2016) and UnigramLM (Kudo, 2018) repre-sent two widely used approaches to subword tokenization. BPE builds a vocabulary by 2Preprint. Technical Report. repeatedly merging the most frequent adjacent symbol pair, and encodes new text according to the learned merge order. Its intermediate merge products occupy vocabulary entries, although some are rarely used in final segmentations. PickyBPE (Chizhov et al., 2024) and Scaffold-BPE (Lian et al., 2025) address this issue by removing such tokens based on relative frequency criteria during training. UnigramLM instead starts from an overcomplete candidate vocabulary, estimates token probabilities with EM, and iteratively prunes tokens according to their contribution to corpus likelihood, using Viterbi decoding to select the most probable segmentation. MinGram (Land, 2026) simplifies this procedure through BPE-based initialization, Hard EM on minimum-token paths, and a single final score-based pruning step. Vocabulary construction and segmentation can also be studied separately: Uzan et al. (2024) compare inference methods across multiple vocabulary construction algo-rithms, while PathPiece (Schmidt et al., 2024) combines minimum-token segmentation with iterative vocabulary pruning and supports multiple initialization strategies. Our framework constructs the vocabulary through direct substring counting and a single filtering step based on MCE token usage, without sequential merges or iterative refinement. Moreover, unlike previous methods that impose hard word-level pretokenization boundaries, our framework supports multiword tokens, allowing for further sequence compression. 
+
+Tokenization beyond word boundaries. Many subword tokenizers impose hard pretok-enization boundaries, typically based on whitespace and punctuation, which prevent tokens from spanning multiple words (Liu et al., 2025a; Schmidt et al., 2025). Early work explored incorporating statistically selected multiword expressions into tokenization, with evalua-tions primarily focused on machine translation and text classification (Kumar & Thawani, 2022; Gee et al., 2023). More recently, SuperBPE (Liu et al., 2025a) introduces a pretok-enization curriculum that first learns subwords and then permits merges across whitespace, demonstrating improvements in both compression and downstream performance through controlled language-model pretraining experiments. BoundlessBPE (Schmidt et al., 2025) selectively merges adjacent pretokens that are each represented by a single token into su-perwords, preserving complete pretoken boundaries during these merges. Although these methods support multiword tokens, their vocabulary construction and inference still rely on ordered merge operations. Our approach instead controls partial-word boundary crossings through candidate validity rules during CNF vocabulary construction and through penalties and constraints during MCE segmentation, without relying on ordered merge operations. 
+
+# 3 Methodology 
+
+A tokenizer is defined mainly by three elements: a vocabulary, an encoding algorithm, and a decoding algorithm. Our approach comprises two algorithms: Counting and Filtering 
+
+(CNF ) for vocabulary construction, and Min-Cost Encoding (MCE ) for text tokenization. Decoding reduces to a simple table lookup in the vocabulary’s (ID, token text) dictionary. CNF first constructs a raw vocabulary through substring counting in the training corpus and then refines it based on token usage under MCE. Given a vocabulary, MCE selects a segmentation by minimizing an encoding cost. 
+
+3.1 Vocabulary Construction: Counting and Filtering (CNF) 
+
+CNF consists of two phases. In the counting phase, we construct a raw vocabulary by select-ing the most frequent candidate tokens in the corpus. In the filtering phase, we construct the final vocabulary by removing tokens from the raw vocabulary that are infrequently used when MCE tokenizes the corpus. Thus, counting measures candidate occurrences in the original text, whereas filtering measures actual token usage during tokenization. 
+
+3.1.1 Raw Vocabulary Construction by Counting 
+
+Given a text corpus C, we extract valid candidate tokens from each document and aggregate their occurrence counts across the corpus. Then a raw vocabulary is built by selecting the top-m candidates with the highest counts. 3Preprint. Technical Report. A critical step in the counting phase is determining which substrings qualify as valid candidate tokens. BPE vocabulary construction typically begins with pretokenization, which splits text into chunks based on delimiters (e.g. whitespace) and other rules. Merges are restricted to individual chunks, preventing tokens from spanning chunk boundaries. CNF relaxes this boundary restriction to allow words, subwords, and multiword phrases as candidate tokens. This expands the candidate space but may also introduce undesirable cross-word substrings, such as those that begin within a word. For example, consider the following text: Example text: ”1600 B.C. was a significant year in human history.” Under CNF’s validity rules, “6”, “ sig”, “significant”, “cant”, and “ year” are valid can-didate tokens. Multiword phrases such as “ was a” and “significant year” are also valid. However, “ficant year” is excluded because it spans multiple words but begins within a word. Given a text T and a substring S, we determine the validity of S using rules that account for its boundaries and context within T.Although validity checks eliminate many substrings, a document can still yield a large number of candidate tokens, making exhaustive counting costly for corpora containing millions of documents. We address this challenge with an efficient counting algorithm for raw vocabulary construction, summarized in Algorithm 1. The algorithm uses two main strategies: 
+
+Multi-round counting with early stopping. We construct the raw vocabulary in multiple rounds over consecutive, non-overlapping length intervals starting at length one, with shorter candidates processed first. Each interval r = [ rmin , rmax ] ∈ R has an associated frequency threshold tr. At the start of each round, we build a byte trie from all candidates retained in earlier rounds, storing their corpus-wide frequencies for comparison with the current threshold tr during enumeration. The trie is empty in the first round. The C OUNT CANDIDATES procedure enumerates substrings by starting position and in-creasing length, using two early-stopping criteria. First, if a substring is invalid and cannot become valid through further extension, enumeration stops at that starting position (e.g., in “a significant year in human history”, once the substring “ficant ” is reached, further extension cannot resolve its invalid start within a word). Invalid substrings that may be-come valid through extension are skipped without stopping enumeration. Second, if a valid substring within a previously processed length interval is absent from the trie or has a stored frequency below the current threshold tr, enumeration stops at that starting position. In either case, the prefix and its extensions cannot meet the current frequency threshold. Valid candidates within the current round’s length interval are counted. These criteria reduce unnecessary substring enumeration and the number of candidates stored in frequency dictionaries, reducing computation time and memory usage. 
+
+Parallel counting and aggregation. Within each round, workers process disjoint subsets of documents in parallel, each maintaining a local frequency dictionary. We merge these dictionaries by summing the counts of identical candidates across workers, then retain candidates with corpus-wide frequencies of at least the current threshold tr. After all rounds, we select the top-m candidates by frequency from the combined set of retained candidates to form the raw vocabulary. In our experiments, it takes less than one hour to run the raw vocabulary construction algorithm (using 32 threads) on a corpus of one million English documents. 
+
+3.1.2 Filtering 
+
+The counting phase assigns each candidate token its substring frequency in the training corpus. However, this frequency does not necessarily reflect how often the token is used in tokenization. For example, “ significan” occurs in both “ significant” and “ significance”, and thus has a substring frequency at least as high as that of either word. But, when 4Preprint. Technical Report. 
+
+Algorithm 1 Raw Vocabulary Construction by Efficient Counting 
+
+Require: Corpus C; ordered length intervals R; frequency thresholds {tr }r∈R; raw vocabu-lary size m
+
+Ensure: Raw vocabulary V0 
+
+> 1:
+
+F ← ∅ ▷ Retained candidates and their counts  
+
+> 2:
+
+for r ∈ R do  
+
+> 3:
+
+T ← BuildByteTrie (F) ▷ Store candidate counts  
+
+> 4:
+
+for each document d ∈ C in parallel do  
+
+> 5:
+
+fd ← CountCandidates (d, r, T , tr ) 
+
+> 6:
+
+end for  
+
+> 7:
+
+f ← ∑d∈C fd ▷ Sum counts by candidate  
+
+> 8:
+
+F ← F ∪ { (s, f (s)) : f (s) ≥ tr } 
+
+> 9:
+
+end for  
+
+> 10:
+
+return the top-m candidates in F ranked by frequency  
+
+> 11:
+
+procedure CountCandidates( d, r, T , t) 
+
+> 12:
+
+f ← an empty frequency dictionary with default value 0  
+
+> 13:
+
+for i = 0, . . . , |d| − 1 do  
+
+> 14:
+
+for ℓ = 1, . . . , min (rmax , |d| − i) do  
+
+> 15:
+
+s ← d[i : i + ℓ] 
+
+> 16:
+
+if s is invalid at position i in d then  
+
+> 17:
+
+if no extension of s can become valid then  
+
+> 18:
+
+break ▷ Stop extending this prefix  
+
+> 19:
+
+end if  
+
+> 20:
+
+continue ▷ Skip counting but allow extension  
+
+> 21:
+
+end if  
+
+> 22:
+
+if ℓ ≥ rmin then  
+
+> 23:
+
+f (s) ← f (s) + 1 
+
+> 24:
+
+else if s /∈ T or T (s) < t then  
+
+> 25:
+
+break ▷ Missing or low-frequency prefix  
+
+> 26:
+
+end if  
+
+> 27:
+
+end for  
+
+> 28:
+
+end for  
+
+> 29:
+
+return f 
+
+> 30:
+
+end procedure 
+
+both complete words are included in the vocabulary, this shared prefix may be selected infrequently during tokenization. Such candidates resemble BPE “junk” tokens, i.e., intermediate tokens that participate in vocabulary construction but rarely appear in the resulting tokenized text (Bostrom & Durrett, 2020; Chizhov et al., 2024). These tokens occupy vocabulary slots despite their limited use and may receive insufficient training in downstream language models (Chizhov et al., 2024; Land & Bartolo, 2024). This motivates us to identify and filter out underused candidates by measuring their frequencies in the tokenization results of a sufficiently large text collection. In the filtering phase, we first apply MCE tokenization (Section 3.2) to the training corpus using the raw vocabulary obtained in the counting phase. We then compute each token’s 
+
+segmentation frequency , defined as its number of occurrences in the resulting token sequences. The final vocabulary consists of the top-k tokens ranked by segmentation frequency. 
+
+3.2 Text Tokenization: Min-Cost Encoding (MCE) 
+
+Given a fixed vocabulary, MCE selects a segmentation by globally minimizing an encoding cost. This cost combines token count with penalties for partial-word boundary crossings and an optional token preference term. MCE does not depend on how the vocabulary was constructed and can therefore operate on the raw CNF vocabulary, the final CNF vocabulary, or a vocabulary constructed by another method. 5Preprint. Technical Report. Let x = ( b0, . . . , bn−1) denote the UTF-8 byte sequence of an input text, and let V be a vocabulary of nonempty byte strings. We assume that V includes all 256 single-byte tokens, ensuring that every input has a valid encoding. A segmentation is a sequence of positions 
+
+π = ( i0, . . . , iq) with 0 = i0 < · · · < iq = n, where each substring x[ir−1 : ir ] belongs to V.Writing ΠV (x) for the set of such segmentations and q(π) for the number of tokens in π,MCE solves 
+
+π⋆ = arg min  
+
+> π∈ΠV(x)
+> q(π)
+
+# ∑
+
+> r=1
+
+c(ir−1, ir ), (1) where c(i, j) denotes the cost of encoding the substring x[i : j] as a single token. We define 
+
+c(i, j) as the sum of a unit token cost, a boundary-dependent penalty, and an optional small token preference cost. To define the boundary penalty, we annotate the input with word-like units. A unit is a maximal run of alphabetic characters or Unicode combining marks (e.g., the acute accent in ´ e); each remaining character, including spaces, punctuation, digits, and characters from non-alphabetic writing systems (e.g., Chinese characters), forms a singleton unit. These annotations guide candidate costs while allowing tokens to span multiple units. For byte position i, let wi be its unit index. For a candidate t = x[i : j], let uij = wj−1 − wi + 1 denote the number of units it touches, and let aij = 1 if byte i is the first byte of unit wi and byte 
+
+j − 1 is the last byte of unit wj−1, and aij = 0 otherwise. The boundary penalty is defined as 
+
+p(i, j) = 
+
+
+
+0, uij = 1 or aij = 1, 
+
+λ, uij = 2 and aij = 0, 
+
++∞, uij ≥ 3 and aij = 0, (2) where we set λ = 0.05 in practice. Thus, tokens contained within one unit and tokens covering a sequence of complete units receive no boundary penalty. A token crossing one unit boundary with an incomplete endpoint incurs a small penalty, whereas a token touching three or more units with an incomplete endpoint is excluded. For example, in 
+
+co-advisor , the units are co , -, and advisor . If present in the vocabulary, co-advisor 
+
+receives no boundary penalty, o- incurs λ, and o-ad is excluded. This rule permits tokens spanning multiple complete words (e.g., phrases), potentially improving compression while discouraging partial-word boundary crossings that may yield linguistically unmotivated tokens. Optionally, we introduce a small token-dependent cost ε(t) ≪ 1 to express a weak preference for certain vocabulary entries. In our implementation, tokens with smaller IDs receive lower costs, using token IDs as a rough proxy for frequency to introduce a weak preference for more frequent tokens. Combining these terms, the encoding cost of a candidate token t = x[i : j] is 
+
+c(i, j) = 1 + p(i, j) + ε(t), (3) where the constant 1 represents a unit cost per token. MCE minimizes this combined cost according to Equation 1, encouraging shorter token sequences while balancing token count, boundary penalties, and the optional token preference. We solve Equation 1 by dynamic programming over byte positions. Algorithm 2 summarizes the procedure. Let D(i) denote the minimum cost of encoding the suffix x[i : n]. With 
+
+D(n) = 0, the recurrence is 
+
+D(i) = min 
+
+> i<j≤nx[i:j]∈V
+
+{c(i, j) + D(j)} , i = n − 1, . . . , 0. (4) Storing the minimizing choice at each position allows us to recover an optimal segmentation from position zero. Since token costs are additive and independent of the segmentation of the remaining text, this recurrence yields a globally optimal segmentation. Within CNF, MCE is used both to measure the realized token usage for vocabulary filtering and to tokenize text with the final vocabulary. More generally, MCE can operate on any vocabulary satisfying the byte-coverage assumption above, applying the same encoding procedure to produce token sequences for the language model. 6Preprint. Technical Report. 
+
+Algorithm 2 Min-Cost Encoding (MCE) 
+
+Require: UTF-8 byte sequence x of length n; vocabulary V containing all single-byte tokens; candidate costs c(i, j) from Equation 3 
+
+Ensure: An optimal token sequence T 
+
+> 1:
+
+D[n] ← 0 
+
+> 2:
+
+for i = n − 1, . . . , 0 do  
+
+> 3:
+
+Ji ← { j | i < j ≤ n, x[i : j] ∈ V }  
+
+> 4:
+
+j⋆ ← arg min j∈J i {c(i, j) + D[j]} ▷ Choose the largest j in a tie  
+
+> 5:
+
+D[i] ← c(i, j⋆) + D[j⋆] 
+
+> 6:
+
+next [i] ← j⋆ 
+
+> 7:
+
+end for  
+
+> 8:
+
+T ← [ ] , i ← 0 
+
+> 9:
+
+while i < n do  
+
+> 10:
+
+j ← next [i] 
+
+> 11:
+
+Append x[i : j] to T 
+
+> 12:
+
+i ← j 
+
+> 13:
+
+end while  
+
+> 14:
+
+return T
+
+# 4 Experiments 
+
+We evaluate CNF–MCE in terms of compression performance, vocabulary scaling, intrinsic tokenizer properties, segmentation under fixed vocabularies, and downstream language model performance. 
+
+4.1 Experimental Setup Data. Our tokenizer experiments cover six text categories: English web text ( en-web ), English PDF text ( en-pdf ), mathematics ( math ), code ( code ), Chinese text ( zh ), and multilin-gual text ( lang11 ). The code and multilingual data span 14 programming languages and 11 languages, respectively. The datasets and their corresponding categories are listed in Appendix A.1. 
+
+Tokenizer configuration. We construct our CNF vocabularies using a mixture of 6.9 mil-lion documents sampled from these data sources, comprising English (1M), mathematics (0.2M), code (1.7M), Chinese text (1M), and multilingual text (3M). For CNF, we use three counting rounds with candidate length intervals R = ([ 1, 12 ], [13, 21 ], [22, 30 ]) , correspond-ing frequency thresholds tr of 0, 80, and 80, respectively, and a raw vocabulary size of 
+
+m = 5,000,000. We set the target final vocabulary size to k = 138,000 and k = 250,000 to construct mix138k and mix250k , respectively. We encode text with the resulting vocabularies using MCE, with the boundary penalty coefficient λ = 0.05 and the token preference cost 
+
+ε(t) = 0.1/ (10 + s(t)) , where s(t) = 10,000/ (1 + 0.01 · id (t)) and id (t) denotes the ID of token t in the vocabulary. This cost assigns a smaller penalty to tokens with smaller IDs. 
+
+4.2 Compression Performance across Tokenizers 
+
+We compare the compression performance of CNF–MCE with existing BPE tokenizers used by LLMs. The baselines use their corresponding BPE encoding procedures, while our Mix vocabularies are constructed by CNF and encoded with MCE. We consider two vocabulary-size groups: 100k–160k entries, including our mix138k vocabulary, and 200k– 250k entries, including our mix250k vocabulary. Table 1 summarizes the vocabularies used in our experiments. 
+
+Evaluation protocol. We evaluate on six data categories: English web text ( en-web ), English PDF text ( en-pdf ), mathematics ( math ), code ( code ), Chinese text ( zh ), and multilingual text ( lang11 ). For each category, we randomly sample 10,000 documents and evaluate all 7Preprint. Technical Report. Table 1: Overview of the vocabularies used in our experiments.                    
+
+> Group Vocab. name Construction Size Model series Smaller (100k–160k) llama128k BPE 128k Llama3.2 (Meta, 2024) ds128k BPE 128k DeepSeek-V4 (DeepSeek-AI, 2026) qwen152k BPE 152k Qwen2.5/3 (Qwen et al., 2024; Yang et al., 2025) cl100k base BPE 100k GPT-3.5/4 (OpenAI, 2026) mix138k CNF 138k – Larger (200k–250k) o200k base BPE 200k GPT-4o/4.1/4.5, o1, o3, o4 (OpenAI, 2026) qwen250k BPE 248k Qwen3.5/3.6/3.8 (Qwen Team, 2026a;b;c) mm200k BPE 200k MiniMax-M2.5/M3 (Chen et al., 2026) mix250k CNF 249k –
+
+Table 2: Compression performance in the Smaller-vocabulary group. Text type llama128k ds128k qwen152k cl100k base mix138k Improvement over ds128k qwen152k en-web 4.640 4.643 4.545 4.632 5.599 20.6% 23.2% en-pdf 4.023 4.145 3.905 4.013 4.936 19.1% 26.4% math 3.640 3.725 3.471 3.630 4.462 19.8% 28.6% code 3.413 3.178 3.143 3.381 3.728 17.3% 18.6% zh 1.240 1.696 1.553 0.872 1.812 6.8% 16.7% lang11 3.135 3.213 3.177 2.771 4.028 25.4% 26.8% tokenizers on the same sampled documents. We measure the character-level compression rate in characters per token (CPT): CPT (T, D) = ∑x∈D |x|char 
+
+∑x∈D |T(x)| , (5) where D denotes the sampled documents, |x|char is the number of characters in document 
+
+x, and |T(x)| is the number of tokens produced by tokenizer T. Higher CPT indicates that fewer tokens are required to encode the same text. 
+
+Results with Smaller vocabularies. Table 2 compares mix138k with llama128k , ds128k ,
+
+qwen152k , and cl100k base . Our tokenizer achieves the highest CPT in all six categories. On English web text, it achieves 5.599 characters per token, improving over ds128k and 
+
+qwen152k by 20.6% and 23.2%, respectively. The gains also extend to multilingual text, where CPT increases by 25.4% and 26.8% over these two baselines. 
+
+Results with Larger vocabularies. Table 3 compares mix250k with o200k base , qwen250k ,and mm200k . Our tokenizer again achieves the highest CPT across all categories. Relative to qwen250k , improvements range from 15.3% on Chinese text to 37.6% on mathematics. Relative to o200k base , the largest improvement is observed on Chinese text, with a gain of 49.7%. These results demonstrate consistent compression gains for CNF–MCE across all evalu-ated text categories and both vocabulary-size groups. These compression gains can be particularly beneficial for long-context processing. With standard full attention, attention computation scales quadratically with sequence length, so encoding the same text with fewer tokens can substantially reduce computation and potentially lower serving latency and cost. Moreover, shorter sequences reduce KV-cache storage, easing GPU memory pressure during inference. 
+
+4.3 Vocabulary Scaling 
+
+We compare BPE and CNF–MCE across vocabulary sizes to investigate whether token efficiency remains scalable as the vocabulary grows larger. 8Preprint. Technical Report. Table 3: Compression performance in the Larger-vocabulary group. Text type o200k base qwen250k mm200k mix250k Improvement over o200k base qwen250k en-web 4.700 4.499 4.752 5.955 26.7% 32.4% en-pdf 4.051 3.856 4.244 5.211 28.7% 35.1% math 3.651 3.400 3.774 4.678 28.1% 37.6% code 3.388 2.983 3.324 3.880 14.5% 30.1% zh 1.311 1.703 1.758 1.963 49.7% 15.3% lang11 3.648 3.748 3.434 4.530 24.2% 20.9% 1K 2K 4K 8K 16K 32K 64K 128K 256K 512K 1M  
+
+> Vocabulary size
+> 2468
+> Characters per token (CPT)
+> 4.869 8.129
+> (a) Encoding efficiency
+> 1K 2K 4K 8K 16K 32K 64K 128K 256K 512K 1M
+> Vocabulary size
+> 50% 60% 70% 80% 90% 100%
+> Observed vocabulary entries (%)
+> 52.9% 96.9%
+> (b) Vocabulary utilization
+> BPE CNF–MCE
+
+Figure 1: Vocabulary scaling on en-web : (a) token efficiency and (b) vocabulary utilization after 100M output tokens per configuration. Higher is better in both panels. Vocabulary size uses a logarithmic axis; 1K denotes 1,000 entries and 1M denotes 1,024,000 entries. 
+
+Evaluation protocol. We evaluate on the English web text ( en-web ), with vocabulary sizes doubling from 1K to 1M. For each vocabulary and encoding method, we process documents until the cumulative output reaches 100M tokens. We use a fixed token budget to ensure a fair comparison of vocabulary utilization across configurations. Encoding efficiency is measured in characters per token (CPT), as in Equation 5, over the documents processed by each configuration. The vocabulary utilization is defined as the fraction of vocabulary entries observed at least once: U(V ) = |{ t ∈ V : f (t) > 0}| /|V | , where f (t) is the observed frequency of token t in the generated token sequence. Higher values indicate broader vocabulary usage. Detailed results are provided in Appendix A.2. 
+
+Token efficiency. Figure 1(a) shows that CNF–MCE achieves higher token efficiency than BPE across all evaluated vocabulary sizes. BPE’s token efficiency begins to saturate as the vocabulary grows, whereas CNF–MCE exhibits stronger scaling with sustained gains. CNF–MCE continues to improve even when the vocabulary doubles from 512K to 1M, gaining 6.8% in CPT compared with just 0.6% for BPE. At 1M entries, CNF–MCE achieves 67.0% higher CPT than BPE. 
+
+Vocabulary utilization. Figure 1(b) shows that BPE’s token efficiency saturation is accom-panied by a marked decline in vocabulary utilization as the vocabulary grows. In contrast, CNF–MCE maintains high utilization even at 1M entries, reaching 96.9% compared with 52.9% for BPE under the same token budget. These results indicate that CNF–MCE exhibits stronger vocabulary scaling than BPE, with sustained gains in token efficiency and high vocabulary utilization up to 1M entries. 9Preprint. Technical Report. Table 4: Intrinsic evaluation with TokEval.                                            
+
+> Metric qwen250k mix250k
+> Compression and vocabulary usage
+> Fertility ↓5.550 4.429
+> Token length ↑3.832 4.718
+> Vocabulary utilization ↑0.2147 0.2696
+> Compression rate (bytes/token) ↑5.143 6.329
+> Token distributions and multilingual fairness
+> R´ enyi efficiency ( α=2) ↑0.4948 0.5476
+> Bigram entropy ↑0.8805 0.9438
+> Trigram entropy ↑0.8151 0.7746 Tokenizer fairness Gini ↓0.1214 0.1176
+> Numerical tokenization
+> Three-digit boundary alignment (F1) ↑0.3703 0.7655
+> Numeric magnitude consistency ↓1.0000 0.5633
+> Operator isolation rate ↑0.4863 0.4890
+> Encoding fidelity
+> Reconstruction fidelity (exact match) ↑1.0000 1.0000
+> UTF-8 token integrity ↑0.9994 0.9996
+
+4.4 Intrinsic Evaluation 
+
+We further compare qwen250k and mix250k across a broader set of intrinsic metrics, which characterize task-independent tokenizer properties. 
+
+Evaluation protocol. We evaluate both tokenizers on a subset of FLORES-200 (NLLB Team et al., 2022) covering 13 languages using the third-party evaluation toolkit TokEval (Meister, 2026), with the metrics and results summarized in Table 4. Compression rate is measured at the byte level as the number of UTF-8 bytes per token (bytes/token). Fertility and token length 
+
+characterize segmentation granularity, while vocabulary utilization measures the fraction of vocabulary entries used in the evaluation corpus. R´ enyi efficiency characterizes the token usage distribution, while bigram entropy and trigram entropy measure normalized conditional entropy given the preceding one and two tokens, respectively. We assess cross-lingual encoding inequality using tokenizer fairness Gini , and numerical tokenization using three-digit boundary alignment , numeric magnitude consistency , and operator isolation rate . Finally, 
+
+reconstruction fidelity and UTF-8 token integrity measure exact text reconstruction and token completeness, respectively. We retain the metric conventions and directions shown in the evaluation report. 
+
+Results. mix250k achieves a compression rate of 6.329 compared with 5.143 for qwen250k ,an improvement of approximately 23.1%. Fertility decreases by 20.2%, while mean token length increases by 23.1%. Vocabulary utilization rises by 25.6%, indicating that a larger fraction of the vocabulary is used in the evaluation corpus. These results show that mix250k 
+
+achieves more compact tokenization alongside broader vocabulary usage. R´ enyi efficiency increases by 10.7%, indicating more evenly distributed token usage. Bigram entropy also increases, while trigram entropy decreases. The lower tokenizer fairness Gini suggests a modest reduction in cross-lingual encoding inequality on the evaluation corpus. The numerical tokenization results show consistent improvements across all three metrics, with the largest relative gain of 106.7% in three-digit boundary alignment F1, suggesting that 
+
+mix250k handles numerical tokenization more effectively than qwen250k . Both tokenizers achieve an exact reconstruction rate of 1.0, while mix250k has slightly higher UTF-8 token integrity. Overall, mix250k outperforms qwen250k on most reported intrinsic metrics. It offers better compression and higher vocabulary utilization. 10 Preprint. Technical Report. Table 5: Token efficiency and pairwise segmentation comparisons on the fixed qwen250k 
+
+vocabulary. Text type Token efficiency MCE vs. BPE FMM vs. BPE FMM vs. MCE BPE FMM MCE Dist. (%) Agree. (%) Dist. (%) Agree. (%) Dist. (%) Agree. (%) en-web 222.5 222.1 221.6 3.64 97.53 7.30 94.78 5.95 95.60 math 297.6 297.2 296.6 3.61 96.88 6.54 94.02 5.52 94.95 code/python 278.3 278.0 276.4 11.21 87.50 21.48 70.91 16.4 78.26 zh 643.7 643.4 637.4 2.65 97.00 6.75 92.11 5.21 93.72 Table 6: Compression and segmentation comparisons on the fixed mix250k vocabulary. Text type Token efficiency MCE vs. FMM Boundary-crossing (%) FMM MCE Dist. (%) Agree. (%) MCE FMM en-web 170.4 168.0 20.73 83.10 0 2.291 math/finemath 223.6 221.5 17.23 84.31 0 1.210 code/python 234.3 230.1 23.3 78.23 0 1.064 zh 510.6 509.3 11.62 88.32 0 0.019 
+
+4.5 Segmentation with Fixed Vocabularies 
+
+We compare various segmentation algorithms under fixed vocabularies to examine how the encoding algorithm affects compression and segmentation. 
+
+Evaluation protocol. We compare BPE, MCE, and forward maximum matching (FMM) on the BPE-built qwen250k vocabulary, and MCE and FMM on the CNF-built mix250k vocabu-lary. Note that BPE tokenizaiton cannot be applied to mix250k, as no merge information is available in this vocabulary. FMM segments text from left to right by selecting the longest matching vocabulary entry at each position. We evaluate token efficiency using the number of tokens per 1,000 characters (tokens/kchar). Lower values indicate that fewer tokens are needed to encode the same text, corresponding to better compression. We further measure the similarity between two segmentations using two metrics. Distance (Dist.) is the edit distance between the token-ID sequences produced by two algorithms, divided by the length of the longer sequence. Agreement 
+
+(Agree.) measures consistency at the byte level: each byte in the original text is assigned the ID of the token covering it, and agreement is the proportion of byte positions assigned the same token ID by both algorithms. Lower Distance and higher Agreement indicate more similar segmentations. We also report Boundary-crossing , the proportion of tokens in a segmentation that incompletely span multiple word-like units, where the units are defined in Section 3.2. A token counts as a crossing if it spans multiple units but starts inside the first unit or ends inside the last, as the token “ is a ” in “ is ancient ”. Tokens covering a sequence of complete units do not count as crossings. 
+
+Results with the BPE vocabulary. Table 5 compares the three encoding algorithms on 
+
+qwen250k . MCE produces the fewest tokens across all four datasets. These results show that MCE can improve compression even when using a vocabulary constructed by BPE. The table also reports pairwise segmentation comparisons. Agreement between MCE and BPE exceeds 96% on English web, mathematics, and Chinese text. Thus, without relying on BPE’s merge order during encoding, MCE produces segmentations highly similar to those of BPE while improving compression. This demonstrates its applicability to the existing BPE-built vocabulary. Agreement is lower on Python code (87.50%), indicating that the degree of similarity varies across domains. Two examples illustrate how the algorithms differ in segmentation. For text “ (taxonomy ”(not including the quotes), BPE produces “ (t ∥ax ∥onomy ” and FMM produces “ (t ∥axon ∥omy ”, 11 Preprint. Technical Report. whereas MCE yields “ (∥taxonomy ”, reducing the token count from three to two while keep-ing the word intact. For text “ memory efficient ”, all three methods produce three tokens: BPE and FMM yield “ memory ∥ eff ∥icient ”, while MCE yields “ memory ∥ ∥ efficient ”, sep-arating the underscore and preserving both words as complete tokens. More examples are provided in Table 11. 
+
+Results with the CNF vocabulary. Table 6 compares MCE and FMM on mix250k . MCE consistently achieves greater token efficiency than FMM across all four data categories. The efficiency advantage is more pronounced when comparing MCE with mix250k against BPE with qwen250k (e.g., on English web text, token usage decreases from 222.5 to 168.0 tokens/kchar, a reduction of approximately 24.5%). Pairwise comparisons reveal noticeable differences between the segmentations produced by MCE and FMM under the same vo-cabulary. We further examine Boundary-crossing: MCE exhibits no incomplete crossings of multiple word-like units across the evaluated data categories, whereas FMM has nonzero rates in all four. These results suggest that MCE improves token efficiency while avoiding partial-word boundary crossings, thereby helping to preserve the semantic integrity of the resulting tokens. These results demonstrate the effectiveness of MCE across vocabularies. MCE keeps high token efficiency on both BPE- and CNF-built vocabularies without relying on merge rules, while avoiding incomplete crossings of word-like units. 
+
+4.6 Downstream Task Evaluation 
+
+Although our method has demonstrated advantages in intrinsic tokenizer properties, further evaluation on downstream tasks is needed to assess its practical effectiveness. We train language models from scratch that differ only in their tokenizers and evaluate them across a range of benchmarks. 
+
+Evaluation protocol. We train language models from scratch at the 1.8B- and 8B-parameter scales. At 1.8B, we compare tokenizers using the BPE-built qwen152k vocabulary and our CNF-built mix138k vocabulary; at 8B, we compare qwen152k with our CNF-built mix250k 
+
+vocabulary. Within each model scale, only the tokenizer differs; the remaining model and training settings are held fixed. Our training recipe is based on SmolLM3 (Bakouch et al., 2025). We evaluate checkpoints at the end of the phase-1 and the decay phase . Detailed model configurations are provided in Appendix B.1. We evaluate on 11 English benchmarks, described in Appendix B.2. These benchmarks cover five categories: knowledge (ARC, MMLU, OpenBookQA, and TriviaQA), math (GSM8K), coding (HumanEval), commonsense (CommonsenseQA, PIQA, and WinoGrande), and language understanding (HellaSwag and LAMBADA). All tasks use zero-shot evaluation except GSM8K, which uses five-shot evaluation. We report exact match (EM) for GSM8K, LAMBADA, and TriviaQA, pass@1 for HumanEval, and accuracy under cloze prompting (CP) for the remaining tasks. The average is the unweighted mean across the 11 benchmarks. Further evaluation details are provided in Appendix B.3. 
+
+Results at the 1.8B scale. Table 7 shows that mix138k maintains comparable average downstream performance to qwen152k at the 1.8B scale. The phase-1 average scores are 40.4 and 40.5, respectively. Both improve after the decay phase, with average scores rounding to 44.1 for both configurations. Most tasks improve over this transition: 9 of 11 for mix138k 
+
+and 10 of 11 for qwen152k .Across individual tasks, mix138k remains broadly competitive with qwen152k , scoring higher on HellaSwag, LAMBADA, and OpenBookQA in both phases. After the decay phase, it outperforms qwen152k on 6 of the 11 benchmarks: ARC, GSM8K, HellaSwag, LAMBADA, OpenBookQA, and WinoGrande. The largest advantages are on LAMBADA, GSM8K, and OpenBookQA, with gains of 2.9, 2.7, and 2.1 points, respectively. These gains are accompanied by lower scores on MMLU, CommonsenseQA, and HumanEval by 2.7, 2.4, and 1.7 points, respectively. Thus, the compression advantage of mix138k is accompanied by comparable average downstream performance, with task-specific trade-offs. 12 Preprint. Technical Report. Table 7: Downstream performance of language models trained from scratch at the 1.8B scale with different vocabularies.                                                      
+
+> Benchmark Phase-1 Decay phase qwen152k mix138k qwen152k mix138k ARC 53.2 49.4 58.1 58.2
+> CommonsenseQA 39.6 38.7 38.5 36.1 GSM8K 0.7 2.1 17.9 20.6
+> HellaSwag 59.2 59.9 61.2 61.7
+> HumanEval 1.0 1.7 6.0 4.3 LAMBADA 56.3 59.9 58.1 61.0
+> MMLU 36.8 34.3 40.7 38.0 OpenBookQA 39.3 43.2 40.9 43.0
+> PIQA 74.0 73.3 74.6 73.8 TriviaQA 28.0 26.2 31.7 30.7 WinoGrande 57.0 55.7 57.1 58.2
+> Average 40.5 40.4 44.1 44.1
+
+Table 8: Downstream performance of language models trained from scratch at the 8B scale with different vocabularies.                                                      
+
+> Benchmark Phase-1 Decay phase qwen152k mix250k qwen152k mix250k ARC 59.9 57.1 65.0 62.7 CommonsenseQA 41.8 41.6 41.4 42.9
+> GSM8K 1.2 6.1 20.8 38.7
+> HellaSwag 67.2 67.6 72.1 70.8 HumanEval 1.8 1.2 11.6 4.3 LAMBADA 57.8 68.7 64.4 72.2
+> MMLU 41.5 38.5 46.1 42.2 OpenBookQA 42.3 45.2 43.2 46.0
+> PIQA 77.4 77.7 79.1 79.2
+> TriviaQA 44.7 41.8 53.0 48.8 WinoGrande 61.9 59.1 64.2 59.5 Average 45.2 45.9 51.0 51.6
+
+Results at the 8B scale. Table 8 compares mix250k with qwen152k at the 8B scale. The 8B models further improve performance over the 1.8B models. The two configurations achieve similar average downstream performance, with mix250k scoring slightly higher in both the phase-1 (45.9 vs. 45.2) and the decay phase (51.6 vs. 51.0). From the phase-1 to the decay phase, all 11 tasks improve for mix250k , compared with 10 of 11 for qwen152k . mix250k 
+
+scores higher on 5 of the 11 benchmarks, with the largest gains on GSM8K (+17.9 points) and LAMBADA (+7.8 points) at decay phase. We use qwen152k as a common baseline across both model scales. The 8B experiment assesses the downstream effectiveness of our larger mix250k vocabulary relative to this baseline. Since the vocabularies differ in size, we leave a downstream comparison between 
+
+qwen250k and mix250k to future work to provide a more controlled evaluation at comparable vocabulary sizes. Overall, our method achieves better compression while maintaining competitive down-stream performance at both model scales. 
+
+# 5 Conclusion 
+
+We introduced CNF–MCE, a merge-free, non-iterative tokenization framework that sepa-rates vocabulary construction from segmentation. CNF combines direct substring counting 13 Preprint. Technical Report. with a single filtering step based on realized token usage. MCE globally minimizes an encoding cost combining token count with penalties for partial-word boundary crossings while allowing multiword tokens. CNF–MCE offers several advantages over BPE, includ-ing higher token efficiency, greater scalability, and lower dependency. Experiments show consistent compression gains over the evaluated BPE tokenizers across six text categories and improvements in other intrinsic metrics. On English web text, CNF–MCE sustains compression gains and high vocabulary utilization up to 1M entries. Models trained at the 1.8B and 8B scales achieve comparable average performance to the Qwen tokenizer baseline across 11 English benchmarks. These findings support CNF-MCE as an effective approach to improving token efficiency while preserving competitive downstream performance. Future work will involve comparing downstream performance across a wider range of vocabulary sizes, model architectures, model sizes, languages, and benchmarks. 
+
+# References 
+
+Loubna Ben Allal, Anton Lozhkov, Elie Bakouch, Gabriel Mart´ ın Bl´ azquez, Guilherme Penedo, Lewis Tunstall, Andr´ es Marafioti, Hynek Kydl´ ıˇ cek, Agust´ ın Piqueres Lajar´ ın, Vaibhav Srivastav, Joshua Lochner, Caleb Fahlgren, Xuan-Son Nguyen, Cl´ ementine Four-rier, Ben Burtenshaw, Hugo Larcher, Haojun Zhao, Cyril Zakka, Mathieu Morlon, Colin Raffel, Leandro von Werra, and Thomas Wolf. Smollm2: When smol goes big – data-centric training of a small language model, 2025. URL https://arxiv.org/abs/2502.02737 .Elie Bakouch, Loubna Ben Allal, Anton Lozhkov, Nouamane Tazi, Lewis Tunstall, Car-los Miguel Pati ˜ no, Edward Beeching, Aymeric Roucher, Aksel Joonas Reedi, Quentin Gallou´ edec, Kashif Rasul, Nathan Habib, Cl´ ementine Fourrier, Hynek Kydlicek, Guil-herme Penedo, Hugo Larcher, Mathieu Morlon, Vaibhav Srivastav, Joshua Lochner, Xuan-Son Nguyen, Colin Raffel, Leandro von Werra, and Thomas Wolf. SmolLM3: smol, multilingual, long-context reasoner. https://huggingface.co/blog/smollm3 , 2025. Yonatan Bisk, Rowan Zellers, Ronan Le Bras, Jianfeng Gao, and Yejin Choi. PIQA: Reasoning about physical commonsense in natural language. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 34, pp. 7432–7439, 2020. doi: 10.1609/aaai.v34i05.6239. URL https://ojs.aaai.org/index.php/AAAI/article/view/6239 .Kaj Bostrom and Greg Durrett. Byte pair encoding is suboptimal for language model pretraining. In Findings of the Association for Computational Linguistics: EMNLP 2020 , pp. 4617–4624, 2020. doi: 10.18653/v1/2020.findings-emnlp.414. URL https://aclanthology. org/2020.findings-emnlp.414/ .Aili Chen, Aonian Li, Baichuan Zhou, Bangwei Gong, Binyang Jiang, Boji Dan, Changhao Zhang, Changqing Yu, Chao Wang, Cheng Ma, et al. The MiniMax-M2 series: Mini activations unleashing max real-world intelligence, 2026. URL https://arxiv.org/abs/ 2605.26494 .Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, Henrique Ponde de Oliveira Pinto, Jared Kaplan, Harri Edwards, Yuri Burda, Nicholas Joseph, Greg Brockman, Alex Ray, Raul Puri, Gretchen Krueger, Michael Petrov, Heidy Khlaaf, Girish Sastry, Pamela Mishkin, Brooke Chan, Scott Gray, Nick Ryder, Mikhail Pavlov, Alethea Power, Lukasz Kaiser, Mo-hammad Bavarian, Clemens Winter, Philippe Tillet, Felipe Petroski Such, Dave Cummings, Matthias Plappert, Fotios Chantzis, Elizabeth Barnes, Ariel Herbert-Voss, William Hebgen Guss, Alex Nichol, Alex Paino, Nikolas Tezak, Jie Tang, Igor Babuschkin, Suchir Balaji, Shantanu Jain, William Saunders, Christopher Hesse, Andrew N. Carr, Jan Leike, Josh Achiam, Vedant Misra, Evan Morikawa, Alec Radford, Matthew Knight, Miles Brundage, Mira Murati, Katie Mayer, Peter Welinder, Bob McGrew, Dario Amodei, Sam McCandlish, Ilya Sutskever, and Wojciech Zaremba. Evaluating large language models trained on code. 
+
+arXiv preprint arXiv:2107.03374 , 2021. URL https://arxiv.org/abs/2107.03374 .Pavel Chizhov, Catherine Arnett, Elizaveta Korotkova, and Ivan P. Yamshchikov. BPE gets picky: Efficient vocabulary refinement during tokenizer training. In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing , pp. 16587–16604, 2024. doi: 14 Preprint. Technical Report. 10.18653/v1/2024.emnlp-main.925. URL https://aclanthology.org/2024.emnlp-main. 925/ .Peter Clark, Isaac Cowhey, Oren Etzioni, Tushar Khot, Ashish Sabharwal, Carissa Schoenick, and Oyvind Tafjord. Think you have solved question answering? try ARC, the AI2 reasoning challenge. arXiv preprint arXiv:1803.05457 , 2018. URL https://arxiv.org/abs/ 1803.05457 .Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, Christopher Hesse, and John Schulman. Training verifiers to solve math word problems. arXiv preprint arXiv:2110.14168 , 2021. URL https://arxiv.org/abs/2110.14168 .DeepSeek-AI. DeepSeek-V4: Towards highly efficient million-token context intelligence, 2026. URL https://arxiv.org/abs/2606.19348 .Leonidas Gee, Leonardo Rigutini, Marco Ernandes, and Andrea Zugarini. Multi-word tokenization for sequence compression. In Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing: Industry Track , pp. 612–621, 2023. doi: 10.18653/v1/ 2023.emnlp-industry.58. URL https://aclanthology.org/2023.emnlp-industry.58/ .Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou, Mantas Mazeika, Dawn Song, and Jacob Steinhardt. Measuring massive multitask language understanding. In International Conference on Learning Representations , 2021. URL https://arxiv.org/abs/2009.03300 .Mandar Joshi, Eunsol Choi, Daniel Weld, and Luke Zettlemoyer. TriviaQA: A large scale distantly supervised challenge dataset for reading comprehension. In Proceedings of the 55th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 1601–1611, 2017. doi: 10.18653/v1/P17-1147. URL https://aclanthology. org/P17-1147/ .Taku Kudo. Subword regularization: Improving neural network translation models with multiple subword candidates. In Proceedings of the 56th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 66–75, 2018. doi: 10.18653/v1/ P18-1007. URL https://aclanthology.org/P18-1007/ .Dipesh Kumar and Avijit Thawani. BPE beyond word boundary: How NOT to use multi word expressions in neural machine translation. In Proceedings of the Third Workshop on Insights from Negative Results in NLP , pp. 172–179, 2022. doi: 10.18653/v1/2022.insights-1. 24. URL https://aclanthology.org/2022.insights-1.24/ .Sander Land. MinGram: A minimalist unigram tokenizer with high compression and competitive morphological alignment. arXiv preprint arXiv:2606.27019 , 2026. URL https: //arxiv.org/abs/2606.27019 .Sander Land and Max Bartolo. Fishing for Magikarp: Automatically detecting under-trained tokens in large language models. In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing , pp. 11631–11646, 2024. doi: 10.18653/v1/2024.emnlp-main. 649. URL https://aclanthology.org/2024.emnlp-main.649/ .Haoran Lian, Yizhe Xiong, Jianwei Niu, Shasha Mo, Zhenpeng Su, Zijia Lin, Hui Chen, Jungong Han, and Guiguang Ding. Scaffold-BPE: Enhancing byte pair encoding for large language models with simple and effective scaffold token removal. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 39, pp. 24539–24548, 2025. doi: 10.1609/ aaai.v39i23.34633. URL https://ojs.aaai.org/index.php/AAAI/article/view/34633 .Alisa Liu, Jonathan Hayase, Valentin Hofmann, Sewoong Oh, Noah A. Smith, and Yejin Choi. SuperBPE: Space travel for language models. In Second Conference on Language Modeling , 2025a. URL https://arxiv.org/abs/2503.13423 .Guang Liu, Liangdong Wang, Jijie Li, Yang Yu, Yao Xu, Jiabei Chen, Yu Bai, Feng Liao, and Yonghua Lin. Cci4.0: A bilingual pretraining dataset for enhancing reasoning in large language models, 2025b. URL https://arxiv.org/abs/2506.07463 .15 Preprint. Technical Report. Anton Lozhkov, Loubna Ben Allal, Leandro von Werra, and Thomas Wolf. Fineweb-edu: the finest collection of educational content, 2024a. URL https://huggingface.co/datasets/ HuggingFaceFW/fineweb-edu .Anton Lozhkov, Raymond Li, Loubna Ben Allal, Federico Cassano, Joel Lamy-Poirier, Nouamane Tazi, Ao Tang, Dmytro Pykhtar, Jiawei Liu, Yuxiang Wei, Tianyang Liu, Max Tian, Denis Kocetkov, Arthur Zucker, Younes Belkada, Zijian Wang, Qian Liu, Dmitry Abulkhanov, Indraneil Paul, Zhuang Li, Wen-Ding Li, Megan Risdal, Jia Li, Jian Zhu, Terry Yue Zhuo, Evgenii Zheltonozhskii, Nii Osae Osae Dade, Wenhao Yu, Lucas Krauß, Naman Jain, Yixuan Su, Xuanli He, Manan Dey, Edoardo Abati, Yekun Chai, Niklas Muennighoff, Xiangru Tang, Muhtasham Oblokulov, Christopher Akiki, Marc Marone, Chenghao Mou, Mayank Mishra, Alex Gu, Binyuan Hui, Tri Dao, Armel Zebaze, Olivier Dehaene, Nicolas Patry, Canwen Xu, Julian McAuley, Han Hu, Torsten Scholak, Sebastien Paquet, Jennifer Robinson, Carolyn Jane Anderson, Nicolas Chapados, Mostofa Patwary, Nima Tajbakhsh, Yacine Jernite, Carlos Mu ˜ noz Ferrandis, Lingming Zhang, Sean Hughes, Thomas Wolf, Arjun Guha, Leandro von Werra, and Harm de Vries. Starcoder 2 and the stack v2: The next generation, 2024b. URL https://arxiv.org/abs/2402.19173 .Rabeeh Karimi Mahabadi, Sanjeev Satheesh, Shrimai Prabhumoye, Mostofa Patwary, Mo-hammad Shoeybi, and Bryan Catanzaro. Nemotron-cc-math: A 133 billion-token-scale high quality math pretraining dataset, 2025. URL https://arxiv.org/abs/2508.15096 .Clara Meister. TokEval: A tokenizer evaluation suite. In Conference on Language Modeling ,2026. URL https://arxiv.org/abs/2608.18062 .Bettina Messmer, Vinko Sabolˇ cec, and Martin Jaggi. Enhancing multilingual llm pretraining with model-based data selection. arXiv , 2025. URL https://arxiv.org/abs/2502.10361 .Meta. Llama 3.2 model card, 2024. URL https://huggingface.co/meta-llama/Llama-3. 2-3B .Todor Mihaylov, Peter Clark, Tushar Khot, and Ashish Sabharwal. Can a suit of armor conduct electricity? a new dataset for open book question answering. In Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing , pp. 2381–2391, 2018. doi: 10.18653/v1/D18-1260. URL https://aclanthology.org/D18-1260/ .NLLB Team, Marta R. Costa-juss` a, James Cross, Onur C ¸ elebi, Maha Elbayad, Kenneth Heafield, Kevin Heffernan, Elahe Kalbassi, Janice Lam, Daniel Licht, Jean Maillard, Anna Sun, Skyler Wang, Guillaume Wenzek, Al Youngblood, Bapi Akula, Loic Barrault, Gabriel Mejia Gonzalez, Prangthip Hansanti, John Hoffman, Semarley Jarrett, Kaushik Ram Sadagopan, Dirk Rowe, Shannon Spruit, Chau Tran, Pierre Andrews, Necip Fazil Ayan, Shruti Bhosale, Sergey Edunov, Angela Fan, Cynthia Gao, Vedanuj Goswami, Francisco Guzm´ an, Philipp Koehn, Alexandre Mourachko, Christophe Ropers, Safiyyah Saleem, Holger Schwenk, and Jeff Wang. No language left behind: Scaling human-centered machine translation. arXiv preprint arXiv:2207.04672 , 2022. URL https://arxiv. org/abs/2207.04672 .OpenAI. tiktoken: A fast BPE tokeniser for use with OpenAI’s models. GitHub repository, 2026. URL https://github.com/openai/tiktoken . Accessed September 23, 2026. Denis Paperno, Germ´ an Kruszewski, Angeliki Lazaridou, Ngoc Quan Pham, Raffaella Bernardi, Sandro Pezzelle, Marco Baroni, Gemma Boleda, and Raquel Fern´ andez. The LAMBADA dataset: Word prediction requiring a broad discourse context. In Proceedings of the 54th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 1525–1534, 2016. doi: 10.18653/v1/P16-1144. URL https://aclanthology. org/P16-1144/ .Guilherme Penedo, Hynek Kydl´ ıˇ cek, Vinko Sabolˇ cec, Bettina Messmer, Negar Foroutan, Amir Hossein Kargaran, Colin Raffel, Martin Jaggi, Leandro Von Werra, and Thomas Wolf. Fineweb2: One pipeline to scale them all – adapting pre-training data processing to every language, 2025. URL https://arxiv.org/abs/2506.20920 .16 Preprint. Technical Report. Wannaphong Phatthiyaphaibun, Can Udomcharoenchaikit, Pakpoom Singkorapoom, Kunat Pipatanakul, Ekapol Chuangsuwanich, Peerat Limkonchotiwat, and Sarana Nutanong. Mangosteen: An open thai corpus for language model pretraining, 2025. URL https: //arxiv.org/abs/2507.14664 .Qwen, An Yang, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chengyuan Li, Dayiheng Liu, Fei Huang, Haoran Wei, Huan Lin, Jian Yang, Jianhong Tu, Jianwei Zhang, Jianxin Yang, Jiaxi Yang, Jingren Zhou, Junyang Lin, Kai Dang, Keming Lu, Keqin Bao, Kexin Yang, Le Yu, Mei Li, Mingfeng Xue, Pei Zhang, Qin Zhu, Rui Men, Runji Lin, Tianhao Li, Tianyi Tang, Tingyu Xia, Xingzhang Ren, Xuancheng Ren, Yang Fan, Yang Su, Yichang Zhang, Yu Wan, Yuqiong Liu, Zeyu Cui, Zhenru Zhang, and Zihan Qiu. Qwen2.5 technical report, 2024. URL https://arxiv.org/abs/2412.15115 .Qwen Team. Qwen3.5: Towards native multimodal agents, February 2026a. URL https: //qwen.ai/blog?id=qwen3.5 .Qwen Team. Qwen3.6-27B: Flagship-level coding in a 27B dense model, April 2026b. URL 
+
+https://qwen.ai/blog?id=qwen3.6-27b .Qwen Team. Qwen3.8-Max: A new bar for coding and cowork, August 2026c. URL 
+
+https://qwen.ai/blog?id=qwen3.8 .Keisuke Sakaguchi, Ronan Le Bras, Chandra Bhagavatula, and Yejin Choi. WinoGrande: An adversarial winograd schema challenge at scale. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 34, pp. 8732–8740, 2020. doi: 10.1609/aaai.v34i05.6399. URL https://ojs.aaai.org/index.php/AAAI/article/view/6399 .Craig W. Schmidt, Varshini Reddy, Haoran Zhang, Alec Alameddine, Omri Uzan, Yuval Pinter, and Chris Tanner. Tokenization is more than compression. In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing , pp. 678–702, 2024. doi: 10. 18653/v1/2024.emnlp-main.40. URL https://aclanthology.org/2024.emnlp-main.40/ .Craig W. Schmidt, Varshini Reddy, Chris Tanner, and Yuval Pinter. Boundless byte pair encoding: Breaking the pre-tokenization barrier. In Conference on Language Modeling , 2025. URL https://arxiv.org/abs/2504.00178 .Rico Sennrich, Barry Haddow, and Alexandra Birch. Neural machine translation of rare words with subword units. In Proceedings of the 54th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 1715–1725, 2016. doi: 10.18653/v1/ P16-1162. URL https://aclanthology.org/P16-1162/ .Luca Soldaini and Kyle Lo. peS2o (Pretraining Efficiently on S2ORC) Dataset. Technical report, Allen Institute for AI, 2023. ODC-By, https://github.com/allenai/pes2o .Alon Talmor, Jonathan Herzig, Nicholas Lourie, and Jonathan Berant. CommonsenseQA: A question answering challenge targeting commonsense knowledge. In Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long and Short Papers) , pp. 4149–4158, 2019. doi: 10.18653/v1/N19-1421. URL https://aclanthology.org/N19-1421/ .Team Olmo, Allyson Ettinger, Amanda Bertsch, Bailey Kuehl, David Graham, David Heine-man, Dirk Groeneveld, Faeze Brahman, Finbarr Timbers, Hamish Ivison, Jacob Morrison, Jake Poznanski, Kyle Lo, Luca Soldaini, Matt Jordan, Mayee Chen, Michael Noukhovitch, Nathan Lambert, Pete Walsh, Pradeep Dasigi, Robert Berry, Saumya Malik, Saurabh Shah, Scott Geng, Shane Arora, Shashank Gupta, Taira Anderson, Teng Xiao, Tyler Murray, Tyler Romero, Victoria Graf, Akari Asai, Akshita Bhagia, Alexander Wettig, Alisa Liu, Aman Rangapur, Chloe Anastasiades, Costa Huang, Dustin Schwenk, Harsh Trivedi, Ian Magnusson, Jaron Lochner, Jiacheng Liu, Lester James V. Miranda, Maarten Sap, Malia Morgan, Michael Schmitz, Michal Guerquin, Michael Wilson, Regan Huff, Ronan Le Bras, Rui Xin, Rulin Shao, Sam Skjonsberg, Shannon Zejiang Shen, Shuyue Stella Li, Tucker Wilde, Valentina Pyatkin, Will Merrill, Yapei Chang, Yuling Gu, Zhiyuan Zeng, Ashish Sabharwal, Luke Zettlemoyer, Pang Wei Koh, Ali Farhadi, Noah A. Smith, and Hannaneh Hajishirzi. Olmo 3, 2025. URL https://arxiv.org/abs/2512.13961 .17 Preprint. Technical Report. Omri Uzan, Craig W. Schmidt, Chris Tanner, and Yuval Pinter. Greed is all you need: An evaluation of tokenizer inference methods. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers) , pp. 813–822, 2024. doi: 10.18653/v1/2024.acl-short.73. URL https://aclanthology.org/2024.acl-short.73/ .Tianwen Wei, Liang Zhao, Lichang Zhang, Bo Zhu, Lijie Wang, Haihua Yang, Biye Li, Cheng Cheng, Weiwei L ¨ u, Rui Hu, Chenxia Li, Liu Yang, Xilin Luo, Xuejie Wu, Lunan Liu, Wen-jun Cheng, Peng Cheng, Jianhao Zhang, Xiaoyu Zhang, Lei Lin, Xiaokun Wang, Yutuan Ma, Chuanhai Dong, Yanqi Sun, Yifu Chen, Yongyi Peng, Xiaojuan Liang, Shuicheng Yan, Han Fang, and Yahui Zhou. Skywork: A more open bilingual foundation model, 2023. URL https://arxiv.org/abs/2310.19341 .An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, Chujie Zheng, Dayiheng Liu, Fan Zhou, Fei Huang, Feng Hu, Hao Ge, Haoran Wei, Huan Lin, Jialong Tang, Jian Yang, Jianhong Tu, Jianwei Zhang, Jianxin Yang, Jiaxi Yang, Jing Zhou, Jingren Zhou, Junyang Lin, Kai Dang, Keqin Bao, Kexin Yang, Le Yu, Lianghao Deng, Mei Li, Mingfeng Xue, Mingze Li, Pei Zhang, Peng Wang, Qin Zhu, Rui Men, Ruize Gao, Shixuan Liu, Shuang Luo, Tianhao Li, Tianyi Tang, Wenbiao Yin, Xingzhang Ren, Xinyu Wang, Xinyu Zhang, Xuancheng Ren, Yang Fan, Yang Su, Yichang Zhang, Yinger Zhang, Yu Wan, Yuqiong Liu, Zekun Wang, Zeyu Cui, Zhenru Zhang, Zhipeng Zhou, and Zihan Qiu. Qwen3 technical report. arXiv preprint arXiv:2505.09388 , 2025. URL https://arxiv.org/abs/2505.09388 .Jia Yu, Fei Yuan, Rui Min, Jing Yu, Pei Chu, Jiayang Li, Wei Li, Ruijie Zhang, Zhenxiang Li, Zhifei Ren, Dong Zheng, Wenjian Zhang, Yan Teng, Lingyu Meng, ZhenJiang Jin, Jiantao Qiu, ShaSha Wang, Zhongying Tu, Dahua Lin, Yu Wang, Yu Qiao, Yanfeng Wang, and Conghui He. Wanjuansilu: A high-quality open-source webtext dataset for low-resource languages, 2025. URL https://arxiv.org/abs/2501.14506 .Rowan Zellers, Ari Holtzman, Yonatan Bisk, Ali Farhadi, and Yejin Choi. HellaSwag: Can a machine really finish your sentence? In Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics , pp. 4791–4800, 2019. doi: 10.18653/v1/P19-1472. URL https://aclanthology.org/P19-1472/ .18 Preprint. Technical Report. Table 9: Data sources used in the tokenizer experiments. Dolma3 subsets refer to the 
+
+dolma3 mix-5.5T-1125 release.              
+
+> Text type Datasets and subsets Used for en-web FineWeb-Edu (Lozhkov et al., 2024a); DCLM-Edu (Allal et al., 2025); the
+> common crawl subset of Dolma3 (Team Olmo et al., 2025). train & test en-pdf The olmocr science pdfs and rpj-proofpile-arxiv subsets of Dolma3 (Team Olmo et al., 2025); peS2o (Soldaini & Lo, 2023). test math FineMath (Allal et al., 2025); Nemotron-CC-Math-v1 (Mahabadi et al., 2025). train & test code The Stack v2 deduplicated release ( the-stack-v2-dedup ) (Lozhkov et al., 2024b). train & test zh FineWeb2-HQ (Messmer et al., 2025); SkyPile-150B (Wei et al., 2023); CCI4.0 ( BAAI/CCI4.0-M2-Base-v1 ) (Liu et al., 2025b). train & test lang11 FineWeb2 (Penedo et al., 2025); FineWeb2-HQ (Messmer et al., 2025); Thai data from Mangosteen (Phatthiyaphaibun et al., 2025) and Wan-JuanSiLu (Yu et al., 2025). train & test
+
+Table 10: Vocabulary scaling on en-web with a 100M-token budget per configuration. CPT denotes characters per token; utilization is the percentage of vocabulary entries observed at least once. Higher is better for both metrics.    
+
+> Vocab. size BPE CNF–MCE CPT
+
+↑ Utilization (%) ↑ CPT ↑ Utilization (%) ↑                                            
+
+> 1K 2.382 97.7 2.441 97.7 2K 2.800 98.8 2.970 99.0 4K 3.223 99.4 3.497 99.4 8K 3.644 99.6 4.093 99.6 16K 4.028 99.6 4.687 99.7 32K 4.336 99.4 5.284 99.7 64K 4.559 98.6 5.884 99.6 128K 4.707 96.3 6.475 99.4 256K 4.792 89.0 7.058 99.0 512K 4.841 73.9 7.613 98.4 1M 4.869 52.9 8.129 96.9
+
+# A Tokenizer Details 
+
+A.1 Data Sources for Tokenizer Training and Testing 
+
+Table 9 lists the data sources used in our tokenizer experiments. We distinguish English web text ( en-web ) from English PDF text ( en-pdf ) for evaluation. The code data cover 14 programming languages, and the multilingual data ( lang11 ) cover 11 human languages. Please note that most of the listed datasets are quite large, and only a small portion of them are used for experiments. When a dataset is used for both training and testing, different randomly sampled subsets are used for each purpose. 
+
+A.2 Vocabulary Scaling Results 
+
+Table 10 provides the detailed results for the vocabulary scaling experiment in Section 4.3. 
+
+A.3 Tokenization Examples 
+
+Table 11 compares segmentations produced by BPE, FMM, and MCE using the fixed 
+
+qwen250k vocabulary. Double vertical bars indicate token boundaries, and ‘ ’ denotes 19 Preprint. Technical Report. Table 11: Example tokenization results of various encoding algorithms operating on the qwen250k vocabulary 
+
+Text BPE FMM MCE autoregulation autore ∥g∥ulation autore ∥gul ∥ation auto ∥reg ∥ulation pandemics pand ∥emics pandemic ∥s pandemic ∥sinconceivable incon ∥ce ∥ivable incon ∥ce ∥ivable inc ∥once ∥ivable Modeller Mod ∥eller Modelle ∥r Model ∥ler Trips Tri ∥ps Trip ∥s Tr ∥ips mediate med ∥iate media ∥te ∥mediate arterioles arter ∥io ∥les arter ∥iol ∥es art ∥eri ∥oles ejecting eject ∥ing eject ∥ing ejec ∥ting too-little-too-late too ∥-l ∥ittle ∥-too ∥-l ∥ate too ∥-li ∥ttl ∥e∥-too ∥-lat ∥e too ∥-∥little ∥-too ∥-∥late even-valued even ∥-val ∥ued even ∥-value ∥d even ∥-value ∥deigenvectors eig ∥env ∥ectors eigen ∥vector ∥s eigen ∥vector ∥sextrinsic extr ∥insic extr ∥insic ex ∥trinsic P(Queen P∥(Q ∥ue ∥en P∥(Q ∥ue ∥en P∥(∥Queen Combinatorics Com ∥bin |ator ∥ics Comb ∥inator ∥ics Comb ∥inator ∥ics studentshare.org students ∥hare ∥.org students ∥hare |.org student ∥share ∥.org 
+
+}’.format }’. ∥format }’. ∥format }’∥.format (taxonomy (t ∥ax ∥onomy (t ∥axon ∥omy (∥taxonomy AddIntegers Add ∥Int ∥egers Add ∥Integer ∥s Add ∥Integer ∥smemory efficient memory ∥ eff ∥icient memory ∥ eff ∥icient memory ∥ ∥ efficient pysimplesoap pys ∥imp ∥les ∥o∥ap pys ∥imple ∥soap py ∥simple ∥soap 
+
+Table 12: Example tokenization results of different encoding algorithms operating on the mix250k vocabulary 
+
+Text BPE FMM MCE were more likely to suffer - were more ∥ likely to ∥ suffer were ∥ more likely to ∥ suffer that approximately - that a ∥pp ∥rox ∥imate ∥ly that ∥ approximately move together - move to ∥get ∥her move ∥ together Double Digit Addition - Double ∥ Dig ∥it ∥ Addition Double ∥ Digit ∥ Addition is to find the sum of the - is to ∥ find the ∥ sum of ∥ the is ∥ to find ∥ the sum of the 
+
+a space. Table 12 is the comparison results on the mix250k vocabulary. Please note that BPE is not applicable to mix250k, because no merge information is contained in this vocabulary. 20 Preprint. Technical Report. 
+
+# B Downstream Evaluation Details 
+
+B.1 Model Configurations 
+
+Table 13 lists the configurations of our 1.8B- and 8B-scale CNF–MCE models used in Sec-tion 4.6. Table 13: Configurations of the CNF–MCE models for downstream evaluation.                       
+
+> Configuration 1.8B 8B Total parameters 1.89B 8.99B Non-embedding parameters 1.61B 6.95B Model dimension 2048 4096 MLP hidden dimension 6144 12288 Head dimension 128 128 Number of query heads 16 32 Number of key/value heads 88Number of layers 32 36 Vocabulary size 138112 249088 Tied embeddings Yes No
+
+B.2 Benchmarks 
+
+We summarize the 11 English benchmarks used in Section 4.6. They cover scientific and commonsense reasoning, mathematics, code generation, contextual word prediction, and factual and subject knowledge. The shot settings are specified in the main text; evaluation methods and metrics are detailed in Appendix B.3. 
+
+ARC : A multiple-choice science QA dataset split into Challenge (hard) and Easy sets, testing grade-school level reasoning (Clark et al., 2018). 
+
+CommonsenseQA : A multiple-choice dataset that requires commonsense knowledge, de-rived from ConceptNet, with questions that often require inferential reasoning beyond the surface text (Talmor et al., 2019). 
+
+GSM8K : A dataset of grade-school math word problems, testing multi-step arithmetic reasoning and language understanding (Cobbe et al., 2021). 
+
+HellaSwag : A commonsense NLI dataset where a model must choose the most plausible continuation for a given context, with adversarially filtered examples to avoid simple pattern matching (Zellers et al., 2019). 
+
+HumanEval : A code generation benchmark containing 164 handwritten programming problems with unit tests, used to evaluate functional correctness of generated code (Chen et al., 2021). 
+
+Lambada : A cloze-style word prediction task in which models must predict the final word of a passage, requiring broader contextual understanding (Paperno et al., 2016). 
+
+MMLU (Massive Multitask Language Understanding): A broad multitask benchmark covering 57 subjects (e.g., math, history, law) in a multiple-choice format, designed for few-shot evaluation (Hendrycks et al., 2021). 
+
+OpenbookQA : A multiple-choice QA dataset requiring reasoning over a small set of pro-vided facts (an ”open book”), testing the ability to combine knowledge with explanation (Mihaylov et al., 2018). 
+
+PIQA (Physical Interaction Question Answering): A multiple-choice QA dataset focused on physical commonsense reasoning, where models must choose the most sensible solution for everyday tool-use and object manipulation tasks, with questions designed to require real-world physical knowledge rather than language patterns (Bisk et al., 2020). 21 Preprint. Technical Report. 
+
+TriviaQA : A large-scale reading comprehension dataset with question-answer pairs from trivia websites, requiring fact retrieval and reasoning across documents (Joshi et al., 2017). 
+
+Winogrande : A scaled-up version of Winograd Schema challenge, a coreference resolution task that requires commonsense reasoning to resolve ambiguous pronouns (Sakaguchi et al., 2020). 
+
+B.3 Evaluation Methods and Metrics Accuracy under cloze prompting (CP). For ARC, CommonsenseQA, HellaSwag, MMLU, OpenBookQA, PIQA, and WinoGrande, we use cloze prompting. Each candidate answer is concatenated with the question or context to form a complete text sequence. We compute the model’s perplexity for each sequence and select the candidate with the lowest perplexity (PPL). The reported score is accuracy, i.e., the percentage of examples for which the selected candidate matches the reference answer. Since base models have not been trained to follow instructions, multiple-choice prompting (MC) typically requires in-context examples to elicit option labels, whereas CP does not require such examples and thus supports zero-shot evaluation. 
+
+Exact match (EM). For GSM8K, LAMBADA, and TriviaQA, we report the percentage of predictions that exactly match an accepted reference answer after task-specific answer extraction and normalization. 
+
+Pass@1. For HumanEval, we report pass@1, which measures the probability that a single generated program passes all unit tests for a problem, averaged across problems. 22

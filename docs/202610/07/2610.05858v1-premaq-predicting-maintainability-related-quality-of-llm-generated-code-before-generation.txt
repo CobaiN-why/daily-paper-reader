@@ -1,0 +1,429 @@
+Title: PreMaQ: Predicting Maintainability-Related Quality of LLM-Generated Code Before Generation
+
+URL Source: https://arxiv.org/pdf/2610.05858v1
+
+Published Time: Tue, 06 Oct 2026 02:24:14 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# PreMaQ: Predicting Maintainability-Related Quality of LLM-Generated Code Before Generation 
+
+Taiki Wakamatsu ∗, Yuta Ishimoto †, Masanari Kondo ∗, Yasutaka Kamei ∗∗Kyushu University, Fukuoka, Japan †The University of Osaka, Osaka, Japan t.wakamatsu@posl.ait.kyushu-u.ac.jp, ishimoto@ist.osaka-u.ac.jp, {kondo, kamei }@ait.kyushu-u.ac.jp 
+
+Abstract —As large language models (LLMs) become increas-ingly capable of code generation, adopting generated code in software development requires assessing not only its functional correctness but also its maintainability-related quality. If such quality could be estimated before generation, developers could avoid the cost of generating, reviewing, and discarding low-quality code. Although prior work has shown that the func-tional correctness of the LLM-generated code can be predicted in advance, it remains unclear whether maintainability-related quality is similarly predictable. We introduce Pre-Generation Maintainability-Related Quality Prediction (PreMaQ), which predicts the Code Smell Score (CSS) and Maintainability Index (MI) of generated code from the internal representations of LLMs before generation. Our evaluation covers four open-weight LLMs and four Python code generation benchmarks, comprising 2,695 tasks in total. Our results show that predicted CSS and MI consistently correlate with their observed values across all 16 model–benchmark combinations, achieving mean Spearman rank correlations of 0.57 and 0.65, respectively. When used for model selection, PreMaQ achieves 59.5% of the maintainability-related quality improvement attainable by an ideal maintainability-based selector over random selection on tasks for which multiple models generate functionally correct code. Combining predictions from PreMaQ and prompt embeddings increases this proportion to 60.7%, indicating that the two signals are complementary. These findings suggest that PreMaQ can be used to predict and improve the maintainability-related quality of LLM-generated code. 
+
+Index Terms —LLM-generated code, internal representations, maintainability-related code quality assessment 
+
+I. I NTRODUCTION 
+
+Large language models (LLMs) are now widely used to generate code, supporting tasks that range from code comple-tion to whole-function generation. However, using such code in real-world development requires developers to inspect it and revise it where necessary. Prior studies report that LLM-generated code may contain functional errors [1], security vulnerabilities [2], [3], code smells [4], [5], and maintainability issues [6], [7]. Verifying and revising LLM-generated code also imposes additional effort and cognitive load on develop-ers [8]. Assessing generated code therefore requires looking beyond whether it passes tests and considering maintainability-related quality, such as code smells and structural complexity. Maintainability-related quality is typically assessed by ap-plying static analysis to the code after it has been generated. However, code generation itself incurs computational cost and latency, and the generated code may still be functionally incorrect or difficult to maintain. If such code is discarded after generation and evaluation, both generation and evaluation costs are wasted. To reduce unnecessary code generation, prior work has used internal representations available before or during generation to predict properties of generated code. For example, such internal representations have been used to predict functional correctness [9]–[11] and compilability or vulnerabilities [12]. However, these studies mainly target functional correctness or security, and whether internal rep-resentations can predict maintainability-related quality before generation remains unexplored. Motivated by this open question, this study introduces and evaluates Pre-Generation Maintainability-Related Quality Prediction (PreMaQ) , which uses prefill activations to predict maintainability-related quality before code generation. Prefill activations are the internal representations computed while an LLM processes the input prompt. Figure 1 shows the PreMaQ workflow. As the maintainability-related quality to be predicted, we use the following two indicators used in a prior study [13]: Code Smell Score (CSS) [7], [14] and Maintainability Index (MI) [15], [16]. We evaluate prediction both within and across benchmarks to examine whether it extends beyond benchmark-specific pat-terns. As a downstream analysis, we examine the model selec-tion problem of identifying, among multiple models known to generate functionally correct code for a task, the model likely to produce code with the highest maintainability-related qual-ity. Our evaluation uses four open-weight LLMs (DeepSeek-Coder-6.7B-Instruct, Qwen2.5-Coder-7B-Instruct, Phi-4, and Qwen3.5-27B-FP8) and 2,695 tasks drawn from four Python code generation benchmarks (HumanEval+, MBPP+, Big-CodeBench, and LiveCodeBench). The main contributions of this study are as follows:  
+
+> •
+
+PreMaQ predicts maintainability-related quality before code generation. Within benchmarks, its predictions are significantly correlated with observed CSS and MI in all 16 model–benchmark combinations, with mean Spearman ρ
+
+values of 0.57 and 0.65 , respectively. They also generalize across benchmarks for most combinations.  
+
+> •
+
+PreMaQ supports maintainability-aware model selec-tion. Among models that generate functionally correct code for a task, PreMaQ closes 59 .5 % of the quality gap between random and oracle selection, outperforming strategies with-out internal representations.  
+
+> •
+
+PreMaQ provides signals complementary to prompt embeddings. Combining predictions from PreMaQ and prompt embeddings closes 60 .7 % of the quality gap be-arXiv:2610.05858v1 [cs.SE] 5 Oct 2026 Fig. 1. Overview of the PreMaQ workflow and its evaluation. 
+
+tween random and oracle selection, outperforming either method alone. II. M OTIVATION 
+
+This section reviews prior work to position our work, and then reports a preliminary study that motivates the need for predicting maintainability-related code quality and selecting models likely to produce maintainable code accordingly. 
+
+A. Related Work 
+
+Analysis of LLM Internal Representations. LLM internal representations refer to hidden states or activations computed during prompt processing or token generation. They include the outputs of the attention and MLP modules and the residual stream, computed at each layer for each token position. Because these representations reflect how an LLM processes a given input, prior work has used them to infer properties of the LLM’s behavior and outputs. Azaria and Mitchell [17] showed that the truthfulness of LLM output can be inferred from internal representations. Zhou et al. [18] detected jailbreak attacks using a neuron activation coverage metric defined over internal representations. 
+
+Prediction of Output Quality. Because generating output with an LLM incurs computational and financial costs, prior work has sought to estimate output quality before it is pro-duced. Some methods predict the output quality of each LLM from the input or previous responses and select a model for the task, and others escalate to a more capable model when adequate quality is not expected [19], [20]. For code com-pletion, prior work has predicted reference-based completion similarity from the prompt [21]. For code generation, internal representations have been used to assess properties of gener-ated code, including functional correctness [9]–[12], [22], [23], compilability [12], and the presence of vulnerabilities [12], [24]. However, the predicted properties are mainly functional correctness or security, and whether maintainability-related quality indicators, such as CSS and MI, can be predicted before generation remains unexplored. This study therefore investigates whether these indicators can be predicted before generation from internal representations. 
+
+B. Preliminary Study 
+
+To motivate predicting maintainability-related quality di-rectly, we set the following Preliminary Question (PQ). 
+
+PQ To what extent model size or functional correctness can identify the model that generates code with the highest maintainability-related quality. 
+
+If readily available information, such as model size, or existing predictions of functional correctness were sufficient to identify such a model, there would be little need to predict maintainability-related quality directly. To answer the PQ, we conduct a preliminary study using the same experimental setting as the main study: four local LLMs, four code genera-tion benchmarks, two maintainability-related quality indicators (CSS and MI), and one functional correctness indicator (Avg-PassRatio). Higher values are better for all three indicators. 
+
+Model size is not a reliable predictor of maintainability-related quality. Table I shows the quality of the four models. Average is the task-count-weighted mean over the four bench-marks. CSS and MI are shown as “all / pass,” computed over all generated outputs and over functionally correct outputs only, respectively. Bold indicates the best-performing model in each column. Functional correctness increases with model size. The average AvgPassRatio monotonically increases from 
+
+0.525 for the 6.7B model to 0.820 for the 27B model. However, the average maintainability-related quality does not necessarily improve with model size. These results indicate that selecting the largest model is not sufficient when the goal is to obtain code with high maintainability-related quality. 
+
+Functional correctness alone cannot identify the model with the highest maintainability-related quality. We exam-ine whether functional correctness is sufficient for selecting models that generate highly maintainable code. Table II shows how many of the four LLMs solved each task, denoted by 
+
+k; the last two columns show the percentages of tasks with 
+
+k≥1 and k≥2. Among the 2,695 code generation tasks in the four benchmarks, 56 .9 % are solved by two or more models. This means that, for the majority of tasks, predicting func-tional correctness leaves multiple candidate models. However, TABLE I FUNCTIONAL CORRECTNESS AND MAINTAINABILITY -RELATED QUALITY OF THE FOUR MODELS .Metric Model #Params. HumanEval+ MBPP+ BigCodeBench LiveCodeBench Average AvgPassRatio DeepSeek-Coder-6.7B 6.7B 0.833 0.630 0.692 0.267 0.525 Qwen2.5-Coder-7B 7B 0.919 0.828 0.737 0.420 0.637 Phi-4 14B 0.910 0.740 0.775 0.427 0.642 Qwen3.5-27B-FP8 27B 0.973 0.839 0.814 0.796 0.820                                                                                                                        
+
+> CSS all / pass DeepSeek-Coder-6.7B 6.7B 4.098 / 4.011 2.581 / 1.914 5.597 /5.417 3.980 / 3.621 4.450 /4.207
+> Qwen2.5-Coder-7B 7B 4.370 / 4.212 1.248 / 1.038 4.005 / 3.937 4.371 / 3.597 3.784 / 3.274 Phi-4 14B 4.401 / 4.245 3.181 / 2.744 4.440 / 4.337 3.459 / 3.639 3.877 / 3.867 Qwen3.5-27B-FP8 27B 6.096 /5.991 4.365 /4.071 4.927 / 4.854 2.131 / 2.532 3.825 / 3.869 MI all / pass DeepSeek-Coder-6.7B 6.7B 74.04 /74.87 79.07 / 83.69 77.62 /80.12 60.91 /69.72 71.06 /78.24
+> Qwen2.5-Coder-7B 7B 72.46 / 73.20 80.87 / 82.63 77.15 / 78.71 60.22 / 66.88 70.76 / 76.10 Phi-4 14B 71.39 / 72.35 76.57 / 79.98 75.52 / 76.50 54.99 / 65.39 67.38 / 74.05 Qwen3.5-27B-FP8 27B 68.97 / 69.29 76.86 / 78.37 71.16 / 72.86 54.37 / 55.60 65.25 / 66.24 TABLE II DISTRIBUTION OF k,THE NUMBER OF LLM S THAT SOLVED EACH TASK .Dataset Total k=0 k=1 k=2 k=3 k=4 k≥1k≥2
+> HumanEval+ 164 10 10 13 28 103 93.9% 87.8% MBPP+ 378 58 31 63 73 153 84.7% 76.5% BigCodeBench 1098 275 140 147 213 323 75.0% 62.2% LiveCodeBench 1055 259 378 161 130 127 75.5% 39.6% Overall 2695 602 559 384 444 706 77.7% 56.9%
+
+these candidates differ substantially in maintainability-related quality: for each task solved by two or more models, we compute the gap in each indicator between the best and worst functionally correct candidates. The average gap is 2.83 for CSS on a 10-point scale and 8.49 for MI on a 100-point scale. 
+
+Motivation for predicting maintainability-related qual-ity: Neither model size nor functional correctness identi-fies the model that generates the code with the highest maintainability-related quality. Substantial differences re-main even among functionally correct candidates. Predicting this quality before generation therefore has value for select-ing higher-quality code. III. P RE MAQThis section describes PreMaQ, our approach for predicting the quality of generated code from prefill activations before generation begins. We first formulate the problem and then de-scribe the internal representations used as features, the quality indicators to be predicted, and the predictor architecture. 
+
+A. Problem Formulation 
+
+PreMaQ predicts the maintainability-related quality of the code that an LLM will generate, using the internal represen-tations computed while the LLM processes the input prompt. Hereafter, we refer to these representations as prefill activa-tions . Let D be a set of input prompts in a code generation benchmark, and let f be an LLM that generates code. For a prompt x ∈ D , we denote the code generated by f as 
+
+f (x). For a quality indicator q, the quality of this generated code is denoted by q(f (x)) . The code quality predictor gD
+
+> f,q
+
+takes as input the feature vector zf (x) derived from the prefill activations obtained by forwarding x through f , and predicts the value of the quality indicator q(f (x)) . Because zf (x) can be obtained with only one forward pass, the quality can be estimated without paying the cost of code generation. Since the dimensionality and distribution of zf (x) differ across LLMs, we train an independent predictor gD 
+
+> f,q
+
+for each combination of benchmark D, LLM f , and quality indicator q.
+
+B. Prefill Activations and Features 
+
+As prefill activations, we use neuron outputs at the final token position immediately after the LLM f processes the prompt x. In autoregressive LLMs, because of the causal attention structure, only the final token position can attend to all tokens in the prompt. Thus, the neuron outputs at the final token position reflect the internal representation after the model f has processed the entire prompt x; prior work has also used internal representations from this position [17], [18]. We therefore use this final-token position to obtain representations after the whole prompt has been processed. Let Lf be the number of stacked Transformer blocks in 
+
+f , and let df be the dimensionality of its hidden states. Let 
+
+hℓ(x) ∈ Rdf be the vector formed by the neuron outputs extracted from layer ℓ (1 ≤ ℓ ≤ Lf ) immediately after the final token of prompt x is processed. We construct a feature vector by concatenating the vectors from all layers: 
+
+af (x) = concat  h1(x), h 2(x), . . . , h Lf (x) ∈ Rdf Lf .
+
+For the source of hℓ(x), we compare four activation sources: the output of the Attention layer in the ℓ-th block, the output of the MLP layer, the concatenation of the Attention and MLP outputs, and the residual stream after passing through the block. We standardize each dimension of af (x) using z-score normalization and denote the resulting feature vector by 
+
+zf (x) ∈ Rdf Lf . This normalization is needed because the scale of activations can vary substantially across layers and dimensions. The k-th dimension of zf (x) is defined as 
+
+zf,k (x) = af,k (x) − μf,k 
+
+σf,k 
+
+, 1 ≤ k ≤ df Lf .Here, af,k (x) denotes the k-th dimension of af (x) for prompt 
+
+x, and μf,k and σf,k are the mean and standard deviation of 
+
+af,k (x) across all prompts in the training data. 
+
+C. Quality Indicators to Be Predicted 
+
+We describe the quality indicators used as prediction targets in this study. Following Kuang et al. [13], we choose indicators from two perspectives: the maintainability-related quality that this study focuses on, and functional correctness, which has been widely predicted in prior work [9], [11], [12] and serves as a comparison target. 
+
+Functional Correctness. We evaluate and predict functional correctness using AvgPassRatio, as adopted in prior code-generation studies [13], [25], [26]. It is the fraction of test cases passed by the generated code. Let Nt be the total number of test cases associated with a task, and let Np be the number of test cases passed by the generated code. AvgPassRatio is calculated as Np/N t. Its range is [0 , 1] , and a higher value indicates better code generation performance in terms of functional correctness. 
+
+Maintainability-Related Quality. We evaluate and predict maintainability-related quality using Code Smell Score (CSS) and Maintainability Index (MI). CSS [7], [13], [14] is a code quality indicator based on static analysis. It is computed by weighting the violations detected by Pylint [27] by message type, normalizing their weighted sum by the number of statements in the code, and subtracting the result from the maximum score: 
+
+CSS = max 
+
+
+
+0, 10 − 10 × weNe + wwNw + wr Nr + wcNc
+
+Ns
+
+
+
+.
+
+Its range is [0 , 10] , and a higher value indicates fewer code smells. Here, Ne, Nw, Nr , and Nc are the numbers of Error, Warning, Refactor, and Convention messages, respectively, and 
+
+Ns is the number of statements in the code. Following prior work [13], we set we = 5 .0 and ww = wr = wc = 1 .0. If Pylint emits a Fatal message, we set CSS = 0 .MI [13], [15], [16] is a maintainability indicator that sum-marizes how easy software is to maintain in a single value. It is computed from Halstead Volume ( HV ), which captures lexical complexity and program size, cyclomatic complexity (CC ), which captures control-flow complexity, and lines of code ( LOC ):              
+
+> MI = max
+> 
+> 0,100 ×171 −wHV ln( HV )−wCC CC −wLOC ln( LOC )171
+> 
+
+Its range is [0 , 100] , and a higher value indicates better main-tainability. The weights wHV , wCC , and wLOC represent the contribution of each component. Following prior work [13], we set wHV = 5 .2, wCC = 0 .23 , and wLOC = 16 .2. We compute HV , CC , and LOC using radon [28]. 
+
+D. Predictor Architecture 
+
+Following prior work that predicts properties of LLM out-puts from internal representations using multilayer perceptrons (MLPs) [10]–[12], [17], [18], we instantiate the predictor 
+
+gD 
+
+> f,q
+
+as an MLP. In this study, the predictor serves as a                
+
+> TABLE III OVERVIEW OF THE EXPERIMENTED MODELS .Model #Params. Type Attention DeepSeek-Coder-6.7B-Instruct [29] 6.7B Code-specialized Self-attention Qwen2.5-Coder-7B-Instruct [30] 7.6B Code-specialized Self-attention Phi-4 [31] 14.7B General-purpose Self-attention Qwen3.5-27B-FP8 [32] 27.0B General-purpose Hybrid attention
+
+probe for measuring whether the internal representation zf (x)
+
+contains information about the quality of the code to be generated. The MLP gD 
+
+> f,q
+
+maps zf (x) to a predicted value of q(f (x)) . Because our primary purpose is to assess the quality-related information contained in zf (x) rather than to compare predictor architectures, we use the MLP architecture adopted by Zhou et al. [18]. We train gD 
+
+> f,q
+
+as a regression model because all prediction targets, AvgPassRatio, CSS, and MI, are continuous values. IV. S TUDY DESIGN 
+
+This section presents the research questions, subject models and benchmarks, data splits, predictor training and evaluation settings for RQ1, model selection procedure and evaluation for RQ2, and implementation details. 
+
+A. Research Questions 
+
+We formulate the following research questions to examine prediction performance and its application to model selection. 
+
+RQ1 How well does PreMaQ predict the maintainability-related quality of generated code? 
+
+RQ2 How does PreMaQ-based model selection compare with selection without internal representations in terms of maintainability-related quality? 
+
+RQ1 evaluates PreMaQ’s prediction performance within and across benchmarks for each LLM–benchmark combina-tion, using functional correctness as a comparison target and comparing four activation sources. RQ2 evaluates whether PreMaQ-based model selection improves maintainability-related quality over strategies without internal representations. To isolate maintainability-related quality, we restrict the can-didates for each task to models known to generate functionally correct code. This setting with known functionally correct candidates builds on prior work on pre-generation prediction of functional correctness [9], [10]. 
+
+B. Experimented Large Language Models 
+
+Table III summarizes the models experimented in this study. We use four open-weight LLMs: DeepSeek-Coder-6.7B-Instruct [29], Qwen2.5-Coder-7B-Instruct [30], Phi-4 [31], and Qwen3.5-27B-FP8 [32]. We focus on open-weight mod-els because their internal representations can be obtained. To reduce dependence on specific model characteristics, we include both code-specialized and general-purpose models, with sizes ranging from 6.7B to 27B parameters. We also include a model that uses hybrid attention, in addition to models based on self-attention (Table III). Recent LLMs have adopted increasingly diverse architectures. Including this model broadens the architectural variation among the subject models and allows us to examine whether prefill activations are useful beyond models with a single attention architecture. We use decoder-only models, an architecture commonly used for code generation [33]. 
+
+C. Benchmarks 
+
+We use four representative Python code generation bench-marks: HumanEval+ [34], [35], MBPP+ [35], [36], Big-CodeBench [37], and LiveCodeBench [38]. Each benchmark consists of tasks that take natural-language problem descrip-tions as input and require the model to generate the corre-sponding programs. Each task also includes multiple test cases for judging whether the generated code works correctly. For BigCodeBench, we exclude 42 tasks whose benchmark-provided canonical solutions do not pass the accompanying tests in our execution environment, and use the remaining 1,098 tasks. For LiveCodeBench, we use dataset version v6. As a result, HumanEval+, MBPP+, BigCodeBench, and LiveCodeBench contain 164, 378, 1,098, and 1,055 code generation tasks, respectively, for a total of 2,695 tasks. 
+
+D. Data Splits for Training and Evaluation 
+
+For each LLM–quality-indicator combination, we train and evaluate gD 
+
+> f,q
+
+in two settings: a within-benchmark setting, which uses data from the same benchmark, and a cross-benchmark setting, which uses data from different bench-marks. In each setting, let Dtrain be the set of prompts used to train gDtrain  
+
+> f,q
+
+and let Deval be the set of prompts used for evaluation. For the within-benchmark setting, we use 5-fold cross validation. For the cross-benchmark setting, we train the predictor on three of the four benchmarks and evaluate it on the remaining benchmark. Standardization statistics are computed only from the training folds. 
+
+E. Model Training Setting 
+
+The prediction targets, AvgPassRatio, CSS, and MI, are all learned as regression targets, and the loss function is mean squared error (MSE). We use MSE as the training objective because it is a standard smooth loss for continuous regression. During training, we normalize all prediction targets to the range [0 , 1] . For the 5-fold cross validation, we fix the random seed for fold assignment and obtain out-of-fold predictions so that every task is included in the evaluation data exactly once. These settings are shared across all combinations of LLM, benchmark, prediction target, and input feature. Only the input features and labels differ across combinations. 
+
+F. Evaluation Metrics for Prediction Performance 
+
+We evaluate prediction performance by comparing the pre-dicted value with the observed value of each quality indicator. The observed value q(f (x)) is obtained by actually generat-ing code with the LLM. We consider two perspectives: (1) absolute error between predicted and observed values, and (2) correlation between predicted and observed values. For absolute error, we use Mean Absolute Error (MAE): 
+
+MAE( Deval ) = 1
+
+|D eval |
+
+X
+
+> x∈D eval
+
+gDtrain 
+
+> f,q
+
+ zf (x) − q f (x) .
+
+We use MAE rather than MSE because it is less dominated by a small number of large individual errors. For correlation between predicted and observed values, we use Spearman’s rank correlation coefficient ρ because the observed target values did not satisfy normality according to the Shapiro–Wilk test. 
+
+G. Model Selection Procedure for RQ2 
+
+In RQ2, we apply the predictors constructed in RQ1 to model selection for code generation on each task. 
+
+Model Selection Problem. RQ2 addresses the problem of selecting the model likely to generate code with the high-est maintainability-related quality among functionally correct candidates. We restrict the analysis to tasks for which at least two of the four models generated functionally correct code. For each such task, we assume that the functionally correct models are known and use them as candidates for selection. The upper part of Figure 2 illustrates this task filtering process. This setting builds on prior work on pre-generation prediction of whether a model can solve a task [9], [10]. 
+
+Maintainability-Related Quality Indicator for Selection. To rank candidate models by a single criterion, we use a score that rewards both fewer code smells and higher maintainability. Specifically, we normalize CSS and MI to [0 , 1] as c =CSS /10 and m = MI /100 , and define the Maintainability-Related Quality Score (MRQS) as their harmonic mean: 
+
+MRQS = 2 cm/ (c + m), where MRQS = 0 when c + m = 0 .
+
+Selection Procedure. For each task, we select the candidate model with the highest predicted MRQS and record the ob-served MRQS of its generated code. For the prediction-based strategies, each task is scored using out-of-fold predictions, so the predictor used for that task is not trained on the task itself. 
+
+Selection Strategies. We compare six selection strategies on the same target tasks, covering a lower bound, baselines, our proposed white-box approach, a combination strategy, and an upper bound. The lower part of Figure 2 illustrates the strategies. (1) Random (lower bound) : randomly selects one candidate with equal probability, serving as a lower bound. (2) Average-best (baseline) : selects the candidate model with the highest mean observed MRQS across all tasks in the four benchmarks. This is a fixed, post-hoc reference that does not use task-specific information. (3) Prompt embedding (black-box baseline) [39]: embeds the prompt using an external embedding model, all-MiniLM-L6-v2 from sentence-transformers, and trains predictors on these embeddings using the same architec-ture and data splits as the predictors based on PreMaQ. It selects the candidate model with the highest predicted MRQS. This is a black-box baseline because it does not access the internal representations of the candidate models. This strategy follows prior work in predicting output quality from prompt-derived information [20], [21]. (4) PreMaQ (proposed, white-box) : our proposed approach, which selects the candidate model with the highest MRQS predicted from prefill activations. This is a white-box Scores and Model Selection 
+
+Filtering Tasks for RQ2     
+
+> 2,695
+> Tasks
+> Code Generation → Tests Execution
+> LLM 1 Code
+> LLM 2 Code
+> LLM 3 Code
+> LLM 4 Code
+> Tests : ✅Pass All, ❌Fail Some Number of Passing LLMs
+> Candidate Models
+
+Model Selection Strategy for Each Target Task                 
+
+> Model-Specific Quality Prediction
+> 0
+> 1
+> ≥2
+> ❌
+> ❌
+> RQ2
+> All Tasks 1,534
+> Tasks
+> RQ2 Target
+> Task prompt
+> LLM 1 LLM 2 LLM 4
+> Shared by all strategies
+> ❌
+> ✅✅✅
+> Failed models
+> PreMaQ
+> LLM 1 Predictor LLM 2 Predictor LLM 4 Predictor
+> Prompt embedding
+> LLM 1 Predictor LLM 2 Predictor LLM 4 Predictor
+> Predictor = within benchmark
+> Predicted CSS / MI
+> LLM 1 LLM 2 LLM 4
+> PreMaQ
+> LLM 1 LLM 2 LLM 4
+> Prompt embedding
+> Random Average-best Oracle
+> All Tasks
+> Avg MRQS
+> This Task
+> Observed MRQS
+> LLM 1 LLM 2 LLM 4
+> → Predicted MRQS
+> CSS/MI CSS/MI CSS/MI CSS/MI CSS/MI CSS/MI
+
+Fig. 2. Overview of the task filtering process and model selection strategies used in RQ2. 
+
+approach because it requires access to the internal rep-resentations of the candidate models. (5) PreMaQ + prompt embedding (combination) : selects the candidate model with the highest average of the MRQS values predicted from PreMaQ and prompt embeddings. This strategy is included to examine whether the two signals provide complementary information for model selection. (6) Oracle (upper bound) : selects the model with the highest observed MRQS, serving as the achievable upper bound. 
+
+Evaluation of Selection Strategies. We evaluate each strategy by averaging the observed MRQS of the code generated by its selected models across the target tasks. For Random, we report the expected mean MRQS over all possible selections, avoiding dependence on a random seed. We also report the relative gain, which measures the fraction of the gap between Random and Oracle closed by each strategy. Let ¯qs denote the mean MRQS achieved by strategy s; its relative gain is 
+
+RelGain q (s) = ¯qs − ¯qRandom 
+
+¯qOracle − ¯qRandom 
+
+.
+
+H. Implementation Details 
+
+All experiments were run on a machine equipped with an Intel(R) Xeon(R) w7-2595X CPU (26 cores, up to 4.8 GHz) and an NVIDIA RTX 6000 Ada Generation GPU. Detailed version information for all libraries is available in our replication package. V. R ESULTS 
+
+In our environment, training one predictor took approxi-mately 4 to 33 seconds, depending on the feature dimension-ality and the number of tasks. Quality prediction with a trained predictor took less than 0.4 ms per task. The additional compu-tation required for quality prediction is only one forward pass for obtaining prefill activations and the predictor inference, making it much faster than generating code and measuring its quality afterward. 
+
+TABLE IV WITHIN -BENCHMARK MEAN SPEARMAN CORRELATIONS ACROSS FOUR ACTIVATION SOURCES .Target Attention MLP Attn+MLP Residual AvgPassRatio ( ρ) 0.3236 0.3202 0.3167 0.3160 CSS ( ρ) 0.5728 0.5574 0.5537 0.5591 MI ( ρ) 0.6506 0.6466 0.6404 0.6474 
+
+A. RQ1: Quality Prediction based on PreMaQ 1) Effective Activation Source: Table IV reports, for each combination of the four activation sources and three targets, the task-count-weighted mean Spearman correlation between predicted and observed values across model–benchmark com-binations. The best value in each row is bolded. 
+
+Attention outputs yield the highest correlations with observed values. Attention outputs achieve the highest ρ for all three prediction targets. Therefore, we regard Attention outputs as the most effective source for pre-generation code quality prediction. Accordingly, all subsequent analyses use Attention outputs as the activation source. 
+
+2) Within-Benchmark Setting: Table V summarizes the within-benchmark results. Each value before parentheses is a task-count-weighted mean over the model–benchmark combi-nations for each row. The percentage in parentheses denotes the proportion of model–benchmark combinations in each row that are statistically significant at the 5% level after Holm correction. For ρ, significance indicates rejection of the null hypothesis of no correlation. For MAE, we compare PreMaQ with a mean-value baseline, a constant predictor that always outputs the mean observed value in the training data. Significance indicates that PreMaQ achieves lower MAE than this baseline according to a one-sided paired permutation test. 
+
+Within benchmarks, PreMaQ yields significant correla-tions and lower MAE than the mean-value baseline. As shown in Table V, predicted CSS and MI values are signifi-cantly correlated with their observed values for every model– TABLE V WITHIN -BENCHMARK PREDICTION PERFORMANCE .Quality indicator ρ (%sig.) MAE (%sig.) AvgPassRatio 0.32 (75%) 0.25 (88%) CSS 0.57 (100%) 1.56 (100%) MI 0.65 (100%) 8.1 (100%) Model CSS ρ (%sig.) MI ρ (%sig.) DeepSeek-Coder-6.7B 0.56 (100%) 0.61 (100%) Qwen2.5-Coder-7B 0.64 (100%) 0.71 (100%) Phi-4 0.48 (100%) 0.65 (100%) Qwen3.5-27B-FP8 0.61 (100%) 0.62 (100%) TABLE VI CROSS -BENCHMARK GENERALIZATION PERFORMANCE . E ACH CELL REPORTS WITHIN /C ROSS RESULTS . HE+, BCB, AND LCB DENOTE 
+
+HUMAN EVAL +, B IG CODE BENCH , AND LIVE CODE BENCH .CSS MI Model Bench. ρ MAE ρ MAE DeepSeek-Coder-6.7B HE+ 0.40 ∗/0.38 ∗ 2.14 ∗/2.40 0.45 ∗/0.62 ∗ 8.2 ∗/8.0 MBPP+ 0.49 ∗/0.45 ∗ 1.95 ∗/2.19 ∗ 0.62 ∗/0.62 ∗ 8.1 ∗/9.8 ∗                                                                
+
+> BCB 0.51 ∗/0.09 ∗1.28 ∗/1.86 ∗0.58 ∗/0.37 ∗10.4 ∗/13.5 ∗
+> LCB 0.66 ∗/0.19 ∗1.65 ∗/5.71 0.68 ∗/-0.07 ∗5.7 ∗/41.7 Qwen2.5-Coder-7B HE+ 0.37 ∗/0.44 ∗2.25 ∗/2.39 0.56 ∗/0.66 ∗7.5 ∗/6.8 ∗
+> MBPP+ 0.50 ∗/0.36 ∗1.12 ∗/1.22 ∗0.75 ∗/0.74 ∗6.3 ∗/8.0 ∗
+> BCB 0.57 ∗/0.08 ∗1.70 ∗/2.39 0.65 ∗/0.51 ∗9.6 ∗/13.1 ∗
+> LCB 0.81 ∗/0.47 ∗1.09 ∗/2.83 ∗0.79 ∗/0.69 ∗4.5 ∗/11.6 ∗
+> Phi-4 HE+ 0.42 ∗/0.38 ∗2.16 ∗/2.32 0.50 ∗/0.70 ∗8.7 ∗/7.4 ∗
+> MBPP+ 0.43 ∗/0.42 ∗2.11 ∗/2.29 0.71 ∗/0.66 ∗7.7 ∗/9.2 ∗
+> BCB 0.49 ∗/0.18 ∗1.77 ∗/2.08 ∗0.54 ∗/0.47 ∗10.8 ∗/12.8 ∗
+> LCB 0.50 ∗/0.18 ∗1.49 ∗/3.13 0.77 ∗/0.67 ∗7.2 ∗/20.2 ∗
+> Qwen3.5-27B-FP8 HE+ 0.56 ∗/0.63 ∗1.54 ∗/1.61 ∗0.57 ∗/0.73 ∗7.3 ∗/6.6 ∗
+> MBPP+ 0.69 ∗/0.66 ∗1.69 ∗/2.16 ∗0.70 ∗/0.76 ∗8.1 ∗/7.2 ∗
+> BCB 0.55 ∗/0.21 ∗1.66 ∗/2.04 ∗0.55 ∗/0.49 ∗10.8 ∗/11.1 ∗
+> LCB 0.65 ∗/-0.18 ∗1.28 ∗/4.30 0.67 ∗/0.63 ∗6.8 ∗/7.0 ∗
+> Weighted mean 0.57/0.22 1.56/2.82 0.65/0.52 8.1/14.7
+> Median 0.50/0.37 1.68/2.31 0.64/0.65 7.9/9.5
+
+benchmark combination (100%). The mean correlations across the 16 model–benchmark combinations are ρ=0 .57 for CSS and ρ=0 .65 for MI, approximately twice the mean correlation for AvgPassRatio. The median values also show the same ordering of prediction targets: 0.24 for AvgPassRatio, 0.51 for CSS, and 0.64 for MI. The MAE of PreMaQ is significantly lower than that of the mean-value baseline in all combina-tions for both of CSS and MI. These results indicate that, by using prefill activations, PreMaQ predicts maintainability-related quality more consistently than it predicts functional correctness. 
+
+3) Cross-Benchmark Setting: Table VI summarizes the cross-benchmark results alongside the corresponding within-benchmark results. ∗ denotes statistical significance at the 5% level after Holm correction. Statistical significance is assessed using the same tests as in the within-benchmark setting. The final two rows report the task-count-weighted mean and the median across the 16 model–benchmark combinations. 
+
+PreMaQ shows cross-benchmark generalizability. Ta-ble VI shows that PreMaQ achieves positive and statistically significant correlations across benchmarks in 15 of 16 model– benchmark combinations for both MI and CSS. For MI in 0.0 0.2 0.4 0.6 0.8 1.0 
+
+> Task-level MRQS
+> Random
+> 0.426 0.0%
+> Average-best
+> 0.448 17.2%
+> Prompt embedding
+> 0.490 49.6%
+> PreMaQ
+> 0.503 59.5%
+> PreMaQ + prompt embedding
+> 0.504 60.7%
+> Oracle
+> 0.555 100.0%
+> Selection strategy Mean MRQS RelGain
+
+Fig. 3. Task-level MRQS distributions achieved by each model-selection strategy on N =1 ,534 tasks. Diamonds indicate means, and center lines indicate medians. The rows below report mean MRQS and RelGain. Random shows per-task expected MRQS. 
+
+particular, PreMaQ achieves performance comparable to its within-benchmark performance, exceeding it in some cases when evaluated across benchmarks. This limited degradation indicates that the predictors do not merely fit benchmark-specific patterns. 
+
+Answer to RQ1: Within benchmarks, PreMaQ achieves significant correlations and significantly lower MAE than the mean-value baseline in all model–benchmark combinations for both CSS and MI. Across benchmarks, correlations are positive and statistically significant in 15 of 16 model– benchmark combinations for both CSS and MI, showing that PreMaQ generalizes beyond benchmark-specific patterns. 
+
+B. RQ2: Model Selection Based on Predicted Maintainability-Related Quality 
+
+Figure 3 shows the distributions of MRQS values achieved by each model-selection strategy across tasks and reports the mean MRQS and relative gain for each strategy. 
+
+PreMaQ-based model selection improves MRQS over the evaluated baselines. PreMaQ outperforms Random, Average-best, and prompt embedding, achieving a relative gain of 59 .5 % compared with 0.0 %, 17 .2 %, and 49 .6 %, respectively. PreMaQ-based model selection improves the maintainability-related quality of generated code without sac-rificing functional correctness because every candidate model in the target tasks generates functionally correct code. The performance of prompt embedding indicates that the task prompt itself can predict maintainability-related quality to some extent. Notably, combining predictions from PreMaQ and prompt embeddings achieves higher selection performance (60 .7 %) than either method alone. To examine the complementarity among the three best-performing methods (i.e., PreMaQ, prompt embeddings, and their combination), Figure 4 shows the overlap among the task–model pairs selected by these methods. 
+
+PreMaQ’s predictions are complementary to prompt embeddings. PreMaQ and prompt embeddings select different 328 305 021 284 307 922  
+
+> Prompt embedding PreMaQ Combination Fig. 4. Overlap among the task–model pairs selected by prompt embeddings, PreMaQ, and their combination across 1,534 tasks. Each strategy contributes one pair per task.
+
+models for 612 of the 1,534 tasks ( 39 .9 %). Among these tasks, the combination follows the prompt-embedding selection in 284 cases and the PreMaQ selection in 307 cases, while select-ing a different model in 21 cases. Together with the increase in relative gain from 49 .6 % to 60 .7 %, the highest among all strategies, this result suggests that the two methods provide complementary task-specific signals for model selection. 
+
+Answer to RQ2: When multiple LLMs generate func-tionally correct code for a task, PreMaQ-based selection achieves higher maintainability-related quality than all eval-uated baseline strategies without internal representations. Its relative gain in MRQS is 59 .5 %, compared with 17 .2 % for Average-best. Combining PreMaQ and prompt embeddings increases the relative gain to 60 .7 %, suggesting that they provide complementary task-specific signals. VI. M AINTAINABILITY -A WARE MODEL SELECTION 
+
+RQ2 shows that PreMaQ can improve the maintainability-related quality achieved by model selection in a setting with known functionally correct candidates. This section discusses how maintainability-aware model selection could support de-velopers who use LLMs for code generation. First, we present a concrete example in which PreMaQ chooses a higher-quality output over another functionally correct output. We then discuss how maintainability-aware model selection can be integrated with functional-correctness prediction, examine the runtime overhead of using internal representations, and provide practical guidance. 
+
+Impact. A concrete example illustrates an observable quality difference associated with model selection. To illustrate this difference, we examine BigCodeBench/650 , for which three models generate outputs that pass all benchmark tests. PreMaQ selects Qwen3.5-27B-FP8, whose output fol-lows the standard usage of pytz for timezone localization. The excerpts below show the lines relevant to this comparison.                           
+
+> 1dt_naive =parse(date_str)
+> 2tz =pytz.timezone(tz_str)
+> 3dt_tz =tz.localize(dt_naive)
+> 4current_year =dt_tz.year
+> 5next_year =current_year +1
+> 6next_new_year_naive =datetime(next_year, 1, 1, 0, 0, 0)
+> 7next_new_year_tz =tz.localize(next_new_year_naive )
+
+We compare this output with the Qwen2.5-Coder-7B output, which passes all tests but has the lowest observed MRQS and contains an unnecessary unreachable branch (Line 5).                              
+
+> 1given_date =parse(date_str)
+> 2given_date =given_date.replace(tzinfo=pytz. timezone(tz_str))
+> 3next_year =given_date.year +1
+> 4next_new_year =datetime(next_year, 1, 1, tzinfo= pytz.timezone(tz_str))
+> 5if given_date >next_new_year: #unreachable
+> 6next_new_year =datetime(next_year +1, 1, 1, tzinfo=pytz.timezone(tz_str))
+
+This example illustrates how PreMaQ can use prefill ac-tivations to avoid selecting a model likely to produce less maintainable code before generation. The complete outputs are provided in our replication package. 
+
+Integration. Maintainability-related quality prediction can be integrated with functional-correctness prediction. 
+
+Prior work [9], [10] has used pre-generation predictions of functional correctness to select a model. These activation-based routing methods provide a direct integration point with our approach. For example, Lugoloobi et al. [9] use prefill activations to predict the probability that each candidate model will solve a task and select a model based on the predicted probability and inference cost. Our predictions of maintainability-related quality can be incorporated into this routing process as an additional selection criterion. A routing policy could either filter candidates by predicted correctness before considering predicted maintainability-related quality and inference cost, or jointly combine all three criteria ac-cording to developer priorities. Both designs move beyond the RQ2 setting with known functionally correct candidates by using predicted correctness. This additional prediction of maintainability-related quality does not require another LLM forward pass. The router already performs a prompt forward pass for correctness prediction, so our prediction requires only capturing the necessary internal representations and running the maintainability-related quality predictors. The resulting runtime overhead is sufficiently low for practical use, as discussed in the next subsection. 
+
+Efficiency. Internal representations enable efficient maintainability-related quality prediction. As shown in Table VII, in a standalone pipeline after model loading, the dominant per-task runtime cost is the prompt forward pass with internal representation capture, which takes 145 .7 ms on average. Predictor inference takes only 0.252 ms, while quality scoring and selection require negligible time. When integrated with an activation-based router that already derives predictions from prefill activations, the prompt forward pass can be shared, so the additional cost is limited to capturing the TABLE VII RUNTIME OF INTERNAL -REPRESENTATION -BASED QUALITY PREDICTION AND MODEL SELECTION .Component Time Internal representation extraction (4-model avg.) 145 .7 ms Predictor inference 0.252 ms Quality scoring and selection 1.5 μsPredictor training 14 .0 s
+
+required internal representations and running the predictors. Predictor training is also lightweight in practice, taking only 
+
+14 .0 seconds per fold. 
+
+Guidance. PreMaQ is best used alongside prompt em-bedding when white-box access is available. In RQ2, combining predictions from PreMaQ and prompt embeddings achieves the best selection performance, with a relative gain of 60 .7 %. Thus, when internal activations are accessible, PreMaQ should be used as an additional signal alongside prompt-embedding predictions. For API-only models without access to internal activations, prompt embeddings provide a black-box alternative, which achieves a relative gain of 49 .6 %in our evaluation. Our combination uses a simple average of the two predictions; weighted or learned combinations are left for future work. VII. T HREATS TO VALIDITY 
+
+Construct validity. This study evaluates maintainability-related code quality using CSS and MI, but these metrics do not cover other quality aspects, such as readability and execution efficiency. In addition, MRQS, which is used in RQ2, is one way to combine CSS and MI. Changing how the two metrics are combined may change the selection results. 
+
+Internal validity. The code generated by an LLM depends on the prompt format. To reduce quality degradation caused by arbitrary prompt formats, we followed the official prompt format provided by each benchmark. The prediction results also depend on the configuration of the MLP predictor, and using different settings may change prediction performance. 
+
+External validity. The results of this study are based on four local models and four Python code generation bench-marks. To improve generalizability, we included both general-purpose and code-specialized models, evaluated benchmarks with different levels of complexity, and further conducted cross-benchmark evaluation. However, it remains untested whether the results generalize to larger models, different model families, or programming languages other than Python. The prompt embedding baseline uses only all-MiniLM-L6-v2, and using a different embedding model may change the comparison results. RQ2 uses a setting with known functionally correct can-didates. Section VI outlines integration with pre-generation functional-correctness prediction, but we do not evaluate it end to end. The quality improvement reported in RQ2 may vary depending on prediction accuracy and the routing policy. VIII. C ONCLUSION 
+
+This study proposed PreMaQ, which predicts the maintainability-related quality of LLM-generated code from prefill activations, and evaluated its use in model selection. Using four open-weight LLMs and four Python code generation benchmarks, we found that predictions of CSS and MI are correlated with their observed values in all within-benchmark model–benchmark combinations. Prediction also generalizes across benchmarks for most combinations, more consistently for MI than for CSS. In the RQ2 setting with known functionally correct candidates, PreMaQ-based model selection outperforms the evaluated strategies without internal representations, while combining predictions from PreMaQ and prompt embeddings achieves the best selection performance. These findings suggest that developers could consider predicted maintainability-related quality alongside predicted functional correctness and inference cost when selecting a model before code generation. For researchers, prior work and our findings motivate future investigation into which additional generated-code properties can be predicted from internal representations. Such investigation could reveal the broader potential of internal representations as pre-generation signals for software engineering. IX. D ATA AVAILABILITY 
+
+All data and code used in this study are available at the following repository: https://github.com/posl/PreMaQ-replication.git. ACKNOWLEDGMENT 
+
+We gratefully acknowledge the financial support of: (1) JSPS for the KAKENHI grants (JP24K02921, JP25K03100, JP25K22845, JP26H02500, JP26K25555); (2) Japan Science and Technology Agency (JST) as part of Adopting Sustainable Partnerships for Innovative Research Ecosystem (ASPIRE), Grant Number JPMJAP2415, and (3) the Inamori Research Institute for Science for supporting Yasutaka Kamei via the InaRIS Fellowship. REFERENCES [1] Y. Liu, T. Le-Cong, R. Widyasari, C. Tantithamthavorn, L. Li, X.-B. D. Le, and D. Lo, “Refining chatgpt-generated code: Characterizing and mitigating code quality issues,” ACM Transactions on Software Engineering and Methodology , vol. 33, no. 5, pp. 116:1–116:26, 2024. [2] N. Tihanyi, T. Bisztray, M. A. Ferrag, R. Jain, and L. C. Cordeiro, “How secure is ai-generated code: A large-scale comparison of large language models,” Empirical Software Engineering , vol. 30, no. 2, p. 47, 2025. [3] C. Tony, N. E. D´ ıaz Ferreyra, M. Mutas, S. Dhif, and R. Scandariato, “Prompting techniques for secure code generation: A systematic investi-gation,” ACM Transactions on Software Engineering and Methodology ,vol. 34, no. 8, pp. 225:1–225:53, 2025. [4] A. Velasco, D. Rodr´ ıguez-C´ ardenas, L. R. Alif, D. N. Palacio, and D. Poshyvanyk, “How propense are large language models at produc-ing code smells? a benchmarking study,” in Proceedings of the 47th IEEE/ACM International Conference on Software Engineering: New Ideas and Emerging Results , 2025, pp. 96–100. [5] M. L. Siddiq, L. Roney, J. Zhang, and J. C. S. Santos, “Quality assessment of chatgpt generated code and their use by developers,” in 
+
+> Proceedings of the 21st IEEE/ACM International Conference on Mining Software Repositories , 2024, pp. 152–156.
+
+[6] A. S. Molison, M. Moraes, G. Melo, F. Santos, and W. K. G. Assunc ¸ ˜ ao, “Is llm-generated code more maintainable & reliable than human-written code?” in Proceedings of the 19th ACM/IEEE International Symposium on Empirical Software Engineering and Measurement , 2025, pp. 151– 162. [7] S. Blyth, S. A. Licorish, C. Treude, and M. Wagner, “Static analysis as a feedback loop: Enhancing llm-generated code beyond correctness,” in 
+
+Proceedings of the 25th IEEE International Conference on Source Code Analysis and Manipulation , 2025, pp. 100–109. [8] N. Tang, M. Chen, Z. Ning, A. Bansal, Y. Huang, C. McMillan, and T. J.-J. Li, “Developer behaviors in validating and repairing llm-generated code using ide and eye tracking,” in Proceedings of the 40th IEEE Symposium on Visual Languages and Human-Centric Computing , 2024, pp. 40–46. [9] W. Lugoloobi, T. Foster, W. Bankes, and C. Russell, “LLMs encode their failures: Predicting success from pre-generation activations,” in Proceed-ings of the ICLR 2026 Workshop on Latent and Implicit Thinking: Going Beyond CoT Reasoning , 2026. [10] T. Varshney, A. Surla, M. Xu, G. V. Krishnan, M. Jeblick, D. Austin, N. Vaidya, and D. Onofrio, “LLM router: Rethinking routing with prefill activations,” arXiv preprint arXiv:2603.20895 , 2026. [11] T.-D. Bui, T. T. Vu, T.-T. Nguyen, S. Nguyen, and H. D. Vo, “Correctness assessment of code generated by Large Language Models using internal representations,” Journal of Systems and Software , vol. 230, p. 112570, 2025. [12] T. T. Vu, T.-D. Bui, T.-T. Nguyen, S. Nguyen, and H. D. Vo, “Model-agnostic quality assessment for LLM-generated code via dynamic inter-nal representation selection,” Journal of Systems and Software , vol. 237, p. 112852, 2026. [13] S. Kuang, Z. Tian, T. Xiao, D. Wang, and J. Chen, “On the effectiveness of training data optimization for LLM-based code generation: An empirical study,” arXiv preprint arXiv:2512.24570 , 2025. [14] K. Kim, J. Kim, B. Park, D. Kim, C. Y. Chong, Y. Wang, T. Sun, D. Tang, J. Klein, and T. F. Bissyand´ e, “Datarecipe — how to cook the data for codellm?” in Proceedings of the 39th IEEE/ACM International Conference on Automated Software Engineering , 2024, pp. 1206–1218. [15] P. W. Oman and J. R. Hagemeister, “Construction and testing of polynomials predicting software maintainability,” Journal of Systems and Software , vol. 24, no. 3, pp. 251–266, 1994. [16] T. Heriˇ cko and B. ˇSumak, “Exploring maintainability index variants for software maintainability measurement in object-oriented systems,” 
+
+Applied Sciences , vol. 13, no. 5, p. 2972, 2023. [17] A. Azaria and T. Mitchell, “The internal state of an LLM knows when it’s lying,” in Findings of the Association for Computational Linguistics: EMNLP 2023 , 2023, pp. 967–976. [18] S. Zhou, T. Li, K. Wang, Y. Huang, L. Shi, Y. Liu, and H. Wang, “Understanding the effectiveness of coverage criteria for large language models: A special angle from jailbreak attacks,” in Proceedings of the 47th IEEE/ACM International Conference on Software Engineering ,2025, pp. 730–742. [19] L. Chen, M. Zaharia, and J. Zou, “FrugalGPT: How to use large language models while reducing cost and improving performance,” Transactions on Machine Learning Research , 2024. [20] I. Ong, A. Almahairi, V. Wu, W.-L. Chiang, T. Wu, J. E. Gonzalez, M. W. Kadous, and I. Stoica, “Routellm: Learning to route llms with preference data,” in Proceedings of the Thirteenth International Conference on Learning Representations , 2025. [21] Z. Sun, X. Du, F. Song, S. Wang, M. Ni, L. Li, and D. Lo, “Don’t complete it! preventing unhelpful code completion for productive and sustainable neural code completion systems,” ACM Transactions on Software Engineering and Methodology , vol. 34, no. 1, pp. 1–22, 2025. [22] F. Ribeiro, C. Spiess, P. Devanbu, and S. Nadi, “On LLMs’ internal rep-resentation of code correctness,” in Proceedings of the 48th IEEE/ACM International Conference on Software Engineering , 2026. [23] Y. He, Z. Zhao, K. Zhou, B. Dai, J. Fu, and Y. Yang, “Codecircuit: Toward inferring llm-generated code correctness via attribution graphs,” 
+
+arXiv preprint arXiv:2602.07080 , 2026. [24] A. Sternfeld, A. Kucharavy, and L. Dolamic, “Minimal prompt pertur-bations lead to code vulnerabilities: Prompt fragility and hidden-state signals in coding llms,” arXiv preprint arXiv:2605.29737 , 2026. [25] Y. Hao, G. Li, Y. Liu, X. Miao, H. Zong, S. Jiang, Y. Liu, and H. Wei, “Aixbench: A code generation benchmark dataset,” arXiv preprint arXiv:2206.13179 , 2022. [26] Y. Dong, J. Ding, X. Jiang, G. Li, Z. Li, and Z. Jin, “Codescore: Eval-uating code generation by learning code execution,” ACM Transactions on Software Engineering and Methodology , vol. 34, no. 3, pp. 1–22, 2025. [27] Pylint contributors. Pylint. Accessed: June 11, 2026. [Online]. Available: https://pylint.readthedocs.io/ [28] M. Lacchia. Radon. Accessed: June 11, 2026. [Online]. Available: https://radon.readthedocs.io/ [29] D. Guo, Q. Zhu, D. Yang, Z. Xie, K. Dong, W. Zhang, G. Chen, X. Bi, Y. Wu, Y. Li et al. , “Deepseek-coder: When the large language model meets programming–the rise of code intelligence,” arXiv preprint arXiv:2401.14196 , 2024. [30] B. Hui, J. Yang, Z. Cui, J. Yang, D. Liu, L. Zhang, T. Liu, J. Zhang, B. Yu, K. Lu, K. Dang, Y. Fan, Y. Zhang, A. Yang, R. Men, F. Huang, B. Zheng, Y. Miao, S. Quan, Y. Feng, X. Ren, X. Ren, J. Zhou, and J. Lin, “Qwen2.5-coder technical report,” arXiv preprint arXiv:2409.12186 , 2024. [31] M. Abdin, J. Aneja, H. Behl, S. Bubeck, R. Eldan, S. Gunasekar, M. Harrison, R. J. Hewett, M. Javaheripi, P. Kauffmann, J. R. Lee, Y. T. Lee, Y. Li, W. Liu, C. C. T. Mendes, A. Nguyen, E. Price, G. de Rosa, O. Saarikivi, A. Salim, S. Shah, X. Wang, R. Ward, Y. Wu, D. Yu, C. Zhang, and Y. Zhang, “Phi-4 technical report,” arXiv preprint arXiv:2412.08905 , 2024. [32] Qwen Team. Qwen3.5-27B-FP8. Accessed: July 18, 2026. [Online]. Available: https://huggingface.co/Qwen/Qwen3.5-27B-FP8 [33] D. Zan, B. Chen, F. Zhang, D. Lu, B. Wu, B. Guan, Y. Wang, and J.-G. Lou, “Large language models meet NL2Code: A survey,” in Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , 2023, pp. 7443–7464. [34] M. Chen, J. Tworek, H. Jun, Q. Yuan, H. P. D. O. Pinto, J. Kaplan, H. Edwards, Y. Burda, N. Joseph, G. Brockman et al. , “Evaluating large language models trained on code,” arXiv preprint arXiv:2107.03374 ,2021. [35] J. Liu, C. S. Xia, Y. Wang, and L. Zhang, “Is your code generated by chatgpt really correct? rigorous evaluation of large language models for code generation,” Advances in Neural Information Processing Systems ,vol. 36, pp. 21 558–21 572, 2023. [36] J. Austin, A. Odena, M. Nye, M. Bosma, H. Michalewski, D. Dohan, E. Jiang, C. Cai, M. Terry, Q. Le, and C. Sutton, “Program synthesis with large language models,” arXiv preprint arXiv:2108.07732 , 2021. [37] T. Y. Zhuo, M. C. Vu, J. Chim, H. Hu, W. Yu, R. Widyasari, I. N. B. Yusuf, H. Zhan, J. He, I. Paul et al. , “Bigcodebench: Benchmarking code generation with diverse function calls and complex instructions,” in Proceedings of the Thirteenth International Conference on Learning Representations , 2025. [38] N. Jain, K. Han, A. Gu, W.-D. Li, F. Yan, T. Zhang, S. Wang, A. Solar-Lezama, K. Sen, and I. Stoica, “LiveCodeBench: Holistic and contamination free evaluation of large language models for code,” in 
+
+Proceedings of the Thirteenth International Conference on Learning Representations , 2025. [39] N. Reimers and I. Gurevych, “Sentence-bert: Sentence embeddings using siamese bert-networks,” in Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing , 2019, pp. 3982–3992.

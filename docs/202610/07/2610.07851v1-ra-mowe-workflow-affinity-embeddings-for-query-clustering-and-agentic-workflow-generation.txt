@@ -1,0 +1,864 @@
+Title: RA-MoWE: Workflow-Affinity Embeddings for Query Clustering and Agentic Workflow Generation
+
+URL Source: https://arxiv.org/pdf/2610.07851v1
+
+Published Time: Wed, 07 Oct 2026 00:58:11 GMT
+
+Number of Pages: 28
+
+Markdown Content:
+# RA-M OWE: W ORKFLOW -A FFINITY EMBEDDINGS FOR QUERY CLUSTERING AND 
+
+# AGENTIC WORKFLOW GENERATION 
+
+Qi Cheng 
+
+Rutgers University New Brunswick, NJ 
+
+q.cheng@rutgers.edu 
+
+Shengyu Chen 
+
+University of Pittsburgh Pittsburgh, PA 
+
+shc160@pitt.edu 
+
+Wei Cheng 
+
+NEC Labs America Princeton, NJ 
+
+weicheng@nec-labs.com 
+
+Yiqun Xie 
+
+University of Maryland College Park, MD 
+
+xie@umd.edu 
+
+Haoyu Wang 
+
+NEC Labs America Princeton, NJ 
+
+haoyu@nec-labs.com 
+
+Haifeng Chen 
+
+NEC Labs America Princeton, NJ 
+
+haifeng@nec-labs.com 
+
+Xiaowei Jia Rutgers University New Brunswick, NJ 
+
+xj159@cs.rutgers.edu 
+
+# ABSTRACT 
+
+Agentic workflows enable large language models (LLMs) to solve complex tasks by coordinating reasoning, tool use, and verification. However, a workflow op-timized for an entire task collection can overlook differences in the reasoning strategies that individual queries need, while searching for a new workflow for ev-ery query repeats costly optimization. To address this tradeoff, we introduce RA-MoWE, a framework that uses workflow-affinity embeddings to cluster queries and guide the generation of reusable expert workflows. Each embedding records how well a fixed set of reference workflows solves a query, revealing similarities in which reasoning strategies are effective. RA-MoWE uses each cluster’s queries and average embedding to initialize and refine a specialized workflow through ex-ecution feedback. An embedding encoder predicts these embeddings from query text, allowing new queries to select a generated expert without first executing the reference workflows. On a 300-query test set drawn from four benchmarks span-ning mathematics, science, and programming, RA-MoWE improves average task score by 4.04 percentage points over selecting among the reference workflows, while using 27.7% fewer language-model calls at inference. 
+
+# 1 INTRODUCTION 
+
+Agentic workflows organize large language model (LLM) calls into procedures for reasoning, re-vising answers, and using tools, extending their capabilities on complex tasks (Yao et al., 2023b; Madaan et al., 2023). Their design determines which operations run and how they interact, affect-ing both solution quality and inference cost: repeated sampling, revision, and decomposition offer different ways to spend computation. Manually choosing a suitable design for a diverse collection of queries is therefore a substantial engineering effort (Hu et al., 2025; Zhang et al., 2025b). Recent methods automate workflow design through search and learned generation. ADAS and AFlow explore code-represented agents using execution feedback, while AgentSquare searches combinations of reusable modules (Hu et al., 2025; Zhang et al., 2025b; Shang et al., 2025). In these works, the workflow is often optimized over a collection of tasks using a collection-level score and thus can overlook differences in individual query need. In contrast, some approaches, such as FlowReasoner (Gao et al., 2025), learn to generate a workflow for each query. These methods need 1arXiv:2610.07851v1 [cs.AI] 6 Oct 2026 Direct CoT CoT-SC ToT Self-refine Reflexion RAG ReAct Tool use Debate Role team Decompose C0 (301) C1 (83) C2 (42) C3 (48) C4 (82) C5 (44)                                                                           
+
+> +.04 −.03 −.03 .00 +.07 .00 +.05 +.03 −.07 +.01 −.03 −.05 +.13 +.08 +.03 +.13 −.25 +.03 −.01 −.19 −.17 +.11 +.05 +.06 −.11 +.24 +.67 −.42 +.14 +.19 −.23 −.78 −.49 +.16 +.27 +.36 +.29 −.33 −.44 +.40 −.30 −.02 −.19 +.49 +.45 +.30 −.34 −.32 −.15 +.09 −.05 −.03 +.31 +.05 +.10 +.22 −.46 −.19 +.08 +.03 −.16 −.18 −.11 −.11 −.23 −.19 −.15 +.07 +1.60 −.19 −.18 −.17
+> Seed Stored expert
+> Refine Refine CoT CoT Ens.(3) Ens.(3) Ens.(3)* Plan + Ens.(4)
+> Refine Refine Ens.(3)* Ens.(3)
+> −0.8 0.0 0.8 1.6
+> Relative affinity (row-centered z-score)
+> (a) Affinity profiles of query clusters
+> Cluster (total queries)
+> (b) Generated workflows
+> Ens.(n): n CoT samples with answer selection. * Runnable fallback.
+
+Figure 1: Different workflow preferences motivate specialized experts. (a) Average embeddings for six GPT-4o-mini training-query clusters show distinct responses to reference workflows. C2 fa-vors sampling and answer selection (CoT-SC), whereas C4 favors self-refinement. (b) RA-MoWE uses these preferences to choose initial workflows. Values are standardized scores centered within each row; outlines mark row maxima, and parentheses give full cluster sizes. Refine revises a chain-of-thought (CoT) answer; Ens.( n) selects among n sampled CoT answers; Plan adds decom-position. Asterisks mark runnable substitutes for unavailable workflows. Measurement details are in Appendix C.4. to repeat costly optimization and also have less training samples for each workflow. Addressing such tradeoff requires identifying which queries should share a workflow and what computations each group needs. While a natural solution is to group queries based on their similarity. However, conventional semantic similarity does not necessarily capture whether queries benefit from the same reasoning strategies. Our key idea is to introduce a workflow-affinity embedding and group queries by how they respond to different reasoning workflows . In particular, the workflow-affinity embedding is a vector whose coordinates estimate a query’s task score under a fixed set of reference workflows, called probes. The resulting vector captures a query’s relative strengths and weaknesses across different reasoning strategies, including which reasoning strategies succeed, partially succeed, or fail. Queries with similar profiles can therefore be grouped together based on their computational needs rather than their semantic similarity. We integrate this idea into RA-MoWE, a framework that uses the workflow-affinity embeddings to guide the generation of reusable expert workflows. Offline, we execute the reference workflows on training queries, compute their embeddings, and partition them into clusters. Clustering these em-beddings groups queries with similar measured responses, giving expert construction both a focused set of examples and evidence about potentially useful reasoning strategies. For each cluster, we introduce an embedding-guided search mechanism, which uses the cluster prototype to choose an executable starting workflow and constrain the candidate operations. It then proposes refinements informed by execution feedback and probe outcomes on remaining failures, retaining edits that im-prove the cluster’s validation score. The resulting expert is stored for reuse. Figure 1 connects the measured cluster affinities to the workflows produced by this process. We then create an embedding encoder , which makes the generated experts accessible from query text alone. While workflow-affinity embeddings can be measured offline by executing the reference workflows, this process is too costly to repeat for every new query. We therefore train the encoder to predict a query’s workflow-affinity embedding directly from its text, using the measured embeddings 2as supervision. At deployment, the predicted embedding selects a cluster’s expert without executing the reference workflows. We evaluate RA-MoWE across mathematics, science, programming, and repository repair against six families of adapted search and routing methods. On 300 test queries drawn from four bench-marks in mathematics, science, and programming, RA-MoWE improves average task score by 4.04 percentage points over a system that selects from the reference workflows, while using 27.7% fewer LLM calls at inference. Both systems choose a workflow based on the query text. Further ex-periments examine whether queries consistently benefit from particular workflows, how clustering affects the quality of generated workflows, and how accurately the encoder assigns new queries to experts. Our contributions are: 1. Workflow-affinity embeddings that represent queries through measured workflow out-comes and organize training examples for specialist construction. 2. An embedding encoder that predicts this representation from text, enabling expert selec-tion without online reference-workflow execution. 3. Embedding-guided expert generation that uses cluster affinities, query examples, and failure feedback to initialize and refine reusable workflows. Our analysis identifies when measurement and prediction errors preserve useful decisions and when the available workflow operations support transfer from a strong probe to a generated expert. 
+
+# 2 RA-M OWE: EMBEDDING -GUIDED WORKFLOW GENERATION 
+
+Given training queries with reference answers or executable tests, our goal is to construct reusable workflows that serve different computational needs. RA-MoWE uses a shared representation to connect three decisions: which queries should be grouped together, how to build an expert for each group, and which expert should answer a new query. We first measure each query’s response to ref-erence workflows and cluster the resulting embeddings. These embeddings guide expert generation and supervise an encoder that selects an expert from query text. Figure 2 illustrates the framework; Algorithm 1 summarizes its construction and deployment. OFFLINE: scored executions and training labels C1 Measure affinity   
+
+> 12 workflows → outcome coordinates
+> Cluster queries
+> Training centroids and probe profiles
+> C3 Generate experts
+> Cluster examples + affinity profile
+> SERVING: query text only New query
+> No scored probe execution
+> C2 Predict affinity
+> Frozen BGE + trained MLP
+> Select and execute
+> Nearest cluster → stored expert
+> affinity supervision stored expert bank
+
+Figure 2: The RA-MoWE framework. Offline, reference-workflow scores define query embeddings for clustering, expert generation, and encoder supervision. At deployment, the encoder predicts an embedding from query text and selects a stored expert. Dashed arrows indicate saved supervision and experts. C1–C3 mark the embedding, encoder, and generation contributions. 32.1 WORKFLOW -AFFINITY EMBEDDINGS FOR QUERY CLUSTERING 
+
+A useful query group should reflect which reasoning procedures help its members. Questions about the same topic can require different computations, such as comparing several candidate answers or revising an initial solution. We therefore represent a query by its performance under a fixed panel of diverse reference workflows, called probes . These probes apply established strategies such as chain-of-thought, self-consistency, and self-refinement (Wei et al., 2022; Wang et al., 2023; Madaan et al., 2023). For a query q and probe pk, let Yk,s (q) ∈ [0 , 1] be the task score from execution s under a fixed execution and scoring protocol. Averaging S repetitions gives 
+
+¯fk(q) = 1
+
+S
+
+> S
+
+X
+
+> s=1
+
+Yk,s (q), ¯f (q) =   ¯f1(q), . . . , ¯fK (q)⊤, (1) where K is the number of probes. The vector ¯f (q) retains the strengths and weaknesses of all reference workflows, including partial successes and multiple successful strategies. We standardize its coordinates using training statistics to obtain the workflow-affinity embedding ¯z(q). This prevents differences in score variance from dominating the comparison between queries; the normalization and measurement settings are given in Appendix B. We cluster the training queries in the embedding space using k-means, yielding J groups with centers C = ( c1, . . . , c J ). Each group supplies examples for a reusable expert. Grouping queries by their workflow responses therefore provides workflow construction with both relevant examples and evidence about which reasoning strategies are effective for those examples. Such evidence also has a precise interpretation within the probe panel: if two queries’ expected probe scores differ by at most ϵ in every coordinate, transferring the best probe from one to the other loses at most 2ϵ in expected score. Proposition 1 and its proof relate this decision guarantee to measurement accuracy. The next step uses the resulting groups to construct workflows beyond the reference panel. 2.2 EMBEDDING -GUIDED EXPERT GENERATION 
+
+Each cluster supplies two complementary inputs for expert generation: (1) examples to optimize and (2) evidence about useful reasoning operations. For cluster j, let Vj be the subset of its training queries used to evaluate candidate workflows. We summarize their measured embeddings by 
+
+ρj = 1
+
+|Vj |
+
+X
+
+> q∈Vj
+
+¯z(q), (2) where |Vj | is the number of queries in this subset. The prototype vector ρj describes the cluster’s relative strengths across the reference workflows. It provides search with a starting strategy and evidence for choosing subsequent operations. Search begins by mapping the highest-ranked runnable probe in ρj to an initial workflow. We con-struct workflows from executable operations such as planning, sampling, answer selection, and revi-sion, following the modular-search principle of Zhang et al. (2025b); Shang et al. (2025). The same embedding restricts candidate operations using the lowest-ranked probes, while retaining the oper-ation chosen for initialization. In this way, the measured response guides both where search starts and which changes it considers. The value of the initialization depends on how well the executable workflow preserves the probe’s useful behavior; Proposition 5 characterizes this connection. Refinement focuses on the queries the current workflow has not solved. An LLM optimizer receives failure examples, summaries of probe scores on failed and solved queries, and previous search at-tempts. These summaries identify strategies that may address the remaining failures. The optimizer proposes an edit, which is executed on Vj and retained only if its average score improves by a prescribed margin. Repeating this process produces expert wj ; the collection W = {w1, . . . , w J }
+
+forms the reusable expert bank. The operator mapping, proposal rules, and acceptance margin are specified in Appendix B. Search uses construction data, while the separate test pool evaluates the resulting bank. Algorithm 1 presents the shared-clustering framework; the recorded alignment between construction and deployment clusters is detailed in Appendix C.4. 4Algorithm 1 RA-MoWE: constructing and using a bank of workflow experts 
+
+Require: Training queries and task scorers; reference workflows; cluster count J; search resources  
+
+> 1:
+
+Measure and standardize the workflow-affinity embedding ¯z(q) of each training query  
+
+> 2:
+
+Train the embedding encoder to predict ¯z(q) from query text  
+
+> 3:
+
+Cluster the measured embeddings into J groups with centers C 
+
+> 4:
+
+for each cluster j do  
+
+> 5:
+
+Choose construction queries Vj and compute their average embedding ρj 
+
+> 6:
+
+Initialize wj from a high-affinity runnable probe; restrict candidate operations using ρj 
+
+> 7:
+
+for each allowed search round do  
+
+> 8:
+
+Use probe scores and remaining failures to guide an LLM-proposed edit  
+
+> 9:
+
+Evaluate on Vj ; accept only if the score improvement exceeds the required margin  
+
+> 10:
+
+end for  
+
+> 11:
+
+Store the final expert wj 
+
+> 12:
+
+end for  
+
+> 13:
+
+return Trained encoder, cluster centers C, and expert bank W
+
+Deployment: predict a new query’s embedding, select the nearest cluster, and run its expert. 2.3 LEARNING THE EMBEDDING ENCODER 
+
+The embeddings used for construction require scored probe executions. To select an expert for a new query without repeating that measurement, we train an encoder to predict the same coordinates from text. Let ψ(q) be frozen text features and gθ a trainable prediction head with parameters θ. The predicted embedding is 
+
+ˆz(q) = gθ (ψ(q)) ∈ RK . (3) Training pairs each query with its measured embedding ¯z(q). We use frozen BGE features (Xiao et al., 2024) as inputs to a small prediction head, which is trained to predict the measured embedding from query text. The loss encourages agreement in the relative pattern of probe responses and penalizes errors in the coordinates used for clustering. Predicting the full embedding also allows the same learned target to support different cluster partitions. The loss, architecture, and training protocol are specified in Appendix B. At deployment, the predicted embedding selects the closest cluster center: 
+
+a(q) = arg min 
+
+> 1≤j≤J
+
+∥ˆz(q) − cj ∥22. (4) Here cj is the center of cluster j, ∥ · ∥ 2 is the Euclidean norm, and a(q) is the selected expert’s index. We then execute the stored workflow wa(q) on q. Both probe measurement and workflow construction are therefore performed offline and reused across future queries. The prediction need not recover every coordinate exactly to preserve an expert choice. If the pre-diction error is smaller than the measured embedding’s distance to the nearest cluster boundary, the two embeddings select the same expert. Proposition 3 and Appendix A.3 formalize this condition and its counterpart for expected probe scores. This motivates evaluating the encoder through both prediction error and the resulting expert assignments. Appendix A.6 combines the conditions for measurement, generation, and assignment into an analysis of the complete pipeline. 
+
+# 3 EMPIRICAL EVALUATION 
+
+We test the three links in RA-MoWE: whether workflow responses reveal reusable specialization, whether the encoder preserves useful assignments from text, and whether affinity profiles guide the construction of effective workflows. Each experiment connects an intermediate design choice to downstream utility. 
+
+Tasks and evaluation. MixBench-H contains 600 training and 300 test queries spanning AIME, GPQA, CodeContests, and LiveCodeBench (Mathematical Association of America, 2026; Rein et al., 2024; Li et al., 2022; Jain et al., 2025). We evaluate GPT-4o-mini and Claude Haiku 4.5 separately. SWE-bench Verified (Jimenez et al., 2024) uses a repository-stratified 300/200 split and 5Table 1: Baseline comparison on three regimes (higher utility is better). Scores are comparable within columns. A† uses measured test affinities; B predicts them from text. † indicates scorer feedback on the evaluated query, and ‡ public-test execution feedback. FlowReasoner has † only on mixed tasks. Search baselines are the documented local adaptations, not published full-system reproductions. Dashes denote unrun configurations. Bold identifies significant gains over D under measured assignment.                                                  
+
+> MixBench-H SWE Verified Method GPT-4o-mini Haiku 4.5 GPT-4o-mini Direct .2872 .5694 .2000 Train-selected probe .3481 ‡.6894 .1750 Global comparator D.2722 .5381 .1750 AFlow search .2722 .5381 .1900 ADAS (executor-class meta-model) .2042 .2489 .2000 ScoreFlow (SF-0/ICPO) .2756 —.2100 FlowReasoner (search only) .3565 †.7465 †.2050 MasRouter (policy routing) ——.1700 FrugalGPT (policy cascade) ——.2050 Semantic BGE clusters .2939 .5303 .1800 Semantic Qwen3 clusters .3050 .5861 —Random clusters .2767 .5228 .1800 RA-MoWE: text-predicted B.2922 .5214 .2000 RA-MoWE: measured A†.2742 .6097 .2450
+
+a fixed Agentless-lite localize–repair pipeline (Xia et al., 2025). Mixed-task utility is mean an-swer correctness or public-test pass fraction; SWE utility is harness resolution. Comparisons within each regime share queries and scoring contracts. The main comparison tests the embedding-to-bank interface using cluster-conditioned AFlow search on mixed tasks and cluster policy selection on SWE. A separate experiment evaluates embedding-guided expert generation. We report paired stratified bootstrap intervals and Holm-adjusted sign-flip tests for the historical routing families; the embedding-guided search contrasts use exploratory, unadjusted query-bootstrap intervals. 
+
+Comparisons test grouping and construction choices. Table 1 compares direct execution, a training-selected probe, and adaptations of AFlow (Zhang et al., 2025b), ADAS (Hu et al., 2025), ScoreFlow (Wang et al., 2025), and FlowReasoner (Gao et al., 2025). Semantic BGE/Qwen3 (Xiao et al., 2024; Zhang et al., 2025c) and random partitions test the choice of grouping signal; SWE also includes policy-level MasRouter (Yue et al., 2025) and FrugalGPT (Chen et al., 2024). The global comparator D searches the undivided mixed-task pool with the same search rule and five optimization rounds after initialization. Both settings allocate 600 validation queries per round in total, although the six-cluster bank requires more proposal calls. SWE D is the training-selected policy. Appendix C.7 details the adaptations and resource accounting; Appendix C.11 reports heterogeneous-model routing separately. 3.1 WORKFLOW AFFINITY CAPTURES REUSABLE SPECIALIZATION 
+
+Probe preferences persist across executions. The first test asks whether affinity captures a re-peatable response signal. We select a probe using two executions per test query and evaluate it on the third, averaging all three folds. GPT-4o-mini reaches 0.4059 against 0.3481 for the training-selected fixed probe: +0 .0579 (95% CI [0 .0283 , 0.0881] ). Uniform treatment of tied probes retains a 
+
+0.0382 gain ( [0 .0100 , 0.0668] ). The improvement survives an execution not used for selection, sup-porting query-specific workflow preference within the panel. Haiku reaches 0.7237 against 0.6894 ,but uniform ties reduce its gain to 0.0015 ; repeatability therefore depends on the backbone and tie rule. Table 7 gives both rules. Increasing the panel from eight to twelve probes also raises distinct training signatures from 281 to 329 and effective rank from 2.67 to 3.08, giving clustering a richer description of query behavior. 
+
+Affinity-defined specialists improve the global comparator. With measured test-affinity as-signment A, Haiku utility rises from D’s 0.5381 to 0.6097 : +0 .0717 ([0 .0339 , 0.1122] , Holm 6p = 0.0063 ). On SWE, the bank resolves 49/200 instances against 35/200 for D: +0 .0700 
+
+([0 .0300 , 0.1100] , p = 0 .0052 ), correcting 16 failures while introducing two. Measured-affinity assignment also exceeds semantic BGE and random partitions by 0.0650 on SWE (Holm p =0.0164 /0.0123 ). Its 24 .5% resolution rate is the highest point estimate among the tested SWE adap-tations, including ScoreFlow at 21 .0% and FlowReasoner/FrugalGPT at 20 .5% . These results show that workflow-response geometry provides an actionable basis for specialist assignment. Because 
+
+A uses test outcomes, the next experiment measures how much of this benefit transfers to text-only decisions. The benefit varies across regimes: GPT-4o-mini’s A − D gap is 0.0019 , with no historical routing contrast surviving Holm correction. Outcome-assisted FlowReasoner leads the mixed-task columns, and Haiku’s fixed self-consistency probe reaches 0.6894 . Thus the evidence supports useful spe-cialization relative to global construction in two regimes, while retaining strong alternatives in the comparison. 3.2 TEXT PREDICTION CONNECTS THE EMBEDDING TO DEPLOYMENT 
+
+The encoder must preserve decisions that matter to the expert bank. On the expanded panel, the frozen-BGE MLP obtains held-out cosine similarity 0.398 and coordinate-averaged MSE 0.870 with nested training on a 510/90 split. It replaces probe executions with one text forward pass. Down-stream, B reaches 0.2922 /0.5214 /0.2000 in the three regimes of Table 1; none of its prespecified contrasts against D is significant. Assignment diagnostics explain why reconstruction metrics alone are insufficient. Mea-sured/predicted cluster agreement is 37.7% for GPT-4o-mini and 12.0% for Haiku, whose predictor assigns 277/300 queries to one cluster. The SWE predictor chooses direct for all 200 instances. The measured-affinity gains therefore establish a useful target, but the current predictors do not con-sistently preserve its specialist decisions. This connects the empirical challenge to Proposition 3, which assesses prediction error relative to cluster boundaries. Assignment fidelity and expert utility are therefore essential complements to coordinate error. 3.3 EMBEDDING -GUIDED SEARCH GENERATES EFFECTIVE WORKFLOWS 1 2 3   
+
+> Serving LLM calls / query
+> 0.27 0.30 0.33 0.36
+> Mean task utility
+> Direct Single bare Single CoT Probe menu B Guided B
+> 0.00 0.04 0.08
+> Paired utility difference
+> Direct Probe menu Single CoT +0.0595 +0.0404 +0.0063
+> (a) Utility and serving cost (b) Guided B − control
+> 300 test queries · 3 executions per arm · paired 95% bootstrap intervals
+
+Figure 3: Embedding-guided expert generation on 300 MixBench-H queries with three executions per arm. Left: utility versus serving calls/query. Right: Guided-B utility differences with ex-ploratory 95% paired query-bootstrap intervals, resampling per-query execution means. Guided-B
+
+improves on Direct and routed probes; its difference from single-call CoT is unresolved. Serving calls exclude offline measurement and construction. Prompting, decoding, and operator differences make the contrasts comparisons of complete configurations. We next evaluate embedding-guided search, which uses cluster preferences to initialize and edit ex-ecutable workflows. This study uses GPT-4o-mini through the official OpenAI endpoint, separately 7from the preceding NEC-endpoint experiments. Each of six cluster searches evaluates an affinity-derived seed and at most two edits. The resulting bank includes refinement, sampling/selection, and decomposition. Five experts retain their seeds; cluster C3 accepts a larger ensemble followed by decomposition. The search traces show that behavioral initialization supplies most of the final bank, with local edits refining one specialist. 
+
+Generated workflows improve on Direct and routed probes. Figure 3 compares the gener-ated bank with fixed and routed workflows. On an independent 300-query test pool, Guided-B
+
+scores 0.3358 against Direct’s 0.2763 : +0 .0595 ([0 .0232 , 0.0975] , exploratory p = 0 .001 ). It also improves over probe-menu-B’s 0.2955 by 0.0404 ([0 .0042 , 0.0773] , p = 0 .030 ), while reducing calls/query from 2.924 to 2.113 (27.7%). These comparisons show that the generated bank provides effective, reusable computation in a text-only system. Prompting, decoding, and execution differ across these arms, so the improvement is attributed to the complete configuration. The same-executor single-call CoT control reaches 0.3295 ; its 0.0063 gap from Guided-B remains unresolved ( [−0.0158 , 0.0289] ). A separate six-expert evaluation gives an observed per-query oracle of 0.4961 versus 0.3567 for the test-selected best fixed expert, while current routing realizes approx-imately 0.34 . The remaining opportunity is concrete: the bank contains complementary observed successes, and better text prediction is needed to recover them reliably. Appendix C reports expert semantics, costs, panel and operator ablations, label-free features, and transfer across regimes. 
+
+# 4 RELATED WORK 
+
+Learning representations for computational decisions. Instance-dependent algorithm selection connects instance features to algorithm performance (Rice, 1976); decision-relevant representation learning seeks to preserve distinctions that affect action quality (Zhang et al., 2021). Workflow-affinity embeddings specialize this perspective to query-level outcomes of executable reasoning procedures. They provide an external behavioral representation, whereas function vectors and task arithmetic represent tasks through internal activations and weight differences (Todd et al., 2024; Il-harco et al., 2023). General text embeddings remain useful features (Muennighoff et al., 2023; Xiao et al., 2024; Zhang et al., 2025c); our supervision target additionally names the workflow behaviors that clustering and construction should exploit. 
+
+Allocating workflow construction effort. Search-based agent design learns executable programs or modular compositions from performance feedback (Hu et al., 2025; Zhang et al., 2025b; Shang et al., 2025). Learned workflow generators further amortize design through preference optimization or execution-reward training (Wang et al., 2025; Gao et al., 2025). RA-MoWE organizes construc-tion around a reusable behavioral group. Its cluster determines the examples on which an expert is optimized, while the profile supplies a seed preference and failure-conditioned guidance. This interface accommodates different search backends and makes the grouping representation part of expert construction itself. 
+
+Selecting models and orchestrating agents. Preference-trained routing, cost-aware cascades, and joint selection of roles and models adapt computation to a query (Ong et al., 2025; Chen et al., 2024; Yue et al., 2025). Related approaches align internal expert routing with task neighborhoods, learn query-conditioned agentic architectures, or train coordination policies (Li et al., 2026; Zhang et al., 2025a; Nielsen et al., 2026). RA-MoWE connects pre-execution selection to the creation of an external workflow bank through one outcome-coordinate space. Our experiments compare the implemented local adaptations under their disclosed information and resource contracts; the separate model-pool study examines the additional freedom to change backbones. 
+
+# 5 DISCUSSION AND CONCLUSION 
+
+Workflow affinity provides a common basis for learning query representations and constructing the workflows that serve them. The experiments show repeatable probe complementarity, gains from measured-affinity specialization in two regimes, and effective compact workflows initialized from cluster profiles. The encoder makes this construction reusable from query text; its assignment fidelity determines how much of the behavioral structure reaches deployment. 8REFERENCES 
+
+Beijing Academy of Artificial Intelligence. BAAI/bge-large-en-v1.5: Model card, 2023. URL 
+
+https://huggingface.co/BAAI/bge-large-en-v1.5 . Accessed September 16, 2026. Lingjiao Chen, Matei Zaharia, and James Zou. FrugalGPT: How to use large language models while reducing cost and improving performance. Transactions on Machine Learning Research , 2024. URL https://openreview.net/forum?id=cSimKw5p6R .Yilun Du, Shuang Li, Antonio Torralba, Joshua B. Tenenbaum, and Igor Mordatch. Improving factuality and reasoning in language models through multiagent debate. In Proceedings of the 41st International Conference on Machine Learning , volume 235 of Proceedings of Machine Learning Research , pp. 11733–11763, 2024. URL https://proceedings.mlr.press/ v235/du24e.html .Hongcheng Gao, Yue Liu, Yufei He, Longxu Dou, Chao Du, Zhijie Deng, Bryan Hooi, Min Lin, and Tianyu Pang. FlowReasoner: Reinforcing query-level meta-agents. arXiv preprint arXiv:2504.15257 , 2025. URL https://arxiv.org/abs/2504.15257 .Wassily Hoeffding. Probability inequalities for sums of bounded random variables. Journal of the American Statistical Association , 58(301):13–30, 1963. doi: 10.1080/01621459.1963.10500830. Shengran Hu, Cong Lu, and Jeff Clune. Automated design of agentic systems. In International Conference on Learning Representations , 2025. URL https://proceedings.iclr.cc/ paper_files/paper/2025/hash/36b7acf6f6010652b3f2a433774a66fe-Abs tract-Conference.html .Gabriel Ilharco, Marco Tulio Ribeiro, Mitchell Wortsman, Suchin Gururangan, Ludwig Schmidt, Hannaneh Hajishirzi, and Ali Farhadi. Editing models with task arithmetic. In International Conference on Learning Representations , 2023. URL https://openreview.net/forum ?id=6t0Kwf8-jrj .Naman Jain, King Han, Alex Gu, Wen-Ding Li, Fanjia Yan, Tianjun Zhang, Sida Wang, Armando Solar-Lezama, Koushik Sen, and Ion Stoica. LiveCodeBench: Holistic and contamination free evaluation of large language models for code. In International Conference on Learning Represen-tations , 2025. URL https://proceedings.iclr.cc/paper_files/paper/2025 /hash/94074dd5a072d28ff75a76dabed43767-Abstract-Conference.html .Carlos E. Jimenez, John Yang, Alexander Wettig, Shunyu Yao, Kexin Pei, Ofir Press, and Karthik Narasimhan. SWE-bench: Can language models resolve real-world GitHub issues? In Interna-tional Conference on Learning Representations , 2024. URL https://proceedings.iclr .cc/paper_files/paper/2024/hash/edac78c3e300629acfe6cbe9ca88fb84 -Abstract-Conference.html .Yujia Li, David Choi, Junyoung Chung, Nate Kushman, Julian Schrittwieser, Rémi Leblond, Tom Eccles, James Keeling, Felix Gimeno, Agustin Dal Lago, Thomas Hubert, Peter Choy, Cyprien de Masson d’Autume, Igor Babuschkin, Xinyun Chen, Po-Sen Huang, Johannes Welbl, Sven Gowal, Alexey Cherepanov, James Molloy, Daniel J. Mankowitz, Esme Sutherland Robson, Push-meet Kohli, Nando de Freitas, Koray Kavukcuoglu, and Oriol Vinyals. Competition-level code generation with AlphaCode. Science , 378(6624):1092–1097, 2022. doi: 10.1126/science.abq115 8. URL https://arxiv.org/abs/2203.07814 .Zhongyang Li, Ziyue Li, and Tianyi Zhou. Routing manifold alignment improves generalization of mixture-of-experts LLMs. In International Conference on Learning Representations , 2026. URL 
+
+https://proceedings.iclr.cc/paper_files/paper/2026/hash/249b8d8f 41970822651435629e68a6e1-Abstract-Conference.html .Aman Madaan, Niket Tandon, Prakhar Gupta, Skyler Hallinan, Luyu Gao, Sarah Wiegreffe, Uri Alon, Nouha Dziri, Shrimai Prabhumoye, Yiming Yang, Shashank Gupta, Bodhisattwa Prasad Majumder, Katherine Hermann, Sean Welleck, Amir Yazdanbakhsh, and Peter Clark. Self-Refine: Iterative refinement with self-feedback. In Advances in Neural Information Processing Systems ,9volume 36, 2023. URL https://proceedings.neurips.cc/paper_files/paper /2023/hash/91edff07232fb1b55a505a9e9f6c0ff3-Abstract-Conference. html .Mathematical Association of America. American invitational mathematics examination, 2026. URL 
+
+https://maa.org/maa-invitational-competitions/ . Official competition resource; accessed September 16, 2026. Niklas Muennighoff, Nouamane Tazi, Loïc Magne, and Nils Reimers. MTEB: Massive text embed-ding benchmark. In Proceedings of the 17th Conference of the European Chapter of the Associa-tion for Computational Linguistics , pp. 2014–2037, 2023. doi: 10.18653/v1/2023.eacl-main.148. URL https://aclanthology.org/2023.eacl-main.148/ .Stefan Nielsen, Edoardo Cetin, Peter Schwendeman, Qi Sun, Jinglue Xu, and Yujin Tang. Learning to orchestrate agents in natural language with the conductor. In International Conference on Learning Representations , 2026. URL https://openreview.net/forum?id=U23A2B UKYt .Isaac Ong, Amjad Almahairi, Vincent Wu, Wei-Lin Chiang, Tianhao Wu, Joseph E. Gonzalez, M. Kadous, and Ion Stoica. RouteLLM: Learning to route LLMs with preference data. In In-ternational Conference on Learning Representations , 2025. URL https://proceedings. iclr.cc/paper_files/paper/2025/hash/5503a7c69d48a2f86fc00b3dc09d e686-Abstract-Conference.html .David Rein, Betty Li Hou, Asa Cooper Stickland, Jackson Petty, Richard Yuanzhe Pang, Julien Dirani, Julian Michael, and Samuel R. Bowman. GPQA: A graduate-level google-proof Q&A benchmark. In Conference on Language Modeling , 2024. URL https://openreview.net /forum?id=Ti67584b98 .John R. Rice. The algorithm selection problem. In Advances in Computers , volume 15, pp. 65–118. Elsevier, 1976. doi: 10.1016/S0065-2458(08)60520-3. Yu Shang, Yu Li, Keyu Zhao, Likai Ma, Jiahe Liu, Fengli Xu, and Yong Li. AgentSquare: Automatic LLM agent search in modular design space. In International Conference on Learning Represen-tations , 2025. URL https://proceedings.iclr.cc/paper_files/paper/2025 /hash/0ae94013da7cd459402fd77874e09ee3-Abstract-Conference.html .Noah Shinn, Federico Cassano, Ashwin Gopinath, Karthik Narasimhan, and Shunyu Yao. Reflex-ion: Language agents with verbal reinforcement learning. In Advances in Neural Information Processing Systems , volume 36, 2023. URL https://proceedings.neurips.cc/pap er_files/paper/2023/hash/1b44b878bb782e6954cd888628510e90-Abstr act-Conference.html .Eric Todd, Millicent L. Li, Arnab Sen Sharma, Aaron Mueller, Byron C. Wallace, and David Bau. Function vectors in large language models. In International Conference on Learning Representa-tions , 2024. URL https://proceedings.iclr.cc/paper_files/paper/2024/h ash/4ae163cb8788970e53b4fd9578141139-Abstract-Conference.html .Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc V. Le, Ed H. Chi, Sharan Narang, Aakanksha Chowdhery, and Denny Zhou. Self-consistency improves chain of thought reasoning in language models. In International Conference on Learning Representations , 2023. URL https://op enreview.net/forum?id=1PL1NIMMrw .Yinjie Wang, Ling Yang, Guohao Li, Mengdi Wang, and Bryon Aragam. ScoreFlow: Mastering LLM agent workflows via score-based preference optimization. arXiv preprint arXiv:2502.04306 ,2025. URL https://arxiv.org/abs/2502.04306 .Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Brian Ichter, Fei Xia, Ed H. Chi, Quoc V. Le, and Denny Zhou. Chain-of-thought prompting elicits reasoning in large language models. In Advances in Neural Information Processing Systems , volume 35, 2022. URL https: //proceedings.neurips.cc/paper/2022/hash/9d5609613524ecf4f15af0f 7b31abca4-Abstract-Conference.html .10 Chunqiu Steven Xia, Yinlin Deng, Soren Dunn, and Lingming Zhang. Demystifying LLM-based software engineering agents. Proceedings of the ACM on Software Engineering , 2(FSE), 2025. doi: 10.1145/3715754. URL https://doi.org/10.1145/3715754 .Shitao Xiao, Zheng Liu, Peitian Zhang, Niklas Muennighoff, Defu Lian, and Jian-Yun Nie. C-Pack: Packed resources for general chinese embeddings. In Proceedings of the 47th International ACM SIGIR Conference on Research and Development in Information Retrieval , pp. 641–649, 2024. doi: 10.1145/3626772.3657878. URL https://sigir-2024.github.io/proceedi ngs.html .Shunyu Yao, Dian Yu, Jeffrey Zhao, Izhak Shafran, Thomas L. Griffiths, Yuan Cao, and Karthik Narasimhan. Tree of thoughts: Deliberate problem solving with large language models. In Ad-vances in Neural Information Processing Systems , volume 36, 2023a. URL https://procee dings.neurips.cc/paper/2023/hash/271db9922b8d1f4dd7aaef84ed5ac70 3-Abstract.html .Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik Narasimhan, and Yuan Cao. ReAct: Synergizing reasoning and acting in language models. In International Conference on Learning Representations , 2023b. URL https://openreview.net/forum?id=WE_v luYUL-X .Yanwei Yue, Guibin Zhang, Boyang Liu, Guancheng Wan, Kun Wang, Dawei Cheng, and Yiyan Qi. MasRouter: Learning to route LLMs for multi-agent systems. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 15549– 15572. Association for Computational Linguistics, 2025. doi: 10.18653/v1/2025.acl-long.757. URL https://aclanthology.org/2025.acl-long.757/ .Amy Zhang, Rowan McAllister, Roberto Calandra, Yarin Gal, and Sergey Levine. Learning invari-ant representations for reinforcement learning without reconstruction. In International Confer-ence on Learning Representations , 2021. URL https://openreview.net/forum?id= -2FCwDKRREu .Guibin Zhang, Luyang Niu, Junfeng Fang, Kun Wang, Lei Bai, and Xiang Wang. Multi-agent architecture search via agentic supernet. In Proceedings of the 42nd International Conference on Machine Learning , volume 267 of Proceedings of Machine Learning Research , pp. 75834–75852, 2025a. URL https://proceedings.mlr.press/v267/zhang25bi.html .Jiayi Zhang, Jinyu Xiang, Zhaoyang Yu, Fengwei Teng, Xiong-Hui Chen, Jiaqi Chen, Mingchen Zhuge, Xin Cheng, Sirui Hong, Jinlin Wang, Bingnan Zheng, Bang Liu, Yuyu Luo, and Chenglin Wu. AFlow: Automating agentic workflow generation. In International Conference on Learning Representations , 2025b. URL https://proceedings.iclr.cc/paper_files/pape r/2025/hash/5492ecbce4439401798dcd2c90be94cd-Abstract-Conferenc e.html .Yanzhao Zhang, Mingxin Li, Dingkun Long, Xin Zhang, Huan Lin, Baosong Yang, Pengjun Xie, An Yang, Dayiheng Liu, Junyang Lin, Fei Huang, and Jingren Zhou. Qwen3 embedding: Advanc-ing text embedding and reranking through foundation models. arXiv preprint arXiv:2506.05176 ,2025c. URL https://arxiv.org/abs/2506.05176 .Denny Zhou, Nathanael Schärli, Le Hou, Jason Wei, Nathan Scales, Xuezhi Wang, Dale Schu-urmans, Claire Cui, Olivier Bousquet, Quoc V. Le, and Ed H. Chi. Least-to-most prompting enables complex reasoning in large language models. In International Conference on Learning Representations , 2023. URL https://openreview.net/forum?id=WZH7099tgfM .11 A PROOFS AND EFFECTIVE BOUNDARIES 
+
+The analysis separates three questions: what a finite probe panel identifies, when an estimated rep-resentation preserves a decision, and when a probe’s measured advantage survives conversion to an executable expert. The arguments adapt standard concentration and decision-theoretic tools; they are not claims of new concentration inequalities or a universal sufficiency theorem. Their purpose is to identify assumptions that an implementation and an evaluation must satisfy. This perspective follows the distinction between an instance representation and the algorithm selected from it (Rice, 1976). The analogy to task-relevant representation learning (Zhang et al., 2021) concerns preserving decisions; our finite vector is not a bisimulation representation. A.1 PROBABILITY SPACE AND FIXED -PROTOCOL CONVENTION 
+
+Let Q ∼ D and fix an executable panel P = {p1, . . . , p K }. A protocol specifies the model and endpoint, prompts, available tools, answer extraction, score, execution limits, and failure handling. Under this protocol, Yk,s (q) ∈ [0 , 1] is the score of execution s of probe k, fk(q) = E[Yk,s (q) |
+
+q], and ¯fk(q) = S−1
+
+> k
+
+PSk 
+
+> s=1
+
+Yk,s (q). The conditional expectation averages execution randomness, not changes to the protocol. Conditioning on successful retries defines a different estimand from assigning failed executions score zero. Throughout the routing analysis, normalization statistics, centroids, the encoder, and the deployed expert library are fixed, or we condition on the training data and randomness that produced them. Evaluation queries are fresh. Write Λ = diag( σ1, . . . , σ K ), where every σk > 0, and let z(q) = Λ−1(f (q) − μ) and ¯z(q) = Λ −1( ¯f (q) − μ). Thus z is the population embedding and ¯z its measured estimate. The encoder predicts ˆz(q) = gθ (ψ(q)) ; write xi = ψ(qi) for an individual example and X = ψ(Q) for a fresh random query. These objects remain distinct even when measured and predicted embeddings lead to the same expert. The J centroids are pairwise distinct and use a fixed tie rule. If a query lies on a nearest-centroid tie, its margin is zero. We write Rw(q) = 
+
+E[score( w, q ) | q] ∈ [0 , 1] for the expected reward of an executable expert. Equality of selected experts implies equality of these expected rewards, not of independent realized scores. A.2 MEASUREMENT ACCURACY AND THE INFORMATION IN A FINITE PANEL 
+
+Proposition 1 (Affinity estimation preserves probe decisions) . Fix a query and protocol. If each probe’s S repetitions are independent, identically distributed, and bounded in [0 , 1] , then 
+
+Pr  ∥ ¯f (q) − f (q)∥∞ > ϵ  ≤ 2Ke −2Sϵ 2
+
+. (5) 
+
+On the event ∥ ¯f − f ∥∞ ≤ ϵ, selecting ˆk ∈ arg max k ¯fk(q) incurs expected probe regret at most 2ϵ.Proof of Proposition 1. For each fixed q and k, independent bounded executions give 
+
+Pr  | ¯fk(q) − fk(q)| > ϵ | q ≤ 2 exp( −2Sϵ 2) (6) by Hoeffding’s inequality (Hoeffding, 1963). A union bound over K coordinates proves the stated 2K exp( −2Sϵ 2) bound. Independence between different probes is not required. Let 
+
+k∗ ∈ arg max k fk(q) and ˆk ∈ arg max k ¯fk(q). On the uniform accuracy event, 
+
+fk∗ (q) − fˆk(q) = fk∗ (q) − ¯fk∗ (q) + ¯fk∗ (q) − ¯fˆk(q) + ¯fˆk(q) − fˆk(q) (7) 
+
+≤ ϵ + 0 + ϵ. (8) Thus a unique best probe with population gap exceeding 2ϵ is recovered. For transfer between two queries, replace ¯f (q) in this argument by f (q′). If ∥f (q) − f (q′)∥∞ ≤ ϵ, using a best probe for q′
+
+on q loses at most 2ϵ relative to the best probe for q.The same argument connects standardized distance to probe transfer. Let σmax = max k σk. Since 
+
+f (q) − f (q′) = Λ( z(q) − z(q′)) , the condition ∥z(q) − z(q′)∥2 ≤ δ implies ∥f (q) − f (q′)∥∞ ≤
+
+σmax δ. Thus the expected score lost by transferring the best probe is at most 2σmax δ. The scale factor is necessary because distances in standardized coordinates are not raw score differences. 12 For unequal repeat counts the failure bound is 2 P 
+
+> k
+
+exp( −2Skϵ2); for N prespecified queries with equal repeat counts, a further union bound replaces K by N K . In particular, ϵS (δ) =plog(2 K/δ )/(2 S) is a sufficient single-query radius at confidence 1 − δ. For K = 12 , S = 3 ,and δ = 0 .05 , this radius is approximately 1.014 , hence it does not certify accurate rankings for scores in [0 , 1] . The result explains the role of repetitions but is not a nonvacuous numerical certifi-cate for our three-repeat fingerprints. 
+
+Standardization changes both noise and the decision geometry. For fixed train-fitted Λ,
+
+∥¯z − z∥2 ≤ ∥ ¯f − f ∥∞
+
+> K
+
+X
+
+> k=1
+
+σ−2
+
+> k
+
+!1/2
+
+. (9) Small coordinate scales can therefore amplify execution noise. Positive diagonal scaling retains the information in the raw vector, but changes Euclidean neighborhoods and cross-coordinate rankings. Our code substitutes one for nearly zero fitted standard deviations; it does not otherwise cap this amplification. Equation (9) conditions on normalization fitted without the evaluated query. It is not a joint guarantee for a training observation reused to fit its own scale, and it does not cover nonlinear per-query unit normalization. The finite-panel guarantee has a precise information boundary. The vector f (q) determines the expected reward of each existing probe and of any randomized choice among them: conditional on fixed mixture weights a ∈ ∆K , that reward is a⊤f (q). Consequently, ∥f (q) − f (q′)∥∞ is a task-dependent pseudometric for these decisions. It need not distinguish queries requiring different unseen compositions. 
+
+Proposition 2 (Finite-panel indistinguishability) . There exist a probe panel, a query distribution, and a two-expert bank such that the queries have identical population fingerprints, but every se-lector from that bank using only the fingerprint has positive regret, even with infinitely many probe executions. Proof. Let Q be uniform on {q0, q 1} and set fk(q0) = fk(q1) = 1 /2 for every k. Let the se-lectable expert bank consist of w0 and w1, with rewards Rw0 (q0) = Rw1 (q1) = 1 and Rw0 (q1) = 
+
+Rw1 (q0) = 0 . A selector observing only f (Q) sees the same input for both queries. If it chooses 
+
+w0 with probability a, its mean reward is (a + (1 − a)) /2 = 1 /2, whereas a query-aware oracle achieves one. The regret is 1/2 for every a. Standardization and perfect estimation of f do not alter this example. An extension to a larger workflow class therefore needs an extra assumption. For example, sup-pose |Rw(q) − hw(z(q)) | ≤ η for all q, w , every hw is L-Lipschitz, and a selector is within κ of maximizing hw(˜ z). Adding and subtracting the two surrogate rewards gives 
+
+sup 
+
+> w
+
+Rw(q) − R ˜w(q) ≤ 2η + 2 L∥˜z − z(q)∥2 + κ. (10) The substantive assumption is the factorization of rewards through z; neither finite-panel concen-tration nor good probe prediction establishes it. We do not assume this factorization in our main results. A.3 ROUTE STABILITY AND THE INFORMATION AVAILABLE TO AN ENCODER 
+
+Proposition 3 (A margin condition for faithful assignment) . Condition on fixed distinct centroids and a fixed encoder. For a uniquely assigned point z, let a = rC (z) and 
+
+mC (z) = min 
+
+> b̸=a
+
+∥z − cb∥22 − ∥ z − ca∥22
+
+2∥cb − ca∥2
+
+. (11) 
+
+Set mC (z) = 0 on ties. If ∥ˆz −z∥2 < m C (z), the assignments agree. With E = E∥gθ (X)−z(Q)∥22,for every t > 0,
+
+Pr {rC (gθ (X)) ̸ = rC (z(Q)) } ≤ Pr {mC (z(Q)) ≤ t} + E/t 2. (12) 13 Proof of Proposition 3. Set a = rC (z) and write ˜z = z + e. For every competing centroid b,
+
+∥˜z − cb∥22 − ∥ ˜z − ca∥22 = ∥z − cb∥22 − ∥ z − ca∥22 + 2 e⊤(ca − cb) (13) 
+
+≥ 2∥cb − ca∥2
+
+ mC (z) − ∥ e∥2
+
+. (14) If ∥e∥2 < m C (z), all comparisons are strictly positive, so the nearest centroid is unchanged. With 
+
+Z = z(Q), X = ψ(Q), and E = E∥gθ (X) − Z∥22, a disagreement can occur only if mC (Z) ≤ t or 
+
+∥gθ (X) − Z∥2 ≥ t. The union bound and Markov’s inequality give 
+
+Pr {rC (gθ (X)) ̸ = rC (Z)} ≤ Pr {mC (Z) ≤ t} + E/t 2. (15) Finally, two selected experts have the same expected reward when their indices agree and a reward difference of magnitude at most one otherwise. Taking expectations proves the reward-difference bound. The simpler nearest-versus-second-nearest distance gap ∆C (z) gives the sufficient condition 2∥˜z −
+
+z∥2 < ∆C (z) by the triangle inequality. The exact Voronoi margin can be less conservative. Neither condition states that the centroids recover optimal workflow classes or that a preserved route selects a high-quality expert. In particular, the measured-fingerprint route is not an upper bound on the predicted route’s reward. When multiple indices execute the same specification, index disagreement also overstates disagreement between executable behaviors. 
+
+Measured and population routes differ. Writing ¯Z = ¯ z(Q), both sources of error matter when comparing the measured route with the encoder: 
+
+Pr {rC ( ¯Z)̸ = rC (gθ (X)) } ≤ Pr {mC (Z) ≤ t} + Pr {∥ ¯Z − Z∥2 ≥ t} (16) 
+
++ Pr {∥ gθ (X) − Z∥2 ≥ t}. (17) Alternatively, ∥gθ (X) − ¯Z∥2 < m C ( ¯Z) certifies agreement with the measured route for that obser-vation. This is a deterministic diagnostic, not a certificate of population routing accuracy. 
+
+Proposition 4 (Prediction noise and conditional information) . Assume finite second moments, fixed affine normalization, and ¯Z = Z + ξ with E[ξ | Q] = 0 . For any fixed predictor g and g∗(X) = 
+
+E[Z | X],
+
+E∥g(X) − ¯Z∥22 = E∥g(X) − g∗(X)∥22 + E tr Cov( Z | X) + E∥ξ∥22. (18) 
+
+For the population route L = rC (Z), any selector ˆL using only X satisfies 
+
+Pr( ˆL̸ = L) ≥ E
+
+
+
+1 − max  
+
+> j
+
+Pr( L = j | X)
+
+
+
+. (19) 
+
+Proof. Expand g(X) − ¯Z = ( g(X) − g∗(X)) + ( g∗(X) − Z) − ξ. The first two summands are orthogonal in expectation by conditional-mean orthogonality. The noise is orthogonal to both because X and Z are functions of Q and E[ξ | Q] = 0 . The middle squared norm equals the expected trace of the conditional covariance, proving (18). Conditional on X = x, any deterministic prediction succeeds with probability at most max j Pr( L = j | X = x). A randomized prediction is a convex combination of these success probabilities and obeys the same bound. Average over 
+
+X.For independent repeats within each coordinate, 
+
+E[∥ξ∥22 | Q = q] = 
+
+> K
+
+X
+
+> k=1
+
+Var( Yk(q) | q)
+
+Skσ2
+
+> k
+
+≤
+
+> K
+
+X
+
+> k=1
+
+14Skσ2
+
+> k
+
+. (20) Cross-coordinate dependence does not affect this sum of squared coordinate errors. More executions can reduce measurement noise, but cannot remove the conditional-information term for a fixed ψ.That term can nevertheless be zero; a frozen representation does not by itself establish a positive information floor. Our mixed cosine/MSE training objective is not pure squared-loss minimiza-tion, so conditional-mean optimality does not claim that the trained network attains g∗. Reported coordinate-averaged MSE must be multiplied by K to match the vector-error convention above. 14 A.4 FROM MEASURED PROBE PREFERENCE TO AN EXECUTABLE SEED 
+
+Proposition 5 (Utility of an affinity-derived initialization) . Fix a cluster. Let rk be probe k’s ex-pected raw score and sk its estimate, with max k |sk −rk| ≤ ϵ. Let R ⊆ { 1, . . . , K } be the nonempty set of runnable probe indices and ˆk ∈ R the chosen probe. Define α = max k rk − max k∈R rk and 
+
+β = max k∈R sk − sˆk. If its mapped seed vˆk has expected cluster utility U (vˆk) ≥ rˆk − τ , then 
+
+U (vˆk) ≥ max  
+
+> k
+
+rk − α − β − 2ϵ − τ. (21) 
+
+Proof of Proposition 5. Suppress the cluster index. Let ˆk ∈ R be the selected runnable probe and vˆk
+
+its executable seed. On the event max k |sk −rk| ≤ ϵ, use the definitions α = max k rk −max k∈R rk
+
+and β = max k∈R sk − sˆk to obtain 
+
+max  
+
+> k
+
+rk = α + max  
+
+> k∈R
+
+rk (22) 
+
+≤ α + max  
+
+> k∈R
+
+sk + ϵ = α + sˆk + β + ϵ (23) 
+
+≤ α + rˆk + β + 2 ϵ ≤ α + U (vˆk) + β + 2 ϵ + τ. (24) Rearranging proves the claim. Only the one-sided transfer condition U (vˆk) ≥ rˆk − τ for the chosen seed is needed. This form allows the implemented seed to maximize standardized scores rather than raw utility: ˆk ∈
+
+arg max k∈R (sk −μk)/σ k. The raw-score deficit β is therefore essential. Even perfect measurement need not make it zero. For example, raw cluster means (0 .9, 0.6) , fitted global means (0 .89 , 0.3) ,and scales (0 .1, 0.1) yield standardized means (0 .1, 3) , selecting the second probe and incurring a raw deficit 0.3. This is a deliberate distinction between relative cluster preference and absolute reward; a standardized seed rule needs empirical justification at this interface. Likewise, τ cannot be omitted because probe names do not specify executable equivalence. The current mapping merges several probe families, omits tool-use and ReAct executors, and adds a chain-of-thought instruction to every guided seed. The proposition does not assume these transfor-mations preserve reward. The coverage term α measures unavailable panel capabilities; it does not measure the gap to all possible workflows. 
+
+Sampling a cluster profile. Suppose a fixed cluster has n fresh queries sampled independently from its conditional query distribution, each with S independent executions per probe, and let sk =
+
+n−1 P 
+
+> i
+
+¯fk(Qi) and rk = E[fk(Q) | Q belongs to the cluster ]. Separating query sampling from execution noise gives 
+
+Pr {max  
+
+> k
+
+|sk − rk| > a + b} ≤ 2Ke −2na 2
+
++ 2 Ke −2nSb 2
+
+. (25) The first term applies Hoeffding to fk(Qi); the second applies it conditionally on the queries to the 
+
+nS centered execution scores, assuming conditional independence across these executions. More repeated executions do not eliminate finite-query uncertainty. This argument does not directly apply when cluster membership is selected using those same noisy executions, as in clustering measured training fingerprints. A.5 WHAT VALIDATION AND OPERATOR PRIORS CAN GUARANTEE 
+
+Lemma 1 (Seed retention under accurate selection) . Let a candidate set V contain seed v, with utilities U (w) and recorded estimates bU (w). Suppose sup w∈V | bU (w) − U (w)| ≤ η and bU (wout ) ≥
+
+max w∈V bU (w) − h. Then 
+
+U (wout ) ≥ max  
+
+> w∈V
+
+U (w) − 2η − h ≥ U (v) − 2η − h. (26) 
+
+Proof. For every w ∈ V , U (wout ) ≥ bU (wout ) − η ≥ bU (w) − h − η ≥ U (w) − h − 2η. Maximize over w.15 For M candidates frozen independently of n independently sampled held-out queries, with inde-pendent execution randomness across queries, bounded query scores and a union bound yield the sufficient radius η = plog(2 M/δ )/(2 n). Candidate scores may be dependent across workflows. Repeating executions on the same n queries does not turn the population sample size into nS . Im-portantly, substituting the number of observed candidates after adapting them to validation failures does not justify this finite-class guarantee. It requires a prespecified class, fresh validation with ap-propriate error allocation, or a separate final holdout. An intact external test evaluates the selected procedure but does not retroactively certify every accepted edit. The implemented acceptance rule retains the incumbent unless a proposal’s recorded score exceeds it by a margin h. With fixed recorded scores, the final incumbent is within h of the best evaluated score: a rejected candidate was at most its then-incumbent plus h, and incumbent scores only increase. This is an empirical property. The margin 2/n used in our search is not a calibrated confidence radius. An accepted edit is guaranteed to improve population utility under uniform error η only when its measured increment exceeds 2η. Our adaptive validation protocol has no such established uniform certificate. 
+
+A hard prior introduces an exclusion cost. Let Uj (w) be expected utility on a fixed cluster 
+
+j, and let H denote a search class, distinct from the retained expert bank W. For a permitted class Hprior  
+
+> j
+
+⊆ H , define Lj = sup w∈H Uj (w) − sup w∈H prior 
+
+> j
+
+Uj (w). If every excluded workflow can be transformed into a permitted one while losing at most ζj , then Lj ≤ ζj , by applying the transformation to an arbitrarily near-optimal workflow. Low standalone probe reward is insufficient for this condition: two operators can each have reward zero alone and reward one together. The seed exemption ensures an available starting workflow; it does not establish that an operator ban is harmless. Similarly, if each guided proposal hits a target set with conditional probability at least p
+
+given any no-hit history, T proposals hit it with probability at least 1 − (1 − p)T , by multiplying conditional no-hit probabilities. A speedup requires evidence that guidance improves this probability under a matched budget; using fingerprints in a prompt alone does not supply that evidence. A.6 A CONDITIONAL BOUND FOR THE COMPLETE PIPELINE 
+
+The preceding statements can be combined without assuming that the panel is sufficient for all generated workflows. The comparator is explicitly the population best probe , not an unrestricted workflow oracle. Let L = rC (z(Q)) , πj = Pr( L = j), and for nonempty clusters define rjk =
+
+E[fk(Q) | L = j] and Uj (w) = E[Rw(Q) | L = j]. The population assignment L uses expected affinities; it is distinct from experimental assignment A, which uses measured test-query affinities. Define the cluster heterogeneity cost 
+
+HC = E max  
+
+> k
+
+fk(Q) −
+
+> J
+
+X
+
+> j=1
+
+πj max  
+
+> k
+
+rjk ≥ 0. (27) Nonnegativity follows by interchanging a maximum and a conditional expectation. This is the price, relative to per-query probe selection, of requiring one probe decision per population cluster; gener-ated experts may recover or exceed this lost value. 
+
+Theorem 1 (Conditional composition relative to the probe oracle) . Fix the protocol, normalization, centroids, encoder, and expert library. For each cluster with πj > 0, assume the profile-accuracy and seed-transfer conditions of Proposition 5 hold with parameters (αj , β j , ϵ j , τ j ) for the popula-tion cluster L = j. Assume the final expert wj satisfies Lemma 1 with error ηj and selection deficit 
+
+hj . Set 
+
+Bj = αj + βj + 2 ϵj + τj + 2 ηj + hj . (28) 
+
+On these simultaneous accuracy events, for every t > 0,
+
+E
+
+
+
+max  
+
+> k
+
+fk(Q) − RwrC (gθ (X)) (Q)
+
+
+
+(29) 
+
+≤ HC +
+
+> J
+
+X
+
+> j=1
+
+πj Bj + Pr {mC (z(Q)) ≤ t} + E∥gθ (X) − z(Q)∥22
+
+t2 . (30) 
+
+All expectations and probabilities on this event are over a fresh query under the fixed fitted objects. Empty clusters contribute zero. 
+
+16 Table 2: Measured probe families and their mapping into the guided interpreter. A mapping is an im-plementation approximation, not an equivalence assertion. CoT is always used for the interpreter’s base candidates.                 
+
+> Probe Measured computational intervention Guided interpreter mapping Direct One formatted response Direct flag is inert; base candidate still uses CoT. CoT Step-by-step reasoning prompt (Wei et al., 2022) CoT base candidate. CoT-SC Five inner samples plus answer aggregation (Wang et al., 2023) Sampling and selection; seed uses three samples. ToT Bounded branching, evaluation and search (Yao et al., 2023a) Sampling and selection; no tree search. Self-refine Critique and revision (Madaan et al., 2023) One checking/rewrite call. Reflexion Outcome feedback, reflection and retry (Shinn et al., 2023) Same revision flag; no separate feedback-memory loop. RAG Same-benchmark TF-IDF exemplar retrieval; query excluded CoT flag; no retrieval in generated expert. ReAct Bounded action–observation interaction (Yao et al., 2023b) Unavailable; cannot seed its behavior. Tool use Python execution or public-test feedback, domain dependent Unavailable; cannot seed its behavior. Debate Independent debaters and a judge (Du et al., 2024) Two fixed persona candidates plus selection. Role team Three complementary roles and a coordinator Same two-persona branch as debate. Decompose Subproblem decomposition and synthesis (Zhou et al., 2023) One plan prepended to subsequent candidate calls.
+
+Proof. Proposition 5 and Lemma 1 imply Uj (wj ) ≥ max k rjk − Bj . Hence 
+
+ERwL (Q) = X
+
+> j
+
+πj Uj (wj ) ≥ X
+
+> j
+
+πj max  
+
+> k
+
+rjk − X
+
+> j
+
+πj Bj (31) 
+
+= E max  
+
+> k
+
+fk(Q) − HC − X
+
+> j
+
+πj Bj . (32) Replacing L by the predicted route reduces expected reward by at most their disagreement proba-bility. Apply Equation (15) and rearrange. This theorem distinguishes within-cluster heterogeneity, missing executable capabilities, standardized-ranking distortion, probe-to-seed transfer, selection uncertainty, and encoder decision error. It does not establish that any term is small. In particular, the observed clusters were fitted to noisy fingerprints, the measured profiles do not directly sample the latent clusters in the theorem, and adaptive search does not provide the stated selection event. Endpoint or scoring changes also change f and Rw. The result therefore specifies effective boundaries and targets for validation, rather than certifying the existing pipeline or comparing it to every possible generated workflow. 
+
+# B IMPLEMENTATION AND DESIGN RATIONALE 
+
+B.1 PROBE PANEL AND ITS INTERPRETATION 
+
+The panel is a set of concrete interventions on one executor, not a claim that the names of reasoning methods form an orthogonal or complete basis. Table 2 distinguishes the measured implementations from their generator-side approximations. Related publications motivate the computational families; the local prompts, budgets, and feedback contracts define the actual experiments. In particular, the measured tool-use and ReAct probes have execution access that the guided interpreter lacks, and the generator’s persona branch does not reproduce the measured three-agent debate. The canonical mixed-task panel contains K = 12 probes, and each fingerprint coordinate averages 
+
+S = 3 outer repetitions. For the CoT-SC probe, the five inner samples occur within each repetition 17 and must not be counted as five independent fingerprint observations. The score retains its task-specific meaning; fractional coding-test utility is not a calibrated probability of solving an unseen hidden test set. All normalizations preserve the raw coordinates in the stored artifact. The relative-normalization variant subtracts a query’s mean outcome and divides by the resulting vector norm; this changes the estimand and removes absolute difficulty information. It does not inherit the affine-noise decomposition in Equation (18). Comparing raw, standardized, and relative coordinates is thus a test of a design tradeoff, not just numerical preprocessing. The default affine standardization is specified below. B.2 ENCODER AND CLUSTER CONSTRUCTION 
+
+Let T = {qi}Ni=1 denote the construction pool and Tenc ⊆ T the encoder’s outer-training subset, with Nenc = |T enc |. Each query has cached probe outcomes. Write ¯f (q) = ( ¯f1(q), . . . , ¯fK (q)) ⊤ for its measured mean scores from Equation (1). We fit the coordinate means μk and standard deviations 
+
+σk on Tenc and define the measured embedding by 
+
+¯zk(q) = ¯fk(q) − μk
+
+σk
+
+, ¯z(q) = Λ −1  ¯f (q) − μ, Λ = diag( σ1, . . . , σ K ). (33) Here μ = ( μ1, . . . , μ K )⊤, and Λ has positive diagonal scales. A fitted standard deviation below 
+
+10 −8 is replaced by one, avoiding division by zero; a nonconstant but low-variance coordinate can still receive a large weight. Positive standardized values indicate scores above that probe’s training mean, not probabilities. The fitted normalization is used unchanged for all remaining construction fingerprints and any later measured test fingerprints. The encoder predicts ˆz(q) = gθ (ψ(q)) , where ψ is the frozen text feature extractor and gθ is the trainable head with parameters θ. Its target is ¯z(q). The training objective is 
+
+L(θ) = 1
+
+Nenc 
+
+X
+
+> q∈T enc
+
+
+
+λ 1 − cos(ˆ z(q), ¯z(q))  + 1 − λK ∥ˆz(q) − ¯z(q)∥22
+
+
+
+, λ = 0 .7. (34) Here cos( u, v ) denotes cosine similarity. Its loss term encourages agreement in the relative pattern of probe responses; the second term penalizes coordinate error in the space used for cluster assignment. Dividing by K makes the squared error a per-coordinate mean. The objective depends on θ through 
+
+ˆz(q), and λ is a fixed implementation choice. The output already has standardized coordinates and is not standardized again at deployment. The canonical mixed-task encoder uses L2-normalized frozen BGE-large-en-v1.5 features with a maximum input length of 512 tokens (Beijing Academy of Artificial Intelligence, 2023). Long ques-tions can therefore lose relevant content before the trainable head; Proposition 3 does not eliminate that information loss. The head is 1024 → 512 → 512 → K, with ReLU and dropout .1 after each hidden layer. Adam uses learning rate .001 , weight decay .0001 , and batch size 32. The construction pool has N = 600 queries. A stratified outer split reserves 15% (90 queries) for encoder validation, leaving Nenc = 510 for encoder fitting. Within those 510 rows, another 15% selects the epoch count by combined loss, with maximum 200 epochs and patience 25. The final head is reinitialized and trained on the full outer-training fold for that count. Initialization and outer splitting use seed 13; the inner split uses seed 14. Normalization is fitted on the outer-training rows; it is not refitted to exclude the inner-selection rows. The outer evaluation remains excluded from normalization and epoch selection. The choice of frozen features is motivated by limited fingerprint supervision and the ability to reuse a cached text representation. The width and loss weights are fixed capacity and optimization choices; no experiment establishes them as optimal. Predicting continuous coordinates instead of cluster labels retains information for alternative partitions and operator profiles, at the cost of learning variations that may be irrelevant to the current expert bank. A direct cluster classifier is therefore an informative ablation. Cluster construction uses Euclidean k-means with J = 6 , initialization seed 13, and ten restarts. The centroids use the encoder checkpoint’s normalization. Clustering uses the construction pool, including rows reserved for encoder validation; those rows remain held out for the encoder fit but not for the bank construction. The separate test pool evaluates the composed system. Six clusters 18 allow repeated use of one offline expert while retaining tens of construction examples in the smaller clusters. Neither cluster count nor squared-distance clustering is justified by a utility-optimality guarantee. Historical eight-cluster diagnostics are not the deployed six-cluster configuration. Let C = ( c1, . . . , c J ) be the fitted centroids, with cj ∈ RK . For any vector v in the standardized embedding space, the assignment rule and construction members are 
+
+rC (v) = arg min 
+
+> 1≤j≤J
+
+∥v − cj ∥22, Tj = {q ∈ T : rC (¯ z(q)) = j}. (35) The norm is Euclidean, and ties use a fixed rule. A clustering centroid cj summarizes its full cluster; the generation embedding ρj averages the search-validation subset defined below and need not equal 
+
+cj . The canonical pipeline uses one fitted clustering for construction and assignment. The recorded embedding-guided experiment instead translates between two stored clusterings using a training-fitted label mapping. Appendix C.4 specifies that mapping and its agreement rates; it is part of the evaluated implementation rather than an exact identity between the two geometries. B.3 CONSTRUCTION BACKENDS AND THEIR EXPERIMENTAL ROLES 
+
+Section 2.2 separates the information supplied to construction from the optimizer that consumes it. The main mixed-task baseline comparison uses subset-conditioned construction : six experts are searched with AFlow on the six affinity-defined training subsets. Its baseline operator vocabulary contains Custom and ScEnsemble. Each search permits five optimization rounds after its initial candidate. The global comparator D uses the same search rule and round limit on the undivided training pool. The validation cap is 600 in both configurations, so the cluster sizes sum to the same nominal 600 candidate–query validations per round as D. Six searches nevertheless require more proposal calls, and different workflows incur different execution costs; this is not equality of aggregate construction tokens or dollars. Semantic and random partitions change the examples assigned to each search while preserving this construction interface. The SWE-bench experiment instantiates the same cluster-to-bank idea by selecting among policy prompts within a fixed localize–repair executor. Its global D is the training-selected policy, whereas the separately reported AFlow adaptation searches policy instructions. Finally, the embedding-guided search experiment below supplies the search procedure with affinity-derived seeds, an op-erator prior, and failure-conditioned feedback. It directly exercises the use of cluster embeddings described in Section 2.2. Results from the subset-conditioned and policy-selection settings establish the utility of organizing the bank through affinities; the embedding-guided search experiment evalu-ates the additional construction mechanism. The backend and policy variants are component studies of the common representation, encoder, and generation framework. B.4 EXPERT LANGUAGE FOR EMBEDDING -GUIDED SEARCH 
+
+An expert is a dictionary containing an unordered operator set, an integer sample count between one and five, and an instruction string. Optional decomposition adds a short plan to the question. The interpreter always produces the specified number of CoT candidates; when either persona flag is present, two more candidates are added rather than substituted. If multiple candidates survive and sampling-ensemble or persona selection is enabled, a separate call chooses an answer. An optional revision then checks and rewrites it. All scored answer stages receive the same per-domain answer-format instruction. Empty final outputs and scoring failures receive zero; truncated outputs are retained and scored. If the configured stages complete, their nominal call count is 
+
+c(w) = d + n + 2 p + 1{n + 2 p > 1}1{e = 1 or p = 1 } + r, (36) where d, p, e, r indicate decomposition, persona generation, ensemble selection, and revision, and n
+
+is the sample count. With fewer surviving candidates, the actual selection stage can differ; empirical costs use recorded calls. When n > 1 without a selection flag, the interpreter returns the first surviving candidate. Listing both persona aliases does not add another branch. These facts are disclosed to the optimizer and should be used when counting distinct executed workflows. For each cluster, Vj ⊆ T j is the search-validation set, nj = |Vj |, and Hj = Tj \ Vj contains the remaining construction examples. The recorded optimizer receives statistics involving Hj , so this 19 Algorithm 2 Recorded embedding-guided search for one cluster 
+
+Require: Construction members Tj , cached per-query probe outcomes, operator map, LLM opti-mizer, proposal budget and resource limits  
+
+> 1:
+
+Split Tj into search-validation set Vj and remaining examples Hj 
+
+> 2:
+
+Set nj ← | Vj |; compute ρj from Vj and rank its probe coordinates  
+
+> 3:
+
+Choose the highest-ranked runnable probe and map it to seed vj 
+
+> 4:
+
+Restrict operators using the bottom-three rule, exempting the mapped seed operator  
+
+> 5:
+
+w ← vj ; evaluate bUVj (w) and retain per-query outcomes  
+
+> 6:
+
+for each remaining proposal round (two in the recorded run) do  
+
+> 7:
+
+Stop if a configured cost or time guard has been reached  
+
+> 8:
+
+Identify failures of w on Vj and their probe outcomes  
+
+> 9:
+
+Form feedback with failure texts, mean raw probe scores for failed/solved/all cluster mem-bers, w, and prior attempts  
+
+> 10:
+
+Ask the LLM optimizer for a specification edit; parse and sanitize it  
+
+> 11:
+
+if invalid or previously evaluated specification then  
+
+> 12:
+
+Record the event and continue  
+
+> 13:
+
+end if  
+
+> 14:
+
+Evaluate candidate w′ on the same Vj 
+
+> 15:
+
+if bUVj (w′) > bUVj (w) + 2 /n j then  
+
+> 16:
+
+w ← w′; retain its outcomes for the next round  
+
+> 17:
+
+end if  
+
+> 18:
+
+end for  
+
+> 19:
+
+return w and the full construction trace remainder is not an independent holdout. The cluster embedding is ρj = n−1
+
+> j
+
+P 
+
+> q∈Vj
+
+¯z(q). Search also receives the cached probe outcomes for individual queries in Tj : the average embedding alone cannot provide probe outcomes on the current failures. The LLM optimizer receives selected texts of queries on which the current workflow scores below one, mean raw probe scores on the failed and solved subsets, whole-cluster raw probe averages, the current workflow, and previous attempts. These raw feedback summaries are distinct from the standardized coordinates used to rank probes in ρj . For a candidate w, define its recorded search score as 
+
+bUVj (w) = 1
+
+nj
+
+X
+
+> q∈Vj
+
+score( w, q ), (37) where each summand is the task score recorded from one execution of that candidate. This empirical mean is distinct from the expected cluster utility Uj (w) in the analysis. A proposed workflow w′
+
+replaces the current workflow w only when 
+
+bUVj (w′) > bUVj (w) + 2
+
+nj
+
+. (38) The local validation cap is 60 queries, with at least 20 reserved locally when possible; small clusters use the remaining available validation members. Construction uses one execution per candidate, while separate final comparisons use repeated executions. Search also stops at its configured cost or wall-time guard. These guards bound resource use rather than optimize the same objective as score acceptance. The two-grid-step margin was introduced to avoid accepting small fluctuations; with heterogeneous fractional scores and adaptive proposals, it is not a confidence bound. The bottom-three restriction ranks within the cluster, excludes an operator only when all mapped probes are low-ranked, and exempts the single operator mapped from the selected seed probe. This handles many-to-one mappings without letting one low-ranked alias veto a well-supported operator. The implementation also has a nonempty-set fallback. The prior reduces available search choices; standalone outcomes do not identify all beneficial interactions, so its exclusion loss may be positive. The three-round budget was a limited construction allocation, not evidence of search convergence. The optimizer is asked to edit one axis : sample count, addition to the operator set, removal from it, or instruction. For recognized edit types, the sanitizer resets fields outside that axis. An ad-dition/removal request may still change several flags on its axis. Unknown edit types are logged 20 and do not receive the same axis constraint, although vocabulary and prior filtering still apply. No unrestricted program synthesis or Monte Carlo tree search occurs in this interpreter. 
+
+Selection independence. The cluster embedding and seed use Vj . However, the recorded feed-back’s whole-cluster column averages over Tj = Vj ∪ Hj , exposing probe outcomes from the re-maining examples Hj . Thus Hj is not an independent certificate of the search procedure. The later 300-query test pool is a separate evaluation pool, but controls and analyses added after observing its results remain exploratory. To apply the independent-selection result in Appendix A, candidates must be frozen before an untouched selection sample is evaluated, or a justified uniform guarantee must cover the actual adaptive procedure. Reusing Vj and simply requiring a positive empirical margin does not meet this condition. B.5 WHY THE DESIGN CHOICES REMAIN ABLATIONS 
+
+The central objects are the outcome coordinates, their text approximation, and their use in construc-tion. Changing a probe subset, normalization, feature backbone, number of clusters, assignment rule, or search optimizer changes an implementation of those objects. The corresponding inter-vention should hold the remaining executor, score contract, split, and resource allocation fixed. Behavioral versus semantic or random construction needs the same operator language and proposal budget; seed-only versus searched experts needs the same assignments. Measured A versus text B changes information access, so it diagnoses amortization rather than supplying a deployable com-petitor. These controls follow directly from the quantity each proposition characterizes. The design also separates construction cost from serving cost. Probing and expert generation are offline investments; a text-only assignment incurs local encoder computation and the chosen expert’s calls. An amortization advantage requires both a stated quality target and lower per-query serving cost than the comparator. Since guided B uses more calls than single-call CoT without an established quality improvement, this experiment does not justify a break-even claim against CoT. 
+
+# C EXPERIMENTAL PROTOCOL AND ADDITIONAL EVIDENCE 
+
+C.1 DATA , SCORES , AND INFORMATION ACCESS 
+
+The mixed-task evaluation uses the repository’s persisted mixed_hard_xl pool with seed 13. Training contains 200 AIME, 200 GPQA, 100 CodeContests, and 100 LiveCodeBench queries; test-ing contains 100, 100, 50, and 50, respectively. The pool search procedure samples from the avail-able source validation and test material, assigns stable source identifiers, and persists disjoint project training/test memberships. These are project splits, not a claim to reproduce the benchmarks’ offi-cial evaluation protocols. Affinity measurements use labels or executable tests offline. The encoder sees the query text; a deployed B route does not measure a test-query fingerprint. Outcome-assisted 
+
+A routing does measure the test-query fingerprint, and its results include information unavailable to deployment. AIME is scored by the existing mathematical answer checker. GPQA extracts the option following the last Answer: marker, falling back to a letter match if that marker is absent. Every scored September arm receives the appropriate answer-format instruction. For coding, the scorer extracts Python code, executes at most 12 available public stdin/stdout tests with a ten-second limit per test, normalizes output whitespace, and returns the fraction passed. Unsupported functional or interactive tests are skipped. Missing runnable tests score zero. Public-test success need not imply correctness on hidden tests, and the aggregate metric weights each query equally rather than each benchmark equally. The implementation’s scoring and loading files are included in the provenance manifest. C.2 HISTORICAL PROBE MEASUREMENTS AND CROSS -REPEAT ANALYSIS 
+
+The twelve mixed-task probe coordinates, in stored order, are direct, CoT, CoT self-consistency, tree-of-thought, self-refinement, reflexion, retrieval, ReAct, tool use, debate, role team, and decom-position. These labels name concrete repository implementations; they do not imply exact repro-duction of every original paper’s system. Both historical model panels have 21,600 unique training 21 cells and 10,800 unique test cells: 600/300 queries, twelve probes, and three repeats. The offline au-dit verified completeness of every query–probe–repeat tensor and used the recorded scores without rerunning models. The retrieval probe uses same-benchmark TF–IDF demonstrations with available reference answers and excludes the current query. The current generator explicitly supplies the training corpus when invoked for test fingerprints. The saved sample ledgers retain answer previews rather than complete prompts or retrieved identifiers, so they do not independently certify the retrieval membership of every historical call. The September routed-probe arm selects no retrieval probe. For future releases, complete retrieval provenance should accompany the scorer and model revision, since conditioning on another evaluation query’s label would change the information contract. For query i, probe k, and held-out repeat s, let 
+
+a(−s) 
+
+> ik
+
+= 12
+
+X
+
+> t̸=s
+
+Yikt , bk(−s) 
+
+> i
+
+∈ arg max  
+
+> k
+
+a(−s) 
+
+> ik
+
+.
+
+The cross-repeat score is 3−1 P 
+
+> s
+
+Yi, bk(−s) 
+
+> i,s
+
+. Training-priority ties use decreasing mean score across the 600 training queries, with stored probe order as a final deterministic tie rule. The uniform-tie analysis computes the exact mean held-out score across all tied maximizers, rather than drawing an additional random tie. The fixed probe is tool use for GPT-4o-mini and CoT self-consistency for Haiku. Its test score also averages the three repeats. The observed oracle instead takes the maximum of the three-repeat averages and hence reuses execution noise for selection and evaluation. We freshly computed the cross-repeat confidence intervals from the saved ledgers using 10,000 benchmark-stratified bootstrap resamples, seed 13. Each resample draws queries with replacement within their benchmark and preserves the observed benchmark counts. The three overlapping held-out-repeat folds are averaged per query before resampling; they are not treated as independent ob-servations. These intervals describe variability across this query mixture conditional on the saved training comparator and recorded executions. They do not incorporate retraining, changed model revisions, or uncertainty from choosing the probe panel. In particular, the Haiku training-priority improvement is 0.0343 with interval [0 .0110 , 0.0592] , while the uniform-tie interval includes zero. This difference makes tie handling part of the scientific result. C.3 ENCODER AND REPRESENTATION ABLATIONS 
+
+The expanded-panel study fits an MLP on frozen BGE features, using a 510/90 outer train-ing/validation partition stratified by benchmark. Its checkpoint records nested inner-split epoch selection followed by refitting on outer-training rows, selecting 24 epochs. Normalization statistics are fit on the permitted training partition. The reported MSE averages over coordinates; converting it to the expected squared Euclidean error used in the analysis requires multiplication by the number of coordinates. The study’s 90-query validation metrics should not be confused with performance on the separate 300-query routing test set. Text truncation in the frozen backbone is a further infor-mation boundary: relevant information outside its retained input cannot be recovered by the MLP. The paired eight/twelve-probe comparison preserves query membership and the eight shared mea-surements. Adding tree-of-thought, reflexion, ReAct, and role team increases the number of dis-tinct measured fingerprints from 281 to 329 and effective rank from 2.6698 to 3.0819. On the 90 validation queries, the observed menu oracle increases from 0.4324 to 0.4503 . This is increased descriptive resolution and observed menu coverage; because maxima are computed on the same measurements, it is not independent evidence of latent workflow sufficiency. Native cosine/MSE scores across different target widths are also not directly paired estimands. The repository contains two neighbor-recall conventions yielding different values; we omit a headline neighbor-recall claim pending reconciliation of tie handling and distance conventions. Table 3 treats panel width and partition choice as ablations. Historical inference uses query-paired confidence intervals and sign-flip tests with Holm adjustment within the stored comparison fam-ilies. The twelve-probe B − D differences are 0.0200 ([−0.0150 , 0.0558] ) for GPT-4o-mini and 
+
+−0.0167 ([−0.0661 , 0.0333] ) for Haiku; both adjusted p-values equal one. For a separate execution-attribution diagnostic, we hold the paper-native B routes fixed and replace each searched expert’s stored output score by the score of its training-selected raw probe. Searched-minus-probe differences 22 Table 3: Historical mixed-task routing ablations. All values within a model column share that model’s July evaluation artifact. These are not same-harness comparisons to September guided generation.                       
+
+> Variant GPT-4o-mini Haiku 4.5 Global searched workflow ( D).2722 .5381 Twelve-probe measured A.2742 .6097 Twelve-probe predicted B.2922 .5214 Eight-probe measured A.2844 .6053 Eight-probe predicted B.3072 .5083 Semantic BGE partition .2939 .5303 Semantic Qwen3 partition .3050 .5861 Random partition .2767 .5228
+
+Table 4: Six guided searches. Each has three rounds including initialization, and one execution per search-validation query per evaluated candidate. C3 is the only cluster with an accepted edit. C0/C4 and C2/C5 execute identical final specifications.                                    
+
+> Cluster Train Search/local holdout Top probe Final behavior Calls C0 301 60/241 Self-refine CoT + refinement 2C1 83 60/23 Direct Single CoT 1C2 42 22/20 CoT-SC Three samples + selection 4C3 48 28/20 ReAct Plan + four samples + selection 6C4 82 60/22 Self-refine CoT + refinement 2C5 44 24/20 Tool use Three samples + selection 4
+
+are −0.0077 ([−0.0500 , 0.0355] ) and −0.1442 ([−0.1931 , −0.0950] ), respectively, using freshly computed stratified intervals. Probe scores average three executions, whereas the searched work-flow scores follow their stored evaluation protocol. This identifies a possible loss at the execution interface; it is not a controlled test of a particular search algorithm. C.4 GUIDED CONSTRUCTION , SPLITS , AND EXECUTABLE SEMANTICS 
+
+In C3, the three-sample seed scores 0.2679 on the 28 search-validation queries. Increasing to four samples yields 0.4107 ; adding decomposition yields 0.4821 . These are adaptive search scores, not test estimates. The final increment lies at the 2/28 acceptance boundary in exact fractions and passes the recorded floating-point comparison. The search uses an unordered set of JSON flags in a fixed plan–candidate–selection–refinement interpreter. Single candidates use temperature zero; multiple candidates use temperature 0.7. An optional persona branch adds two candidates. Debate and role-team flags share this branch; direct and CoT flags both retain the always-on CoT instruction. Reflexion maps to self-refinement and tree-of-thought to a sampling ensemble. ReAct and tool use have no executor branch. Thus similarity of probe and operator names does not certify equality of their executed behavior. Seed profiles use search-validation members rather than local holdout members. However, the op-timizer’s marginal-value table computes its ALL column over all cluster members, including the local holdout. Furthermore, candidate proposals and acceptance reuse the same search-validation outcomes. Consequently neither the local holdout nor adaptively reused validation establishes the independent-selection assumptions of the conditional analysis. Only C1/C2 have stored local-holdout executions; we do not use them as independent confirmation. The outer 300 test queries do not participate in these searches. The deployed expert bank was constructed in the mixedhardxl12 clustering, while recorded paper routes use a separate paper_mhxl12 clustering. A Hungarian bijection fitted solely to their 600 training assignments maps paper labels 0, 1, 2, 3, 4, 5 to expert labels 4, 2, 1, 3, 5, 0, with 517/600 agreements. Native versus translated measured test assignments agree on only 80.33% of queries. This bridge is part of the evaluated implementation and is not equivalent to training and deploying within one fixed cluster geometry. 23 Table 5: Stored September results on 300 queries and three repeats. SD is across the three pass means, not a standard error over queries. Costs are token-based estimates using the rates configured for those runs. Outcome-assisted A serving calls omit the cost of obtaining its test fingerprints.                              
+
+> Arm Mean Pass SD Calls/query Total USD Direct .2763 .0031 1.000 .2701 Single bare .3121 .0083 1.000 .3159 Single CoT .3295 .0180 1.000 .4702 Probe-menu-B.2955 .0133 2.924 1.0924 Guided-B.3358 .0097 2.113 .9919 Guided-A(diagnostic) .3413 .0169 2.403 1.1613
+
+C.5 SEPTEMBER CONTROLLED COMPARISONS AND COST ACCOUNTING 
+
+The guided, direct, and routed-probe arms share the same 300 queries and official OpenAI endpoint. The single-call controls were executed subsequently on the same queries using the guided execu-tor’s unmodified single-call implementation. Their comparison is paired by query, not by identical random seeds. Guided and single-call controls use a 3,000-token cap; the pipeline Direct and probe-menu arms use 4,000 tokens and provider-default temperature. All use the scorer described above. Errors or empty final outputs score zero. None of these six arms has a recorded failed call or final-query error, but 40 guided calls were truncated (11 in A, 29 in B), as were nine calls in each single-call control. Truncated outputs remain scored as returned. The displayed guided contrasts preserve the stored 10,000-resample percentile query-bootstrap pro-cedure: average each query across its three executions, then resample queries without benchmark stratification. These exploratory intervals are unadjusted for multiplicity. They do not resam-ple construction, encoder fitting, or provider drift. Guided-B minus probe-menu-B is 0.0404 
+
+([0 .0042 , 0.0773] ), but the arms differ in executor, prompting, decoding, and token cap; the con-trast cannot isolate embedding guidance. Six construction runs total 2,544 calls and an estimated USD 1.2038 including the limited local-holdout arms. Offline probe generation and encoder fitting are additional costs, excluded from serving calls/query. Three separate repeats were verified from per-pass records even though the merged four-arm artifact retains its original two-repeat command arguments. C.6 EXPERT -BANK AND SOFTWARE -ENGINEERING BOUNDARY CHECKS 
+
+A separate single-execution 6 × 300 matrix evaluates every generated expert on every mixed-task test query. It yields guided-A/B readouts of 0.3397 /0.3386 , versus 0.3323 for the expectation of uniform expert selection. These values are a distinct execution sample from Table 5. Cluster-specific superiority is not established: no cluster’s own-versus-best-other interval excludes zero. The test-selected best fixed expert scores 0.3567 , but selection on the same test set makes it a diagnostic rather than a valid training-selected baseline. Counterfactual seed-family readouts cover only five of twelve probes and three seed families; they do not replace matched searches with guided versus unguided conditioning. The historical SWE boundary study uses 500 SWE-bench Verified instances (Jimenez et al., 2024), a persisted repository-stratified 300/200 train/test split, and a single-turn Agentless-lite localize– repair executor. Twelve policy texts form the measured panel; ReAct, reflexion, and tool-use labels are single-turn analogues here. The metric is actual harness resolution, not the older file-localization proxy elsewhere in the repository. A per-policy logistic predictor replaces the mixed-task MLP, and small clusters merge from six to four. Predicted routing chooses direct on all 200 tests and scores 0.200 , versus the training-selected global retrieval policy’s 0.175 ; the paired interval for the difference is [−0.020 , 0.070] . All failures are retained as unresolved. The 6,000-cell grid contains 1,565 errored cells, including 210 infrastructure/no-report residues. This is a transfer stress test with changed executor and predictor, not replication of the guided generator. 24 C.7 BASELINE DEFINITIONS AND ADAPTATIONS 
+
+We compare published mechanisms after adapting them to the project’s query pools, executors, answer formats, and scorers. The adaptation names in Table 1 specify the evaluated systems. They do not stand for the original papers’ full configurations or reported benchmark scores. Query-level error handling is fail-closed: unsuccessful execution contributes zero. 
+
+Global and cluster-conditioned AFlow. The mixed-task bank uses AFlow’s workflow search (Zhang et al., 2025b), with Custom and ScEnsemble operators, five optimization rounds after initialization, parent sample size four, one validation execution per query, and the executor itself as optimizer. The published default has a longer search and a stronger optimizer. All six cluster par-titions together contain the same 600 training queries evaluated by the undivided D search, match-ing nominal validation-query allocation per round. Six searches nevertheless require six proposal streams rather than one and can incur different token costs; aggregate offline budgets are not equal. Semantic BGE, Qwen3, and random partitions use this same search protocol. The SWE bank se-lects among twelve policy texts on each cluster; its D is the global training-selected retrieval policy. The distinct SWE AFlow baseline searches a policy on the shared, repository-stratified 150-instance training subset, retaining AFlow’s parent-selection rule and one edit per round. Its five-round winner resolves 38/200 test instances. 
+
+ADAS. Our ADAS adaptation (Hu et al., 2025) retains archive-conditioned proposal, reflec-tion/debugging, and bootstrap fitness selection. Its meta-model is GPT-4o-mini or Haiku, matching the executor rather than the original GPT-4-class meta-agent. On mixed tasks it searches agent code; on SWE it searches policy text for the fixed pipeline, from direct/CoT/ReAct-policy seeds over five generations. SWE’s winner is the CoT seed (40/200 test resolutions). For Haiku, CPU contention af-fected the original coding fitness evaluation. We therefore use the clean re-score of all eight archived candidates on the full training pool, selecting Self-Refine by clean training fitness before evaluating on the 300 test queries. Its 0.2489 replaces the obsolete contended score of 0.4075 .
+
+ScoreFlow. The adaptation implements SF-0 candidate generation and an in-context preference-optimization (ICPO) step (Wang et al., 2025); it does not perform Score-DPO weight updates. GPT-4o-mini replaces the fine-tuned workflow generator. Mixed-task inference generates four candi-dates and selects without test-score feedback; its test utility is 0.2756 . A separate training-selected majority-workflow control gives 0.2758 . On SWE, twelve policy candidates are scored on the com-mon 150 training instances. Preference pairs use the published cubic score-gap weighting; one ICPO refinement is compared against the best SF-0 candidate. SF-0 scores 0.1733 on training ver-sus ICPO’s 0.1533 , and its selected policy resolves 42/200 test instances. The Haiku ScoreFlow configuration was not run. 
+
+FlowReasoner. Our search-only FlowReasoner adaptation (Gao et al., 2025) omits super-vised/reinforcement learning of the meta-reasoner and uses the executor model for proposals. Mixed-task runs search separately for each evaluated query, using its scorer feedback to choose a workflow before three fresh executions of that same query. They are therefore outcome-assisted diagnostics, marked †, rather than text-only deployment results. The operator space includes Pro-grammer. GPT-4o-mini completes 297/300 queries; its saved completed-only mean is 0.3601 . Ta-ble 1 uses 0.3565 after assigning zero to the three missing queries, retaining the shared 300-query denominator. Haiku completes all 300 and scores 0.7465 . Logged costs average USD 0.00660 and 0.21060 per completed query, with mean wall time 284.2 and 268.7 seconds. Missing-query costs are not fully reconstructed. On SWE, the adaptation instead searches one pool-level policy on the disjoint 150-instance training subset; the stock-pipeline seed wins and resolves 41/200 tests. That SWE result does not use test-instance scorer feedback during selection. 
+
+Policy routing on SWE. MasRouter (Yue et al., 2025) instantiates the cost-aware routing objective over the twelve fixed Agentless policies, using its sampled-selection protocol, five training epochs, and cost rate 200. It resolves 34/200 instances at USD 0.00227 per instance. FrugalGPT (Chen et al., 2024) trains issue-text scorers and selects a cascade on training data. At budget USD 0.004041 it selects direct → debate → retrieval; test utility is 0.2050 at USD 0.00240. Only 21/200 queries escalate beyond direct. Both methods have access to the same stored policy outcomes for training; 25 Table 6: Test means of the twelve probe coordinates. Mixed-task entries average three executions. SWE entries are single-turn policy analogues under the Agentless pipeline, not implementations of their multi-turn namesakes. ‡ marks mixed-task probes using execution feedback, an information advantage over the original Custom/ScEnsemble search space.                                        
+
+> Probe Mixed / GPT-4o-mini Mixed / Haiku SWE Direct .2872 .5694 .200 CoT .2852 .5953 .205 Self-consistency .3260 .6894 .190 Tree-of-thought .2911 .5919 .200 Self-refinement .2993 .6814 .145 Reflexion ‡.3340 .6656 .125 Retrieval .2919 .6184 .175 ReAct ‡.2552 .5137 .165 Tool use ‡.3481 .6100 .150 Debate .3069 .6814 .180 Role team .3091 .6483 .210 Decomposition .3254 .6343 .055
+
+Table 7: Repeated-execution evidence for the affinity panel on 300 test queries. The observed oracle selects and evaluates using the same three-repeat mean. Cross-repeat selection evaluates a held-out execution; both selectors require test-query outcomes. Uniform ties average over tied maximizing probes.             
+
+> Model Fixed Observed oracle Cross-repeat Uniform ties GPT-4o-mini .3481 .5580 .4059 .3862 Haiku 4.5 .6894 .8154 .7237 .6909
+
+per-policy test costs are similar, restricting the available cost-quality trade-off. The higher-budget FrugalGPT configuration selects the identical cascade. C.8 THE FULL PROBE PANEL AND REPEATED -EXECUTION EVIDENCE 
+
+Probe rankings change with the executor and pipeline: the training-selected GPT-4o-mini mixed-task probe is tool use, Haiku selects self-consistency, and SWE selects retrieval. The mixed/SWE training-grid rank correlation is Spearman ρ = −0.449 (p = 0 .143 , twelve coordinates); excluding decomposition yields ρ ≈ − 0.530 . Decomposition frequently conflicts with SWE localization for-matting, so this comparison combines reasoning, format, and executor effects. We find no evidence supporting direct transfer of one regime’s probe ranking to another. C.9 OPERATOR AND PANEL ABLATIONS 
+
+Adding executable code is motivated by the gap between the strongest measured coding probes and the original expert operator set. Twelve-probe B reaches 0.3153 , but random partitions also improve and eight-probe B decreases. Because each bank is searched anew, the experiment changes both operator availability and realized search trajectories; it cannot isolate an operator effect from search variation. Table 3 reports the independent eight/twelve-panel comparisons. The higher-dimensional panel improves descriptive resolution, while downstream utility depends jointly on measurement, assignment, and the learned expert bank. C.10 LABEL -FREE OUTCOMES AND ADDITIONAL DIAGNOSTIC CONTROLS 
+
+A post-hoc alternative estimates affinities from within-probe agreement and cross-probe answer con-sensus, with calibration fitted only on training queries. The saved mixed-task ledger covers only the experts actually executed by A or B, so alternative routes can be scored only where they select one of those recorded experts. On GPT-4o-mini’s eight-probe agreement variant, coverage is 201/300 and the covered-subset gain over the same subset of D is 0.0402 (95% CI [−0.005 , 0.086] , ex-26 Table 8: GPT-4o-mini operator ablation: 31 fresh searches add Programmer while preserving clus-terings, routing, and search caps. Six BGE executions remain failed in the saved artifact and are counted as zero; this row is .2861 on the full denominator rather than a completed-only mean.                                 
+
+> Variant Custom + ScEnsemble + Programmer Difference Twelve-probe B.2922 .3153 +.0231 Twelve-probe A.2742 .2922 +.0181 Eight-probe B.3072 .2742 -.0331 Eight-probe A.2844 .2814 -.0031 Semantic Qwen3 .3050 .3064 +.0014 Semantic BGE .2939 .2861 -.0078 Random .2767 .3042 +.0275 Global D.2722 .2783 +.0061
+
+Table 9: Separate four-model-pool study on the 300 mixed-task test queries. Costs are logged to-ken usage at the configured prices. The local quantized Llama has zero API charge; GPU cost is excluded. These methods choose among different backbones and are not executor-matched compar-isons to Table 1.                     
+
+> Method / operating point Utility USD/query Single GPT-4o-mini .2969 .000358 Single Haiku 4.5 .5994 .005353 Single Gemini Flash .5533 .006978 Single Llama-3.1-8B (AWQ-INT4) .1886 .000000 MasRouter, default cost rate .2664 .002012 FrugalGPT, low budget .3969 .001636 FrugalGPT, medium budget .4839 .003213 FrugalGPT, high budget .6228 .006818 Observed per-query pool oracle .769 .00256
+
+ploratory p = 0 .090 ). Haiku’s twelve-probe agreement variant covers 279/300 and changes utility by −0.0143 ([−0.068 , 0.039] ), while measured affinities retain a 0.0806 advantage on that subset. Full-pool lower/upper bounds for uncovered outcomes are [0 .199 , 0.529] and [0 .498 , 0.568] , respec-tively. These are coverage-restricted diagnostic results, not full-test estimates. The stored answer previews contain only the first 1,200 characters; approximately 82% of Haiku generations are clipped. The analysis therefore evaluates the available preview features, not what complete generations could support. A related SWE label-free analysis uses the retired ReAct regime and yields 0.085 versus D’s 0.090 ; it is not an Agentless result. The retired ReAct direct score is 0.088 on its clean eight-policy grid and the FlowReasoner transfer attempt scores 0.060 .We exclude the compromised twelve-policy ReAct scoring-churn results from the principal compar-isons. For the guided bank, evaluating all six experts on all 300 queries produces expert means 
+
+0.3197 , 0.3236 , 0.3567 , 0.3403 , 0.3233 , 0.3303 . The observed per-query maximum is 0.4961 , al-though 194 queries give identical scores for all six executions. These maxima select on their own evaluation outcomes and hence quantify observed opportunity rather than an achievable text-only policy. The single-call ladder (Direct 0.2763 , bare 0.3121 , CoT 0.3295 , guided-A 0.3413 ) further separates prompt/decoder changes from added workflow computation. Differences between arms are interpreted as complete-configuration contrasts, not a causal decomposition of the embedding’s contribution. C.11 HETEROGENEOUS -MODEL ROUTING AND COST -QUALITY COMPARISONS 
+
+The pool contains GPT-4o-mini, Haiku 4.5, Gemini Flash, and locally served Llama-3.1-8B AWQ-INT4. These replace unavailable original-paper model versions, and DeepSeek is omitted. Mas-Router uses its cost-aware policy-gradient objective, learning rate 0.01, batch size 16, five epochs, cost rate 200, and seed 1234. Its selections favor cheaper backbones (142/300 Llama slots); all 18 test errors are scored zero. FrugalGPT replaces exact-match scoring with our mixed-task utility and 27 adapts token limits/formatting to these tasks. Its low/medium budgets select GPT-4o-mini → Llama 
+
+→ Haiku; the highest budget selects Haiku → Llama → Gemini. That cascade attains 0.6228 ,above its single-Haiku reference 0.5994 , at a higher cost. The pool oracle chooses the cheapest model attaining each query’s observed maximum and is not executable without outcomes. 
+
+Measurement, construction, and serving costs. The full Haiku probe program (eight/twelve probes, training/test) records 115,330 calls and USD 603.90. The SWE 6,000-cell grid records approximately USD 14.02, with 2.25 calls and USD 0.0023 per instance–policy pair. Histori-cal GPT-4o-mini probe/search tokens were not comprehensively metered. Under the Haiku pro-gram’s average sample cost, a twelve-probe, three-repeat test fingerprint costs approximately USD 0.4026 before executing its selected expert; the SWE twelve-policy fingerprint costs approxi-mately USD 0.0276. The corresponding GPT-4o-mini estimate is roughly USD 0.028, derived from the Haiku calls-per-sample ratio and the separately metered direct-call price, rather than measured on those grids. This cost belongs to diagnostic A only; B uses one frozen encoder forward pass and no routing-time LLM calls. Guided construction’s separately metered USD 1.2038 excludes the earlier probe program. Table 5 gives its serving costs. These distinctions make offline investment, outcome-assisted evaluation, and deployable serving directly interpretable. C.12 STATISTICAL FAMILIES AND SCOPE OF BASELINE COMPARISONS 
+
+For each historical mixed-task backbone, the stored Holm families contain seven comparisons against D, seven between routing variants, and five against Direct/train-selected probes. The seven 
+
+D comparisons are twelve/eight-probe A/B , BGE, Qwen3, and random. The seven routing com-parisons are eight-probe B versus Qwen3, BGE, twelve-probe B, eight-probe A, and random; Qwen3 versus BGE; and twelve-probe B versus twelve-probe A. The five probe comparisons are twelve/eight-probe B versus Direct and the training-selected probe, plus D versus Direct. SWE has separate four-comparison A and B families against D, Direct, BGE, and random. The prespecified primary comparison in each regime is twelve-probe B −D; none is significant. We retain this defini-tion while presenting the representation analyses as additional findings. The SWE A − D result also has exact McNemar p = 0 .001312 (16 corrected/two broken). Main-table ordering against ADAS, ScoreFlow, FlowReasoner, MasRouter, and FrugalGPT reports point estimates; it does not imply unreported significant pairwise differences. Guided contrasts and new diagnostic analyses remain exploratory and unadjusted. C.13 REPRODUCIBILITY AND OUTSTANDING ATTRIBUTION 
+
+The accompanying evidence manifests record source paths, SHA-256 hashes, query memberships, per-query cross-repeat scores, recomputed means, and statistical conventions. The original evidence audit and expanded baseline audit perform no API calls and leave experimental artifacts unchanged; the latter additionally checks all reported adapted-search means against their saved per-query records and records corrected failure denominators. Historical panel size, semantic/random partitions, and decoder/executor controls are reported as ablations. A matched full guided-versus-unguided con-struction experiment, independent final candidate selection, capability-complete probe-to-operator mapping, and held-out margin-stratified encoder analysis are not present in the saved evidence. We therefore report no numerical outcomes for these missing interventions and do not infer their success from the conditional bounds. 28
