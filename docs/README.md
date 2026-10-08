@@ -48,7 +48,7 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-10-07</span>
+      <span class="dpr-home-dashboard-kicker">2026-10-08</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
     <strong class="dpr-home-dashboard-count">共 17 篇</strong>
@@ -58,7 +58,7 @@
     <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-10-07 23:40:21 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-10-08 23:45:38 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,9 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日扫完17篇论文，精读6篇、速读11篇，主线聚焦LLM驱动的软件测试与多智能体编码协作。</p>
-<p>最值得看的是两篇9.0分精读：LLM测试生成的信息源、策略与质量证据，以及并行编码智能体的协调验证与调度规划。</p>
-<p>普通读者可先读这两篇精读，再顺带扫一眼8.0分的CheckerBench与AI编写软件保障案例，建立对AI写码可信度的整体判断。</p>
+<p>今日精读6篇、速读11篇，多智能体代码生成与仓库级工程成为高分焦点。最值得看的是《AECP》提出的工件专属通信协议（9.0分）和《Agent-Native可复用代码原语》的大规模仓库工程方案（9.0分）。普通读者可先从速读中的《TaoD2C-Bench》了解工业UI代码生成评测，再按需回看精读全文。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -83,7 +81,7 @@
     <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="LLM-Based Test Generation: Information Sources, Generation Strategies, and Quality Evidence">LLM-Based Test Generation: Information Sources, Generation Strategies, and Quality Evidence</span></li><li><span class="dpr-home-dashboard-paper-title" title="Verifying Coordination in Parallel Coding Agents: NP-Bench and a Scheduling Planner">Verifying Coordination in Parallel Coding Agents: NP-Bench and a Scheduling Planner</span></li><li><span class="dpr-home-dashboard-paper-title" title="Catching Developers in the Flow: Low-Latency Agentic Program Repair at Google Scale">Catching Developers in the Flow: Low-Latency Agentic Program Repair at Google Scale</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="AECP: Artifact-Exclusive Communication Protocol for Multi-Agent Code Generation">AECP: Artifact-Exclusive Communication Protocol for Multi-Agent Code Generation</span></li><li><span class="dpr-home-dashboard-paper-title" title="Large-scale Repository Engineering via Agent-Native Reusable Code Primitives">Large-scale Repository Engineering via Agent-Native Reusable Code Primitives</span></li><li><span class="dpr-home-dashboard-paper-title" title="GRAML: Graph-Grounded Reasoning and Multi-Task Learning for LLM-Based Software Vulnerability Detection">GRAML: Graph-Grounded Reasoning and Multi-Task Learning for LLM-Based Software Vulnerability Detection</span></li></ul>
   </div>
   <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>6</strong></span></div>
 </section>
@@ -96,7 +94,7 @@
     <strong class="dpr-home-dashboard-count">11 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="CheckerBench: Can Long-Horizon Agents Synthesize Static-Analysis Checkers?">CheckerBench: Can Long-Horizon Agents Synthesize Static-Analysis Checkers?</span></li><li><span class="dpr-home-dashboard-paper-title" title="Harness Engineering for Software Engineering via Modular Executable Dev-Primitives">Harness Engineering for Software Engineering via Modular Executable Dev-Primitives</span></li><li><span class="dpr-home-dashboard-paper-title" title="A Case Study in Assuring AI-Written Software">A Case Study in Assuring AI-Written Software</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Why Software Engineering Is Indispensable in the Age of Coding Agents">Why Software Engineering Is Indispensable in the Age of Coding Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="TaoD2C-Bench: Benchmarking MLLMs for Industrial UI Code Generation Beyond Visual Fidelity">TaoD2C-Bench: Benchmarking MLLMs for Industrial UI Code Generation Beyond Visual Fidelity</span></li><li><span class="dpr-home-dashboard-paper-title" title="Make Code as Policy Great Again: Frontier Agents Write, Call, and Evolve Robot Tools">Make Code as Policy Great Again: Frontier Agents Write, Call, and Evolve Robot Tools</span></li></ul>
   </div>
   <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>11</strong></span></div>
 </section>
