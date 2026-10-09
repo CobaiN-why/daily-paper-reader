@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-10-08</span>
+      <span class="dpr-home-dashboard-kicker">2026-10-09</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 17 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 16 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>10</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-10-08 23:45:38 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-10-09 23:52:42 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日精读6篇、速读11篇，多智能体代码生成与仓库级工程成为高分焦点。最值得看的是《AECP》提出的工件专属通信协议（9.0分）和《Agent-Native可复用代码原语》的大规模仓库工程方案（9.0分）。普通读者可先从速读中的《TaoD2C-Bench》了解工业UI代码生成评测，再按需回看精读全文。</p>
+<p>2026-10-09 日报：共筛16篇，精读6篇、速读10篇，聚焦智能体编码与LLM代理评估。</p>
+<p>最值得看的是两篇9分精读：《Humanize: Judgement Engineering for Agentic Coding》和《Closed-loop evaluation of LLM agents for embedded software development》，分别指向编码代理的评判工程与嵌入式软件开发的闭环评估。</p>
+<p>普通读者可先精读这两篇，再按兴趣扫《TestJack》《Agent4RE》《Chronos》等8分速读，把握基准审计、需求工程与软件演化方向。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -81,7 +83,7 @@
     <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="AECP: Artifact-Exclusive Communication Protocol for Multi-Agent Code Generation">AECP: Artifact-Exclusive Communication Protocol for Multi-Agent Code Generation</span></li><li><span class="dpr-home-dashboard-paper-title" title="Large-scale Repository Engineering via Agent-Native Reusable Code Primitives">Large-scale Repository Engineering via Agent-Native Reusable Code Primitives</span></li><li><span class="dpr-home-dashboard-paper-title" title="GRAML: Graph-Grounded Reasoning and Multi-Task Learning for LLM-Based Software Vulnerability Detection">GRAML: Graph-Grounded Reasoning and Multi-Task Learning for LLM-Based Software Vulnerability Detection</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Humanize: Judgement Engineering for Agentic Coding">Humanize: Judgement Engineering for Agentic Coding</span></li><li><span class="dpr-home-dashboard-paper-title" title="Closed-loop evaluation of LLM agents for embedded software development">Closed-loop evaluation of LLM agents for embedded software development</span></li><li><span class="dpr-home-dashboard-paper-title" title="SWE-Journey: Towards More Realistic Evaluation of Coding Assistants through Long-Horizon, Multi-Turn Interaction">SWE-Journey: Towards More Realistic Evaluation of Coding Assistants through Long-Horizon, Multi-Turn Interaction</span></li></ul>
   </div>
   <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>6</strong></span></div>
 </section>
@@ -91,12 +93,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">11 篇</strong>
+    <strong class="dpr-home-dashboard-count">10 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Why Software Engineering Is Indispensable in the Age of Coding Agents">Why Software Engineering Is Indispensable in the Age of Coding Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="TaoD2C-Bench: Benchmarking MLLMs for Industrial UI Code Generation Beyond Visual Fidelity">TaoD2C-Bench: Benchmarking MLLMs for Industrial UI Code Generation Beyond Visual Fidelity</span></li><li><span class="dpr-home-dashboard-paper-title" title="Make Code as Policy Great Again: Frontier Agents Write, Call, and Evolve Robot Tools">Make Code as Policy Great Again: Frontier Agents Write, Call, and Evolve Robot Tools</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="TestJack: Should you trust the results in coding benchmarks? Agentic Coding Benchmarks Auditing via Evaluator Evolution">TestJack: Should you trust the results in coding benchmarks? Agentic Coding Benchmarks Auditing via Evaluator Evolution</span></li><li><span class="dpr-home-dashboard-paper-title" title="Agent4RE: A Self-Refining Multi-agent Framework for End-to-End Software Requirements Engineering and Benchmarking">Agent4RE: A Self-Refining Multi-agent Framework for End-to-End Software Requirements Engineering and Benchmarking</span></li><li><span class="dpr-home-dashboard-paper-title" title="Chronos Enables Code Agents to Reason over Software Evolution">Chronos Enables Code Agents to Reason over Software Evolution</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>11</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>10</strong></span></div>
 </section>
 </div>
 
