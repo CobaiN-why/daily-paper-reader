@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-10-09</span>
+      <span class="dpr-home-dashboard-kicker">2026-10-10</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 16 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 9 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>10</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>4</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>5</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-10-09 23:52:42 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-10-10 22:26:15 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,9 +69,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>2026-10-09 日报：共筛16篇，精读6篇、速读10篇，聚焦智能体编码与LLM代理评估。</p>
-<p>最值得看的是两篇9分精读：《Humanize: Judgement Engineering for Agentic Coding》和《Closed-loop evaluation of LLM agents for embedded software development》，分别指向编码代理的评判工程与嵌入式软件开发的闭环评估。</p>
-<p>普通读者可先精读这两篇，再按兴趣扫《TestJack》《Agent4RE》《Chronos》等8分速读，把握基准审计、需求工程与软件演化方向。</p>
+<p>今日筛选9篇论文，精读4篇、速读5篇，重点落在编码智能体与测试评估。</p>
+<p>最值得看的是两篇9分精读：《Cadence》给出编码智能体的策略性指导，《TestPrism》重新思考单一参考下的测试评估。</p>
+<p>普通读者可先读这两篇，再按兴趣选速读中的NL2SQL合成数据、错误定位修复或数据感知生成式UI。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -80,12 +80,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">6 篇</strong>
+    <strong class="dpr-home-dashboard-count">4 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Humanize: Judgement Engineering for Agentic Coding">Humanize: Judgement Engineering for Agentic Coding</span></li><li><span class="dpr-home-dashboard-paper-title" title="Closed-loop evaluation of LLM agents for embedded software development">Closed-loop evaluation of LLM agents for embedded software development</span></li><li><span class="dpr-home-dashboard-paper-title" title="SWE-Journey: Towards More Realistic Evaluation of Coding Assistants through Long-Horizon, Multi-Turn Interaction">SWE-Journey: Towards More Realistic Evaluation of Coding Assistants through Long-Horizon, Multi-Turn Interaction</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Cadence: Strategic Guidance for Coding Agents">Cadence: Strategic Guidance for Coding Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="TestPrism: Rethinking Test Evaluation Beyond a Single Reference">TestPrism: Rethinking Test Evaluation Beyond a Single Reference</span></li><li><span class="dpr-home-dashboard-paper-title" title="HarnessSecurity-Bench: Do Security Mechanisms Really Protect Coding Agent Harnesses?">HarnessSecurity-Bench: Do Security Mechanisms Really Protect Coding Agent Harnesses?</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>6</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>4</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -93,12 +93,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">10 篇</strong>
+    <strong class="dpr-home-dashboard-count">5 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="TestJack: Should you trust the results in coding benchmarks? Agentic Coding Benchmarks Auditing via Evaluator Evolution">TestJack: Should you trust the results in coding benchmarks? Agentic Coding Benchmarks Auditing via Evaluator Evolution</span></li><li><span class="dpr-home-dashboard-paper-title" title="Agent4RE: A Self-Refining Multi-agent Framework for End-to-End Software Requirements Engineering and Benchmarking">Agent4RE: A Self-Refining Multi-agent Framework for End-to-End Software Requirements Engineering and Benchmarking</span></li><li><span class="dpr-home-dashboard-paper-title" title="Chronos Enables Code Agents to Reason over Software Evolution">Chronos Enables Code Agents to Reason over Software Evolution</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="When Interfaces Speak: Data-Aware Generative UI Harness for Active Interaction">When Interfaces Speak: Data-Aware Generative UI Harness for Active Interaction</span></li><li><span class="dpr-home-dashboard-paper-title" title="FALCON: A Model and Dataset Agnostic Framework for Synthetic Data Generation for NL2SQL Pairs">FALCON: A Model and Dataset Agnostic Framework for Synthetic Data Generation for NL2SQL Pairs</span></li><li><span class="dpr-home-dashboard-paper-title" title="Why, Where, How: Taxonomy-guided Error Grounding for Code Repair in NL2SQL">Why, Where, How: Taxonomy-guided Error Grounding for Code Repair in NL2SQL</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>10</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>5</strong></span></div>
 </section>
 </div>
 
