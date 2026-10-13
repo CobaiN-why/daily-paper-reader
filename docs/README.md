@@ -51,14 +51,14 @@
       <span class="dpr-home-dashboard-kicker">2026-10-13</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 17 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 21 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
-    <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>2 次</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>9</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>12</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-10-13 01:33:18 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-10-13 23:19:17 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>2026-10-13 日报精选 17 篇（精读 6、速读 11），聚焦编码智能体的评测与训练。最值得看 SWE-Duel 的自扩展竞技场评测（9.0）和 TestSuiteBench 揭示的测试套件生成短板（9.0），速读中轨迹结构评分选样与 API 规格优化也值得关注。普通读者可优先从这两篇精读入手，理解智能体能力边界后再看训练数据筛选与规格优化方向。</p>
+<p>2026-10-13 日报精选 21 篇论文，精读 9 篇、速读 12 篇，聚焦编程智能体的评测与工程化。最值得看的是 SWE-Duel（9.0）提出的自扩展竞技场，以及 TestSuiteBench（9.0）揭示的编码智能体从规格生成强测试套件的短板。普通读者可先读这两篇精读，再顺带浏览 A-SAW（8.0）了解智能体软件架构工作流。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -78,12 +78,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">6 篇</strong>
+    <strong class="dpr-home-dashboard-count">9 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
 <ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="SWE-Duel: Towards a Self-Scaling Arena for Coding Agents">SWE-Duel: Towards a Self-Scaling Arena for Coding Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="TestSuiteBench: Coding Agents Struggle to Generate Strong Test Suites from Specifications">TestSuiteBench: Coding Agents Struggle to Generate Strong Test Suites from Specifications</span></li><li><span class="dpr-home-dashboard-paper-title" title="SWE-Critix: Post-Training Generalist Verifiers for Assessing Coding-Agent Trajectories">SWE-Critix: Post-Training Generalist Verifiers for Assessing Coding-Agent Trajectories</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>6</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>9</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -91,12 +91,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">11 篇</strong>
+    <strong class="dpr-home-dashboard-count">12 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Quality, Not Just Outcome: A Structural Scoring Framework for Selecting Coding-Agent Trajectories for Supervised Fine-Tuning">Quality, Not Just Outcome: A Structural Scoring Framework for Selecting Coding-Agent Trajectories for Supervised Fine-Tuning</span></li><li><span class="dpr-home-dashboard-paper-title" title="Agent4Spec: An LLM-based Agentic System to Optimize API Specifications through Automated Validation and Market Analysis">Agent4Spec: An LLM-based Agentic System to Optimize API Specifications through Automated Validation and Market Analysis</span></li><li><span class="dpr-home-dashboard-paper-title" title="AgentSWE: Can Coding Agents Build the Agent You Actually Want?">AgentSWE: Can Coding Agents Build the Agent You Actually Want?</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="A-SAW: The Agentic Software Architecture Workflow">A-SAW: The Agentic Software Architecture Workflow</span></li><li><span class="dpr-home-dashboard-paper-title" title="Agentic Large Language Models">Agentic Large Language Models</span></li><li><span class="dpr-home-dashboard-paper-title" title="Byte Language Models: Scaling, Emergent Abstractions, and Information Allocation">Byte Language Models: Scaling, Emergent Abstractions, and Information Allocation</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>11</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>12</strong></span></div>
 </section>
 </div>
 
