@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-10-11</span>
+      <span class="dpr-home-dashboard-kicker">2026-10-13</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 3 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 17 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>0</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>3</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>11</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-10-11 23:12:28 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-10-13 01:33:18 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>2026-10-11 日报精选 3 篇速读，全部聚焦 LLM Agent 的搜索、复用与检索落地。最值得看的是 Agent 搜索从“改写查询”走向程序化执行，以及 LLM Agent 能否把能力沉淀为可扩展的廉价工具。普通读者可优先浏览这两篇，关注 Agent 如何从对话技巧变成可复用工程能力。</p>
+<p>2026-10-13 日报精选 17 篇（精读 6、速读 11），聚焦编码智能体的评测与训练。最值得看 SWE-Duel 的自扩展竞技场评测（9.0）和 TestSuiteBench 揭示的测试套件生成短板（9.0），速读中轨迹结构评分选样与 API 规格优化也值得关注。普通读者可优先从这两篇精读入手，理解智能体能力边界后再看训练数据筛选与规格优化方向。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -78,12 +78,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">0 篇</strong>
+    <strong class="dpr-home-dashboard-count">6 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p class="dpr-home-dashboard-empty">今日暂无推荐。</p>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="SWE-Duel: Towards a Self-Scaling Arena for Coding Agents">SWE-Duel: Towards a Self-Scaling Arena for Coding Agents</span></li><li><span class="dpr-home-dashboard-paper-title" title="TestSuiteBench: Coding Agents Struggle to Generate Strong Test Suites from Specifications">TestSuiteBench: Coding Agents Struggle to Generate Strong Test Suites from Specifications</span></li><li><span class="dpr-home-dashboard-paper-title" title="SWE-Critix: Post-Training Generalist Verifiers for Assessing Coding-Agent Trajectories">SWE-Critix: Post-Training Generalist Verifiers for Assessing Coding-Agent Trajectories</span></li></ul>
   </div>
-
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>6</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -91,12 +91,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">3 篇</strong>
+    <strong class="dpr-home-dashboard-count">11 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Programmatic Search Agents: Extending Agentic Search Beyond Query Reformulation">Programmatic Search Agents: Extending Agentic Search Beyond Query Reformulation</span></li><li><span class="dpr-home-dashboard-paper-title" title="Agent in a Bottle: Can LLM Agents Turn Their Capabilities Into Cheap, Scalable Artifacts?">Agent in a Bottle: Can LLM Agents Turn Their Capabilities Into Cheap, Scalable Artifacts?</span></li><li><span class="dpr-home-dashboard-paper-title" title="From Chunks to Functional Evidence: Function-Aware Retrieval for EDA Documentation QA">From Chunks to Functional Evidence: Function-Aware Retrieval for EDA Documentation QA</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Quality, Not Just Outcome: A Structural Scoring Framework for Selecting Coding-Agent Trajectories for Supervised Fine-Tuning">Quality, Not Just Outcome: A Structural Scoring Framework for Selecting Coding-Agent Trajectories for Supervised Fine-Tuning</span></li><li><span class="dpr-home-dashboard-paper-title" title="Agent4Spec: An LLM-based Agentic System to Optimize API Specifications through Automated Validation and Market Analysis">Agent4Spec: An LLM-based Agentic System to Optimize API Specifications through Automated Validation and Market Analysis</span></li><li><span class="dpr-home-dashboard-paper-title" title="AgentSWE: Can Coding Agents Build the Agent You Actually Want?">AgentSWE: Can Coding Agents Build the Agent You Actually Want?</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>3</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ai-se <strong>11</strong></span></div>
 </section>
 </div>
 
