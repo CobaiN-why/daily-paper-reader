@@ -1,0 +1,638 @@
+Title: Benchmarking LLM Agents for Behaviorally Adequate Test Generation from Software Requirements
+
+URL Source: https://arxiv.org/pdf/2610.36584v1
+
+Published Time: Wed, 28 Oct 2026 00:42:16 GMT
+
+Number of Pages: 20
+
+Markdown Content:
+# Benchmarking LLM Agents for Behaviorally Adequate Test Generation from Software Requirements 
+
+BINHANG QI, National University of Singapore, Singapore 
+
+YIMING LIU, Shanghai Jiao Tong University, China and Shanghai Innovation Institute, China 
+
+YUN LIN ∗, Shanghai Jiao Tong University, China 
+
+YANGJIE ZHOU, National University of Singapore, Singapore 
+
+HAILONG SUN, Beihang University, China 
+
+JIN SONG DONG, National University of Singapore, Singapore As large language model (LLM) agents increasingly compile natural-language requirements into repository-level code, requirement-to-test generation grows in importance to provide validation constraints (or harness) to guide code generation. Yet it remains unclear whether current agents can generate tests that validate the required behavior when the implementation of that behavior is withheld. Existing test-generation benchmarks mostly focus on white-box testing, whereas the requirement–test-related study usually requires evaluation on semantic alignment between the given documents and the generated tests. We introduce Req2Test-Bench, a benchmark containing 5,086 execution-validated instances recovered from developer-authored behavior-driven development (BDD) artifacts in 8 open-source projects, spanning 5 programming languages and 4 BDD frameworks. Each instance pairs a natural-language requirement in Gherkin with its developer-written Test Implementation . Given the requirement, target interfaces of the required behavior, and a repository view that withholds either the target implementation or all production implementations, an agent must generate a complete, potentially multi-file Test Implementation . Solving the task requires bridging the gap between a high-level requirement and its test-code correspondence regarding project-specific knowledge: crystallizing what to test, stated in natural language, into how to test it with the project’s own fixtures, helpers, and interfaces. We evaluate the semantic difference between generated and ground-truth tests by comparing their production API calls, code coverage, and mutant kills. Evaluation of 8 agent–model– reasoning configurations reveals a substantial gap between execution success and behavioral adequacy, which is measured strictly as kill-completeness: a kill-complete test kills every mutant that the ground-truth test kills. The best-performing configuration, Codex with DeepSeek-V4.1-Flash, produces passing tests for 82.8% of instances, yet only 33.8% are behaviorally adequate. We find that (1) scaling up agents yields sharply diminishing returns in behavioral adequacy relative to generation cost; (2) under-specified requirements cause the information gap, including ambiguous setup and implicit expected outcomes; and (3) requirement-grounded harnesses that steer agent non-determinism offer a promising direction for improvement. 
+
+1 Introduction 
+
+Large language model (LLM) agents increasingly translate natural-language software requirements into repository-wide implementations [38]. As code generation accelerates, validation becomes a bottleneck: developers need executable evidence that generated software satisfies the requested behavior rather than merely compiling or appearing plausible. Requirement-derived tests provide behavioral checks for code-generation harnesses, supporting candidate selection and iterative refinement [6, 16]. Yet a generated test may pass while omitting meaningful checks or relying on tautological assertions [18, 33]. The challenge is sharper when tests must be written before an implementation of the required behavior is available [23]. We thus ask: can current LLM agents 
+
+> ∗
+
+Corresponding Author. Authors’ Contact Information: Binhang Qi, qibh@nus.edu.sg, National University of Singapore, Singapore; Yiming Liu, liu_yiming@sjtu.edu.cn, Shanghai Jiao Tong University, China and Shanghai Innovation Institute, China; Yun Lin, lin_yun@sjtu.edu.cn, Shanghai Jiao Tong University, China; Yangjie Zhou, yj_zhou@nus.edu.sg, National University of Singapore, Singapore; Hailong Sun, sunhl@buaa.edu.cn, Beihang University, China; Jin Song Dong, dcsdjs@nus.edu.sg, National University of Singapore, Singapore. arXiv:2610.36584v1 [cs.SE] 27 Oct 2026 2 Binhang Qi, Yiming Liu, Yun Lin, Yangjie Zhou, Hailong Sun, and Jin Song Dong Evaluation Criteria 
+
+> Ground truth-relative behavioral comparison Execution outcome-based comparison
+> API call Covered line Mutant kills
+> Feature: Adding a new Currency In Order to increase my sales I want to create a new currency The customer then changes the currency Scenario: Site should be using currency "USD" Given site operates on a store in "Austria" And I am using currency "USD" Then the site should be using currency "USD"
+
+Project Context 
+
+Requirement LLM Agent 
+
+StoreContext.php 
+
+Setup/ CurrencyContext.php CountryContext.php 
+
+Generated Test Implementation 
+
+> (1) Generation
+> (2) Build
+> (3) Binding
+> (4) Execution
+> (5) Assertion
+> CoreShop/ BehatKernel.php
+> CurrencyInterface getIsoCode()
+> All-hidden view Target-hidden view
+
+Target Interfaces  
+
+> CurrencyInterface getId(): int StoreContextInterface getStore(): StoreInterface
+> OR
+> F1 score Jaccard Sim. Recall
+> Overall Behavioral adequacy KillComplete@1
+
+::::
+
+Fig. 1. Overview of the Req2Test-Bench task. Each instance provides a requirement composed of enclosing 
+
+Feature context and a target Scenario , together with designated target interfaces and project context exposed through either a target-hidden or an all-hidden view. Both views withhold the target implementation. Target-hidden retains other permitted production implementations, whereas all-hidden withholds them. An LLM agent generates a complete, potentially multi-file Test Implementation . After generation, an evaluator runs the test against the complete production implementation, recording staged functional outcomes and comparing its production-API calls, code coverage, and mutant kills with those of the ground-truth Test Implementation. 
+
+generate complete, executable, and behaviorally adequate tests from software requirements when the target implementation is withheld? We examine it through three questions: 
+
+• Q1: Does scaling up LLM agents reliably and proportionally improve behavioral adequacy? 
+
+• Q2: If not, what gaps limit the progress? 
+
+• Q3: What directions are promising to narrow the gap, guiding the development of LLM agents? In this work, we define the requirement and the behavioral adequacy as follows: Definition 1. ( Requirement ) A requirement is a natural-language statement of one software behavior expected from a software system, stated independently of the code that realizes it. It is concrete enough to determine a testing objective, typically by stating the relevant conditions, the triggering interaction, and the expected observable outcome. 
+
+Definition 2 ( Behavioral Adequacy ). A test is behaviorally adequate for a requirement if it exercises the behavior prescribed by that requirement and correctly checks the expected outcomes in the project’s context. 
+
+Existing LLM-based test-generation studies and benchmarks start from prescribed methods, classes, or source files [18, 36, 41], from code changes [15], from issue reports [1, 26], or from behavior inferred by exploring a running application [3]. Consequently, their results alone do not suffice to answer these questions. We instead study requirement-to-test generation, which is requirement-driven : an independently stated requirement determines the testing objective, and the target implementation is withheld from the agent. Related requirement–test resources address parts of this problem; however, they have complementary limitations: 1 Some synthesize or manually adapt requirement or test artifacts during benchmark construction [24, 25]; 2 others associate a coarse requirement artifact, such as a project-level requirement, with an entire test file rather than with the complete Test Implementation for one individual, concrete behavior [21, 24]. To address these limitations, Req2Test-Bench combines authentic requirements, complete ground-truth Test Implementations for individual behaviors, execution-validated mappings, and behavioral evaluation under controlled implementation visibility. We instantiate the task using artifacts from behavior-driven-development (BDD) repositories. BDD projects express requirements Benchmarking LLM Agents for Behaviorally Adequate Test Generation from Software Requirements 3
+
+in Gherkin, where a Feature describes a capability and groups related Scenario s, while a Scenario 
+
+expresses a concrete behavioral example through an ordered sequence of Step s [35], as shown in Figure 1. Their availability across open-source projects and programming languages, without restriction to a particular test level, supports large-scale and diverse benchmark construction [21]. Accordingly, for each Req2Test-Bench instance, we operationally define one requirement 𝑟 𝑖 as the pair of an enclosing Feature 𝐹 𝑖 and a target Scenario 𝑆 𝑖 . We formalize the requirement-to-test generation task as: 
+
+𝑇 𝑔𝑒𝑛 𝑖 = A  𝑟 𝑖 , I𝛼 𝑖 
+
+ , 𝑟 𝑖 ≜ ⟨𝐹 𝑖 , 𝑆 𝑖 ⟩, I𝛼 𝑖 ≜ Itar  
+
+> 𝑖
+
+, 𝐶 𝛼 (𝑃 𝑖 ) . (1) The agent-visible project information I𝛼 𝑖 combines the designated target interfaces Itar  
+
+> 𝑖
+
+with available project context 𝐶 𝛼 (𝑃 𝑖 ). Itar  
+
+> 𝑖
+
+provides method declarations derived from first-party public production calls made directly by the ground-truth test’s action and check Step s. They provide interface-localization cues, but do not enumerate the auxiliary APIs, fixtures, or helpers needed to construct the test. 𝐶 𝛼 (𝑃 𝑖 ) of project snapshot 𝑃 𝑖 is exposed through one of two views, with 
+
+𝛼 ∈ { TH , AH }: 1 In the target-hidden view 𝐶 TH (𝑃 𝑖 ), the selected production bodies realizing the target behavior, including relevant first-party delegation, are replaced with declaration-preserving placeholders. 2 In the all-hidden view 𝐶 AH (𝑃 𝑖 ), implementation bodies throughout the project’s declared production-code scope are likewise replaced. The output 𝑇 𝑔𝑒𝑛 𝑖 generated by an LLM agent 
+
+A is one complete, potentially multi-file Test Implementation containing the test-side artifacts needed to build, bind, execute, and check 𝑆 𝑖 . After generation, 𝑇 𝑔𝑒𝑛 𝑖 from either view is evaluated by executing it against the same complete production implementation in a separate environment. As illustrated by Figure 1, 𝑟 𝑖 pairs the Feature “Adding a new Currency ...” with the Scenario 
+
+“Site should be using currency ‘USD’ ...”. Itar  
+
+> 𝑖
+
+includes StoreContextInterface::getStore() and 
+
+CurrencyInterface::getId() , and 𝑇 𝑔𝑒𝑛 𝑖 spans three PHP files. To construct Req2Test-Bench, we recover the developer-written Test Implementation of each 
+
+Scenario from the Step Definition s that the native BDD framework binds to its Step s at runtime, validate each recovered mapping by execution, and freeze a per-instance mutant pool with the kills of the ground-truth test. Req2Test-Bench’s validated mapping dataset contains 5,086 Requirement– Test Implementation instances from 1,415 Features in 8 projects, spanning 5 languages, 6 domains, 4 BDD frameworks, and component-, integration-, and system-level tests. We evaluate 8 agent–model–reasoning configurations that vary the coding agent (Aider, Open-Hands, Claude Code, and Codex CLI), the LLM (DeepSeek-V4.1-Flash, GPT-6 Luna, GPT-6 Sol, and Claude Sonnet 5.5), and the reasoning effort. Beyond execution success (Pass@1), we assess behavioral adequacy with the developers’ own test as the reference for the required behavior. Our primary metric, KillComplete@1, is the share of instances whose generated test both passes and kills every mutant that its ground-truth test kills, i.e., is kill-complete .The experimental results show that current agents produce passing tests far more often than behaviorally adequate ones. The best-passing configuration, Codex CLI with DeepSeek-V4.1-Flash at high reasoning effort, passes 82.8% of instances but is kill-complete on only 33.8%. Three findings emerge: 1 Returns diminish steeply : The returns in behavioral adequacy obtained by scaling up agents (e.g., increasing LLM scale) diminish with generation cost. For Codex CLI, moving from GPT-6 Luna to DeepSeek-V4.1-Flash and then to GPT-6 Sol increases the generation cost by factors of 6.0 and 4.9, yet changes KillComplete@1 by only +5.5 percentage points (pp) and then −2.5 pp (28.3% → 33.8% → 31.3%). 2 Information gap between high-level requirements and concrete tests : 90–99% of passing but kill-incomplete tests fall short where the requirement leaves the setup ambiguous or the expected outcome tacit. 3 A requirement-grounded harness is required for reducing uncertainty in test generation : The best of three generations is kill-complete 8.6–10.2 4 Binhang Qi, Yiming Liu, Yun Lin, Yangjie Zhou, Hailong Sun, and Jin Song Dong 
+
+Table 1. Comparison of resources pairing requirement-like inputs with ground-truth test code. “Source” indicates whether an artifact was preserved from the subject project. “Hierarchy” indicates test levels and explicit requirement relations.                                               
+
+> Resource Source Granularity Evaluation Criteria Hierarchy Size #Pairs #PLs
+> E2EDev [25] Synthetic Scenario ↔Test Impl. N/A N/A 703 1GivenWhenThen [21] Real Feature ↔Test Files N/A N/A 2,289 3AutoGlue [34] Real Step ↔Method Ref.-based N/A 1,307 1DevBench [24] Manual Project ↔Test Files Prog.-based N/A 22 4
+> Req2Test-Bench Real Scenario ↔Test Impl. Prog. & Ref.-based ✓5,086 5
+
+pp more often than a single one, headroom for harnesses that exploit the non-determinism of LLM agents and can discriminate non-trivial from trivial differences between tests. We make the following contributions: 
+
+• We formulate repository-level requirement-to-test generation as a requirement-driven, interface-assisted task in which an LLM agent must synthesize one complete, potentially multi-file Test Implementation while the target implementation is withheld. 
+
+• We construct and release Req2Test-Bench, comprising 5,086 authentic, execution-validated Requirement–Test Implementation instances from 8 projects in 5 programming languages, and measure behavioral adequacy relative to the developers’ own tests. 
+
+• We evaluate eight agent–model–reasoning configurations that differ in the agent scaffold, the LLM, or the reasoning effort, uncover sharply diminishing returns and a persistent information gap, and identify promising directions for future research. The code, data, and leaderboard are available in our repository [32]. 
+
+2 Related Work 
+
+Test-generation benchmarks. Existing test-generation benchmarks usually derive the test ob-jective from prescribed code, a defect context, or an observed application. Methods2Test [36] mines focal-method–JUnit-test pairs, while TestBench [41] and TestGenEval [18] evaluate class-or file-level test generation using execution, coverage, and fault-detection or mutation metrics. SWT-Bench [26] asks for a test that reproduces an issue report, and AutoE2E [3] infers features by exploring a running web application before generating end-to-end tests. These works provide important execution-based protocols, but their task boundary is supplied by focal code, a code-change or fault context, or an observed application. Req2Test-Bench studies the complementary requirement-defined setting, in which a developer-authored Requirement determines the target behavior and an agent must realize it as a complete, project-compatible Test Implementation. 
+
+Requirement–test resources. Table 1 compares the closest works that associate requirement artifacts with test code. E2EDev [25] provides LLM-generated requirements, BDD Scenarios, and Step Definitions for web applications. GivenWhenThen [21] mines developer-authored Feature and Step Definition files at scale, but its scenario records contain file-level artifacts rather than an execution-validated, Scenario-specific Test Implementation. DevBench [24] includes benchmark-authored PRDs and executable acceptance- and unit-testing tasks with mixed-provenance tests, but does not map individual requirement criteria to individual ground-truth tests. Req2Test-Bench instead recovers developer-authored Feature–Scenario artifacts and their complete ground-truth Test Implementations from native BDD runtime bindings, validates each mapping through positive Benchmarking LLM Agents for Behaviorally Adequate Test Generation from Software Requirements 5Feature Scenario Step Step Definition            
+
+> depends on Illustrated by contains contains implement
+> ***1
+> depends on
+> ***1
+> Test Implementation
+> contains
+> *111111111
+> Given When Then And
+> 11
+> variant of
+> **
+> variant of
+> **11
+> matched by
+
+Fig. 2. BDD-grounded meta-model of Req2Test-Bench. A Requirement pairs an enclosing Feature with a target Scenario. A Feature is illustrated by Scenario s. Each Scenario contains an ordered sequence of Steps matched to executable Step Definitions and is automated by one complete, potentially multi-file Test Implementation. A Test Implementation contains its matched Step Definitions and their helper code. Dependency and variant relations may connect Features or Scenarios. 
+
+and negative executions, and uses the mapping for ground-truth-relative API, coverage, and mutation comparisons. Thus, Req2Test-Bench contributes the execution-validated, Scenario-level Requirement–Test Implementation mapping and behavior-aware evaluation needed to study complete Scenario realization, complementing prior work on Gherkin-to-code generation. 
+
+Requirements-based and BDD test generation. Requirements-based testing has long derived tests from structured or natural-language specifications. UMTG [37] derives executable acceptance tests from use cases and a domain model, while Specmate [12] and CiRA [11] derive test designs from acceptance criteria or conditional relations. Recent LLM-based systems generate executable artifacts from requirements or intermediate behavioral specifications. AutoGlue [34] generates one Java glue method for a target Gherkin Step using its Feature and Scenario context together with retrieved project artifacts. Ferreira et al. [10] generate Gherkin Scenarios and Cypress tests from user stories and application HTML, whereas AToMIC [13] generates Gherkin Scenarios, Page Objects, and mobile UI tests from JIRA requirements and code changes. Other systems use DSL requirements, validation intentions, or product-requirement knowledge to guide testing around prescribed architectures or focal code [14, 27, 31, 39]. These studies establish the value of requirements and project knowledge, but differ in generation unit and task boundary. Among these, AutoGlue is the closest task-level neighbor: it maps one Step to one glue method, whereas Req2Test-Bench evaluates the complete, potentially multi-file Test Implementation required to automate one Scenario. Other systems target specialized UI-automation pipelines or guide test generation around prescribed architectures or focal implementations. 
+
+3 Req2Test-Bench 
+
+Req2Test-Bench recovers execution-validated pairs of Requirements and Test Implementations from developer-authored BDD artifacts. This section defines the artifact meta-model, dataset construction, and evaluation criteria. 
+
+3.1 Requirement-to-Test Artifact Meta-Model 
+
+Each instance 𝑖 supplies the task inputs of Equation 1, namely the Requirement 𝑟 𝑖 = ⟨𝐹 𝑖 , 𝑆 𝑖 ⟩, the target interfaces Itar  
+
+> 𝑖
+
+, and both views of the project snapshot 𝑃 𝑖 . It also holds evaluator-only data: the developer-authored ground-truth Test Implementation 𝑇 gt  
+
+> 𝑖
+
+and its API calls, coverage, and mutant kills, against which a generated Test Implementation 𝑇 gen  
+
+> 𝑖
+
+is compared. 
+
+Entity. Figure 2 shows the BDD-grounded meta-model: 1 A Feature provides a developer-authored capability description and groups related Scenarios . 2 Each Scenario expresses a concrete behavioral 6 Binhang Qi, Yiming Liu, Yun Lin, Yangjie Zhou, Hailong Sun, and Jin Song Dong 
+
+example through ordered Steps . 3 Steps Given , When , and Then conventionally express context, an action or event, and an expected outcome. An And continues the preceding role [35]. Each effective Step in a retained instance binds uniquely to an executable Step Definition . 4 A Test Implementation 
+
+is the project-local test-side closure needed to bind, execute, and check the target Scenario: its matched Step Definitions and the helper code that they require. Each Test Implementation has a 
+
+test level , namely component, integration, or system testing. 
+
+Relation. The meta-model defines five relation types. 1 illustrated_by links a Feature to its Scenarios; 2 contains links a Scenario to its ordered Steps and a Test Implementation to its constituent test-side artifacts; 3 matched_by links a Step to its selected Step Definition. Multiple Steps may use the same Step Definition, and Test Implementations may overlap. 4 The optional, directed depends_on relation records prerequisite or decomposition relations between Features or between Scenarios. 5 The symmetric variant_of relation connects artifacts expressing the same core intent under different inputs, preconditions, configurations, or expected outcomes. 
+
+3.2 Dataset Construction 
+
+We construct Req2Test-Bench in five stages. Stage I assembles candidate repositories and their BDD artifacts. Stage II selects projects for execution and filters their Scenarios. Stage III recovers and validates Requirement–Test Implementation mappings, identifies target interfaces, and constructs the agent views. Stage IV constructs the mutation evidence and establishes mutation scorability. Stage V labels test levels and requirement relations. 
+
+Stage I: Candidate discovery and artifact collection. We assembled candidate GitHub reposito-ries containing developer-authored Gherkin .feature files and BDD test code, using framework dependencies, configuration files, and Step Definitions as static evidence. Four execution frame-works are Cucumber (Java and Ruby), Behave (Python), Behat (PHP), and Godog (Go). An initial survey of the 100 highest-starred discovered repositories with more than 100 recorded stars iden-tified potentially usable Scenarios with static Step Definition matches in 46 repositories. Further discovery added candidates beyond this survey. For candidates taken forward, we pinned revisions and collected feature files, Step Definitions, framework configuration, hooks, fixtures, test data, and helpers. This stage yields candidate repositories and their artifacts for execution checks in Stage II. 
+
+Stage II: Project admission and Requirement filtering. We favored higher recorded GitHub star counts, more recent last-push dates, and larger BDD suites, measured by their numbers of feature files and Scenarios. These preferences were balanced against domain and testing diver-sity. The eight selected projects span five programming languages and cover six domains :e-commerce (CoreShop, PrestaShop, and Sylius), document processing (python-docx), a blockchain SDK (Algorand SDK), IoT services (Kapua), an online petitions service (e-petitions), and agent software (coddy-agent). We sought both direct library tests and multistep workflows involving shared fixtures, database state, and service/API interactions. We removed empty, comment-only, and unparsable feature files and Scenarios that need a browser or a live service, and retained Features with nonempty titles and Scenarios with nonempty Step sequences. Applicable Background Steps are included in execution order, forming the Scenario’s 
+
+effective Steps . A Scenario Outline remains one instance: its required Examples rows are executed after parameter substitution and combined into one instance-level outcome. We provisioned each project at its pinned revision and invoked its native BDD runner. A Scenario was retained only if the project initialized, every effective Step bound uniquely to a non-pending Step Definition, and the Scenario passed in isolation across three runs. We excluded build or initialization failures, undefined or ambiguous Steps, timeouts, and unstable outcomes without rewriting project-authored requirements or tests to make them pass. This execution gate follows repository-scale benchmark construction practice [20, 25]. Benchmarking LLM Agents for Behaviorally Adequate Test Generation from Software Requirements 7
+
+Stage III: Test-Implementation recovery, target-interface identification, and agent views. Test Implementation Recovery. For each retained Scenario, we recorded the Step Definition selected by the runner for every effective Step. Starting from these runtime bindings, we recovered the transitive project-local test-side closure, including helpers, but excluding production code, third-party framework code, and the testing infrastructure that the whole suite shares. Shared definitions and supporting artifacts can belong to more than one closure. We validated each candidate closure in two derived workspaces sharing the same production revision, execution command, configuration, and project-global BDD infrastructure. Among project-local test-side artifacts, the positive workspace retains only the recovered closure and invariant infrastructure, and the target Scenario must pass. In the negative workspace, which withholds the closure, the runner must still initialize, but the target Scenario must not pass. Both outcomes must hold across three runs. Only validated closures become ground-truth Test Implementations 𝑇 gt  
+
+> 𝑖
+
+.
+
+Target Interface Identification. We identify target interfaces by Step-attributed direct-call tracing of ground-truth tests. We select Steps When and Then , excluding Background and other context Steps. We retain public production methods called directly from test-side code during these Steps, excluding transitive production calls and constructors invoked only from check Steps. Method declarations are deduplicated and grouped by declaring type to obtain Itar  
+
+> 𝑖
+
+.This restriction reduces setup-related disclosure while retaining concrete interaction and obser-vation points. Only declarations are supplied, not ground-truth call arguments, invocation order, assertions, or test code. The result is an observed testing boundary, not an exhaustive semantic localization. Instances with an empty set are retained, in total 234 instances. Their action and check Steps call no production method directly, e.g., an e-petitions test acts through an in-process HTTP client, and excluding them would remove 85 of the 98 e-petitions instances. 
+
+Agent Views. For target-hidden, a source-level mapping uses the Requirement, ground-truth bindings, and pinned code and configuration to identify the bodies realizing the target behavior, including relevant delegation but not unrelated supporting infrastructure. The interface list alone is not the body-removal list. Language-aware transformations replace mapped bodies while preserving declarations, and all-hidden applies them throughout the declared production scope. We then materialize 𝐶 TH (𝑃 𝑖 ) and 𝐶 AH (𝑃 𝑖 ) with the same Requirement, interface annotations, permitted contract information, and retained infrastructure. Both views remove the Step Definitions and helpers of all Scenarios. Both keep the testing infrastructure that the whole suite shares, such as hooks, fixtures, and test data. Neither shows runtime traces, coverage, or mutation records. 
+
+Stage IV: Mutation data and scorability. We implement established mutation-operator families as language-specific source transformations [17, 19, 30]. We keep mutant generation separate from test execution, so that the ground-truth and generated tests can run against the same recorded mutants using each project’s native BDD runner. Operator families include conditional-boundary changes, negation, arithmetic and logical-operator replacement, constant and return-value replacement, and method-call removal. The supported operators and language-specific adaptations are recorded per project rather than assumed identical across languages. Mutants are restricted to the declared production scope, excluding test scaffolding, generated, third-party, and other out-of-scope code. The versioned manifest records each mutant’s source location, change, and stable identity. Let 𝑀 𝑃 𝑖 denote the selected production-mutant manifest and 𝐶 gt  
+
+> 𝑖
+
+the production file–line locations covered by 𝑇 gt  
+
+> 𝑖
+
+on the unmodified snapshot. For the source locations L( 𝑚 ) assigned to mutant 𝑚 
+
+by the project’s fixed coverage mapping, the instance pool is 
+
+𝑈 mut  
+
+> 𝑖
+
+=
+
+n
+
+𝑚 ∈ 𝑀 𝑃 𝑖 | L( 𝑚 ) ∩ 𝐶 gt  
+
+> 𝑖
+
+≠ ∅
+
+o
+
+. (2) Thus, pool membership depends on the ground-truth test’s coverage. 8 Binhang Qi, Yiming Liu, Yun Lin, Yangjie Zhou, Hailong Sun, and Jin Song Dong 
+
+Table 2. Statistics of Req2Test-Bench. Left: totals over all instances. Right: minimum, maximum, and mean per instance. C / I / S: component, integration, and system level. A ground-truth kill is an instance–mutant pair whose mutant the ground-truth test kills.                                             
+
+> Statistic Total
+> Benchmark
+> Projects 8Programming languages 5BDD frameworks 4Instances 5,086 Features 1,415 Multi-file Test Impl. 1,741 Test levels (C / I / S) 588 / 2,066 / 2,432
+> depends_on pairs 634
+> variant_of pairs 3,584 Mutation operators 11 Ground-truth kills 247,585
+> Statistic Min Max Avg.
+> Feature
+> Scenarios per Feature 164 4.75 Words per Feature 1151 28.97
+> Scenario
+> Steps per Scenario 277 10.96 Words per Scenario 11 762 110.30
+> Test Impl.
+> Files per Test Impl. 125 5.29 Step defs. per Test Impl. 136 7.37 Lines per Test Impl. 37 8,681 1,763.50
+> Mutation
+> Ground-truth kills per instance 2588 120.71 Assertion-dependent kills per instance 0258 34.05
+
+We execute 𝑇 gt  
+
+> 𝑖
+
+separately against every mutant in 𝑈 mut  
+
+> 𝑖
+
+and record an outcome for each instance– mutant pair. Pair-level evidence is necessary because one project mutant can occur in multiple instance pools and have different outcomes for different ground-truth tests. For a test passing on the unmodified snapshot, a mutant is killed when its execution produces a test failure under the declared outcome policy, and it survives when the execution passes. A ground-truth run that times out, or fails before any Step executes, is an infrastructure outcome, and its pair is excluded. The valid ground-truth kills form 𝐾 gt  
+
+> 𝑖
+
+. Furthermore, mutants killed by the ground-truth test but survived by its assertion-stripped counterpart form an assertion-dependent subset for secondary analysis of the removed checks. 
+
+Stage V: Test levels and requirement relations. Stage V labels test levels and requirement relations, and neither label changes the task. 
+
+Test levels. We label a ground-truth Test Implementation by how its Step Definitions reach the production code: 1 component -level when they instantiate production classes directly; 2 integration -level when they obtain real services from the application’s own wiring, such as a dependency-injection container or a command bus; and 3 system -level when they drive the assembled application only through its external interface, such as its command-line entry point or the documented entry point of a library. Among our collected test implementations, 4,276 tests are named by the official developers, e.g., Kapua’s separate unit and integration runners, and our labels agree for 4,266 of these 4,276 instances. None is end-to-end test, as Stage II excludes Scenarios that need a browser. 
+
+Requirement relations. Scenario 𝐴 depends_on Scenario 𝐵 when 𝐴 performs the behavior that 𝐵 checks and relies on it, as a precondition or as one of its parts. For example, a Kapua Scenario that tests changing a user’s password first creates a password credential in a Given Step, and another Scenario performs the same creation and checks that it succeeds. As developers write such shared behavior either in a Background or among a Scenario’s own Steps, we look in both: 𝐴 ’s 
+
+Given and When Steps must run every Step Definition that 𝐵 runs before its checks. An LLM judge (DeepSeek-V4.1-Flash) then removes pairs in which 𝐴 reuses only setup that 𝐵 does not itself check. Scenarios whose Given and When Steps run the same Step Definitions, differing only in data or expected outcomes, are variant_of each other. This yields 634 depends_on relations and 3,584 
+
+variant_of pairs. Benchmarking LLM Agents for Behaviorally Adequate Test Generation from Software Requirements 9
+
+Table 3. Project-level breakdown of Req2Test-Bench: instances, per-instance measurements of the Require-ment and its ground-truth Test Implementation, and mutation data. Means are over the evaluated instances.                                                                                                                       
+
+> Instances Mean per evaluated instance Mutation Project Language /
+> framework Valid .Eval. Step defs. Steps Target I/F Files Lines API Mutants Pairs Kill
+> (%)coddy-agent Go, godog 282 274 835 5.8 3.3 2.5 1,357 8.6 20,243 227,886 24.8 Algorand SDK Java, Cucumber 117 111 188 4.1 6.2 2.2 542 7.5 7,766 12,853 58.4 Kapua Java, Cucumber 605 330 415 6.3 9.5 1.5 2,286 18.9 48,911 33,000 41.8 CoreShop PHP, Behat 422 334 371 16.1 3.9 13.8 2,631 44.0 10,205 171,174 28.2 PrestaShop PHP, Behat 1,352 348 713 21.5 13.8 8.2 2,911 35.0 71,670 34,355 29.4 Sylius PHP, Behat 1,950 319 552 11.9 1.9 3.4 1,215 2.0 12,373 256,324 26.1 python-docx Python, behave 239 237 466 2.9 3.1 2.1 368 6.0 2,225 40,359 74.4 e-petitions Ruby, Cucumber 119 98 166 10.6 0.2 4.0 652 0.4 5,997 105,193 13.7
+> Total 5,086 2,051 3,706 11.0 6.0 5.3 1,763 18.7 179,390 881,144 28.1
+
+Benchmark statistics. Stages I–V yield 5,086 execution-validated instances from 1,415 Features in eight projects. Table 2 summarizes them, and Table 3 breaks them down by project. 
+
+3.3 Evaluation Criteria 
+
+A generated test must first be a valid, executable implementation and must then exercise the behavior required by the scenario. We therefore report two complementary layers of metrics: stage-based execution outcomes that identify where generation or evaluation fails, and ground-truth-relative behavioral comparison that provides evidence beyond a passing execution. Req2Test-Bench saves the generated test files in a separate copy of the project containing the complete production implementation. Req2Test-Bench then executes the target Scenario using the project’s native BDD runner and records its outcome and behavioral measurements. For each agent and view, Req2Test-Bench evaluates one final generated test per instance in a predeclared population of size 𝑁 . Intermediate edits, local checks, and repairs belong to the same generation run and do not count as additional evaluation candidates. 
+
+3.3.1 Stage-based execution outcomes. For each instance with a recorded result, we report success or the first stage at which test generation or evaluation fails. Failures caused by benchmark infrastructure are recorded separately and excluded from the following categories: 
+
+• Generation failure: the agent returns no usable test code, no writable file, or an invalid submission format. 
+
+• Build failure: the generated test files cannot be parsed, compiled, imported, or initialized with the project’s test environment. This category also covers interpreted languages. 
+
+• Binding failure: the test framework cannot bind every Scenario step to a Step Definition, or encounters an undefined, ambiguous, or pending step. 
+
+• Execution failure: the scenario does not complete due to an exception, crash, or timeout, without an assertion-failure outcome. 
+
+• Assertion failure: the generated test runs and an assertion fails against the unmodified produc-tion implementation. 
+
+• Pass: the selected Scenario completes with every effective step passing and the test command exits successfully. Let E be the attempted instances with recorded outcomes in the six categories above, after documented infrastructure exclusions, 𝑁 exec = |E| , and 𝑜 𝑖 the outcome of instance 𝑖 . For 𝑁 exec > 0, 10 Binhang Qi, Yiming Liu, Yun Lin, Yangjie Zhou, Hailong Sun, and Jin Song Dong 
+
+the execution success rate is Pass@1 = 1
+
+𝑁 exec ∑︁ 𝑖 ∈ E 
+
+1[𝑜 𝑖 = pass ]. (3) All failure rates use the same denominator 𝑁 exec . We report 𝑁 , 𝑁 exec , and the number and reasons for excluded instances. 
+
+3.3.2 Ground-truth-based behavioral comparison. Pass@1 captures whether a generated test ex-ecutes successfully, but it does not quantify the extent to which the test exercises and checks the behavior required by the target Scenario. In the extreme, a Scenario may pass even when all generated Step-Definition bodies are empty. Therefore, Req2Test-Bench further compares the passing generated test with its developer-written ground-truth test along three dimensions: ① API-call F1 and ② coverage Jaccard describe the exercised behavior, while ③ mutant-kill recall assesses fault detection. Our primary end-to-end measure combines execution success with complete mutant-kill recall. For each dimension 𝑠 , let 
+
+𝐺𝑇 𝑠 𝑖 and 𝐺𝑒𝑛 𝑠 𝑖 denote the ground-truth and generated-test sets. 
+
+API-call F1. The API sets identify public production methods directly called by the ground-truth or generated Test Implementation, including setup, action, and check Steps. Production-to-production calls and calls made only by retained testing infrastructure are excluded. For 𝐺𝑇 api  
+
+> 𝑖
+
+≠ ∅,APIF1 𝑖 = 2 × |𝐺𝑒𝑛 api  
+
+> 𝑖
+
+∩ 𝐺𝑇 api  
+
+> 𝑖
+
+||𝐺𝑒𝑛 api  
+
+> 𝑖
+
+| + | 𝐺𝑇 api  
+
+> 𝑖
+
+| . (4) 
+
+Coverage Jaccard. Coverage compares sets of executed code lines across all production files: CovJaccard 𝑖 = |𝐺𝑒𝑛 cov  
+
+> 𝑖
+
+∩ 𝐺𝑇 cov  
+
+> 𝑖
+
+||𝐺𝑒𝑛 cov  
+
+> 𝑖
+
+∪ 𝐺𝑇 cov  
+
+> 𝑖
+
+| . (5) High coverage overlap does not establish that the required outcomes are asserted. 
+
+Mutant-kill recall. Within the fixed pool 𝑈 mut  
+
+> 𝑖
+
+, 𝐺𝑇 mut  
+
+> 𝑖
+
+is 𝐾 gt  
+
+> 𝑖
+
+restricted to retained instance–mutant pairs, and 𝐺𝑒𝑛 mut  
+
+> 𝑖
+
+contains the generated test’s kills on those same pairs. Timeout and infrastructure exclusions are reported with counts. All ground-truth kills in the scored scope are used, not only the assertion-dependent subset. For 𝐺𝑇 mut  
+
+> 𝑖
+
+≠ ∅,MutRecall 𝑖 = |𝐺𝑒𝑛 mut  
+
+> 𝑖
+
+∩ 𝐺𝑇 mut  
+
+> 𝑖
+
+||𝐺𝑇 mut  
+
+> 𝑖
+
+| . (6) 
+
+End-to-end success. Let Imut be the planned instances with supported, nonempty ground-truth kill sets. We define ground-truth-kill-complete pass@1 as KillComplete@1 = 1
+
+𝑁 ∑︁ 𝑖 ∈ I mut 
+
+1 [𝑜 𝑖 = pass ∧ MutRecall 𝑖 = 1] . (7) The denominator is the complete planned population 𝑁 , and a non-passing instance is never kill-complete. A requirement’s text may leave project-specific setup and expected outcomes implicit. We therefore use the developer-written ground-truth test as a concrete reference for evaluating behavioral adequacy (Definition 2). A passing test that misses any evaluated ground-truth kill is 
+
+kill-incomplete . It may still satisfy the requirement’s text under a defensible interpretation, but it misses faults that the developers’ test detects, so it is not adequate in the project’s context. 
+
+Aggregation and interpretation. Within each project, we average API F1, coverage Jaccard, and mutant-kill recall over all 𝑁 instances (API F1 over those whose ground truth calls a production method directly), with a non-passing test scoring 0, so that these means are end-to-end measures Benchmarking LLM Agents for Behaviorally Adequate Test Generation from Software Requirements 11 
+
+like Pass@1 and KillComplete@1. Project scores are then averaged with equal weight. These means describe each agent’s passing tests, whereas KillComplete@1 uses the planned population. None of these comparisons establishes semantic equivalence or exhaustive requirement satisfaction. 
+
+3.3.3 Efficiency. For each configuration and view, we report generation time, LLM calls, input and output tokens, and monetary cost where recorded. Costs of post-generation test execution and offline mutation analysis are reported separately. In addition to per-instance summaries and totals, we report generation cost per execution pass and per ground-truth-kill-complete pass. 
+
+4 Experimental Design 
+
+In this section, we formulate the research questions, introduce the evaluated approaches, specify how each approach is executed, and describe how the resulting observations are analyzed. 
+
+4.1 Research Questions 
+
+Our empirical study addresses the following research questions: RQ1 and RQ2 answer question Q1 of the introduction, RQ3 and RQ4 question Q2, and Section 5.5 question Q3. 
+
+RQ1 (Effectiveness): How effectively do LLM agents solve Req2Test tasks in Req2Test-Bench? This question investigates the current capability of state-of-the-art LLM agents to transform natural-language requirements into executable and behaviorally adequate tests. 
+
+RQ2 (Efficiency). How efficiently do the LLM agents solve the Req2Test tasks, and what effectiveness– efficiency trade-offs do they exhibit? We measure monetary cost, end-to-end time, model requests, and tokens per generation, and relate cost to effectiveness through the cost per kill-complete pass. 
+
+RQ3 (Associated Factors). What requirement-, test-, and repository-level characteristics are associ-ated with successful Req2Test generation? This question investigates whether current agents perform consistently across the heterogeneous settings represented by Req2Test-Bench. We compare the all-hidden and target-hidden views on the same instances, and relate success to characteristics of the Requirement, its ground-truth Test Implementation (including its test level), the hidden code, and the Scenario’s prerequisites among the depends_on relations. 
+
+RQ4 (Failure Modes). What failure modes do current agents exhibit, and what limitations do these failures reveal? We first identify the evaluation stage at which an unsuccessful generation fails. We then derive failure modes bottom-up from a stratified sample, explaining both why failing tests fail and why passing tests miss ground-truth kills. 
+
+4.2 Evaluated Models and Agents 
+
+We evaluate eight agent–model–reasoning configurations using four LLM backbones: ① DeepSeek-V4.1-Flash (DS) [8], ② GPT-6 Luna [28], ③ GPT-6 Sol [28], and ④ Claude Sonnet 5.5 [4]. The four general-purpose coding agents are ① OpenHands (openhands-sdk 1.34.0 ) [38], ② Aider 
+
+(0.86.2 ) [2], ③ Codex CLI (0.153.4 ; 0.157.1 for GPT-6 Sol) [29], and ④ Claude Code (2.1.274 ) [7]. Reasoning effort is set to disabled or high , depending on the configuration. We call each combina-tion of agent, LLM, and reasoning effort a configuration and name it by its agent and LLM, e.g., Codex/DS. Codex/DS (off) runs DS without reasoning. Claude Code/Sonnet runs Claude Sonnet 5.5 at high effort with an output limit of 128,000 tokens per request, and Claude Code/DS uses a limit of 32,000 tokens. Aider and OpenHands run DS in non-thinking mode, with limits of 10 reflections and 200 LLM responses, respectively. Codex CLI and Claude Code each allow up to 200 LLM requests. Each agent receives the target requirement and corresponding target interfaces, and uses its native mechanisms for repository inspection, file editing, and command execution. We retain the native interaction workflow of each agent rather than forcing all agents into an identical implementation interface. 12 Binhang Qi, Yiming Liu, Yun Lin, Yangjie Zhou, Hailong Sun, and Jin Song Dong 
+
+Table 4. Overall effectiveness: means over eight projects. A non-passing test counts as 0 in similarity columns.                                                                                                                     
+
+> End-to-end success (%) Similarity to ground truth (%) System Model Reasoning View Pass@1 KillComplete@1 API 𝐹 1Coverage 𝐽 Mutation 𝑅
+> Aider DS off Target-hidden 9.7 4.5 6.6 8.0 8.5 All-hidden 9.7 4.4 6.7 8.0 8.7 OpenHands DS off Target-hidden 32.7 18.1 26.4 30.9 31.2 All-hidden 26.5 16.6 21.2 25.2 25.3 Claude Code DS high Target-hidden 80.5 34.4 62.0 73.2 73.3 All-hidden 73.7 30.7 57.4 67.9 67.1 Claude Code Sonnet 5.5 high Target-hidden 80.9 35.9 61.7 76.0 75.6 All-hidden 78.4 34.8 59.1 74.0 73.7 Codex CLI DS off Target-hidden 57.6 23.6 41.9 53.1 53.4 All-hidden 47.4 21.3 34.2 44.0 44.0 Codex CLI DS high Target-hidden 82.8 33.8 64.2 75.9 76.3 All-hidden 75.4 33.7 56.5 70.0 69.1 Codex CLI GPT-6 Luna high Target-hidden 66.2 28.3 49.9 59.6 60.6 All-hidden 57.1 27.8 42.9 52.7 53.6 Codex CLI GPT-6 Sol high Target-hidden 73.5 31.3 54.2 65.3 66.1 All-hidden 65.3 29.1 48.2 59.7 60.3
+
+4.3 Implementation Details 
+
+Generation. Each generation receives the Requirement, the target interfaces, and one repository view inside a bubblewrap sandbox [5] whose network reaches only the model provider, under a common 3,600 s wall-clock limit. Agents may inspect the view and run local commands, including their own tests wherever the sandbox can load the retained code, but no such run can exercise the target behavior: its production bodies are placeholders that fail with an explicit “implementation hidden” error, and the harness provisions no application runtime and returns no execution feedback. The instructions state that the final test runs against a separate, complete implementation. We collect the test files from the workspace diff and discard production edits. Each instance receives one scored generation per configuration and view. Generations interrupted by provider-side limits are re-run, and none is repeated because of its outcome. To ensure that no generation observes ground-truth-derived artifacts, we audited the trajectories for access to such files and regenerated the affected generations in a hardened sandbox under a rule fixed in advance. 
+
+Evaluation. The evaluator runs each final test once against the complete production code with the project’s native runner in a network-isolated container (600 s, coverage enabled), and runs every passing test against the instance’s mutant pool (Section 3.2). Many Scenarios of a project are tested through the same Step Definitions, so their Test Implemen-tations are near-duplicates. We therefore evaluate one per group of instances whose ground-truth Test Implementations use the same Step-Definition methods. All configurations run on these 2,051 instances from 780 Features in both views. 
+
+Statistical analysis. Brackets indicate 95% confidence intervals obtained by cluster bootstrap resampling of feature files within each project. For the paired comparisons, we compute one-sided 
+
+𝑝 -values using exact McNemar tests or paired sign-flip tests. 
+
+5 Results 5.1 RQ1: Effectiveness 
+
+Passing is common, but kill-completeness is not. In Table 4, the best-passing configuration, Codex/DS, passes 82.8% of the target-hidden instances ([80.5, 84.8]) but is kill-complete on only Benchmarking LLM Agents for Behaviorally Adequate Test Generation from Software Requirements 13 Aider/DS OpenHands/DS Claude Code/DS Claude Code/Sonnet Codex/DS (off) Codex/DS Codex/Luna Codex/Sol 
+
+> bar height: Pass@1 dark part: KillComplete@1 025 50 75 100
+> Target-hidden
+> 025 50 75 100
+> All-hidden
+> python-docx
+> N = 237
+> Algorand SDK
+> N = 111
+> coddy-agent
+> N = 274
+> Kapua
+> N = 330
+> e-petitions
+> N = 98
+> Sylius
+> N = 319
+> PrestaShop
+> N = 348
+> CoreShop
+> N = 334
+
+Fig. 3. Pass@1 (bar height) and KillComplete@1 (dark part), in percent, per project, view, and configuration. 
+
+33.8% ([28.4, 38.1]). As shown in Figure 3, per project, only 6.7–66.2% of the passing tests of all configurations and views are kill-complete. The gap persists when the generation is repeated, although single verdicts vary (Section 5.5). A passing test of Codex/DS reproduces 91% of its ground-truth test’s kills on average, yet the gap between Pass@1 and KillComplete@1 is not merely a matter of demanding every kill. Under a relaxed criterion that accepts a test reproducing at least 95% of them, Codex/DS still succeeds on only 53.9% of the target-hidden instances, 28.9 percentage points (pp) below its Pass@1. High coverage similarity does not imply kill-completeness either. On the six projects other than coddy-agent and Kapua, 17.4–69.7% of the passing tests with a coverage Jaccard of at least 0.9 are kill-incomplete. Figure 4 shows a concrete example: the test of Codex/Sol passes, but it constructs the latent style directly in its own code instead of loading it from the project’s fixture file, and kills only 10 of the 110 mutants that the ground-truth test kills. 
+
+The gap persists when only check-dependent kills count. We empty the bodies of the ground-truth tests’ Then Step Definitions to identify mutants killed by the original tests but surviving the ablated tests. Across the seven DS and GPT-6 configurations, counting only these kills reduces the gap between Pass@1 and KillComplete@1 by only 24–37%, without changing the configurations’ KillComplete@1 ranking. When counting only kills inside the hidden target implementation, the gap also persists, e.g., 11.9 pp for Codex/DS. 
+
+Kill-incomplete tests mostly fall short on checking, not only on the route. We find agents fall short on both clauses of Definition 2, i.e., “exercises the behavior” and “checks expected outcomes”. For example, only 43.5% of the target-hidden instances get a passing Codex/DS test that executes every mutant that the developers’ test kills, and only 41.1% get one that kills every such mutant it executes. Of its kill-incomplete tests, 77.9% execute such a mutant and still pass, and only 22.1% miss only mutants on lines they never run. Thus, most kill-incomplete tests run the faulty code on their own path and check less than the developers’ test there. 
+
+Scaffold and reasoning effort matter, but the costliest LLM is not the best. 1 Agent scaffold :with DS and reasoning off, Codex CLI passes 57.6% of the target-hidden instances, against 32.7% for OpenHands and 9.7% for Aider. 2 Reasoning effort : for Codex/DS, high instead of no reasoning raises Pass@1 from 57.6% to 82.8% and KillComplete@1 from 23.6% to 33.8%. 3 LLM : with Codex CLI at high effort, DS passes more instances (82.8%) than the cheaper GPT-6 Luna (66.2%) and the costliest LLM, GPT-6 Sol (73.5%; Section 5.2). Its KillComplete@1 is 5.5 pp [2.2, 8.2] above Luna’s and 2.5 pp [ −1.0, 5.4] above Sol’s. Under Claude Code, Claude Sonnet 5.5 reaches about the same 14 Binhang Qi, Yiming Liu, Yun Lin, Yangjie Zhou, Hailong Sun, and Jin Song Dong features/steps/styles.py 
+
+> @given("a latent style having a known name") … document = Document(test_docx("sty-known-styles")) latent_styles = list(document.styles.latent_styles) context.latent_style = latent_styles[0] @then("latent_style.name is the known name") … assert latent_style.name == "Normal"
+> features/steps/helpers.py
+> def test_docx(name: str): … return absjoin(thisdir, "test_files", "%s.docx" % name)
+> features/steps/test_files/sty-known-styles.docx › word/styles.xml
+> <w:lsdException w:name="Normal" …/>
+> features/steps/sty_latent_props.py
+> @given("a latent style having a known name") … element = OxmlElement("w:lsdException") element.name = "heading 1" context.latent_style = _LatentStyle(element) context.known_name = "Heading 1" @then("latent_style.name is the known name") … actual = context.latent_style.name assert actual == context.known_name, ( …
+
+Agent Input  
+
+> ▼
+
+Requirement 
+
+Feature: Get and set latent style properties In order to adjust latent style properties to suit my needs As a developer using python-docx I need a set of read/write latent style properties 
+
+Scenario: Get latent style name 
+
+Given a latent style having a known name 
+
+Then latent_style.name is the known name  
+
+> ▼
+
+Target interface  
+
+> docx.styles.latent._LatentStyle - (property getter) def name(self):
+> ▼
+
+Repository target-hidden view       
+
+> ▶src/docx/ target bodies hidden
+> ▶features/steps/test_files/ 53 fixtures
+> ▶features/steps/*.py removed
+
+Ground-truth Test 2 files + 1 fixture 
+
+Generated Test Codex/Sol 
+
+Generated Test Results   
+
+> PASSED Scenario: Get latent style name
+> KILLED 10 of 110 ground-truth kills
+
+API F1 20.0% Coverage J 4.7% kill-incomplete 
+
+Fig. 4. An illustrative example from python-docx , sty-latent-props.feature:36 (target-hidden view). Left: the agent’s input and its test result. Right: the ground-truth test and the test generated by Codex/Sol. Yellow: what the Requirement leaves abstract and how the ground truth fills it; red: where the generated test constructs the object itself. 
+
+Pass@1 and KillComplete@1 as DS (80.9% and 80.5%, 35.9% and 34.4%). The leaderboard in our repository [32] lists the scores of every configuration. 
+
+Stronger configurations gain kill-complete tests by passing more instances, not by a higher kill-complete share of their passing tests. In the target-hidden view, Codex/DS has 336 more kill-complete tests than OpenHands/DS and 104 more than Codex/Luna, and the whole surplus comes from instances that only one of the two configurations passes. On the instances that both pass, their tests are kill-complete about equally often (51.5% against 54.4% for OpenHands/DS, and 42.6% against 44.0% for Codex/Luna). 
+
+Answer to RQ1. Agents often produce a passing test but far less often a behaviorally adequate one. The best-passing configuration, Codex/DS, passes 82.8% of target-hidden instances but is kill-complete on only 33.8%. The lead of Codex/DS over OpenHands/DS and Codex/Luna comes from passing more instances, not from a higher kill-complete share of its passing tests. 
+
+5.2 RQ2: Efficiency 
+
+Cost varies about 30-fold, and effectiveness does not follow it. As shown in Table 5, a target-hidden generation costs from $0.039 for Codex/Luna to $1.16 for Codex/Sol on average, although a Codex/Sol generation takes only 3.1 minutes and 16.8 LLM calls. Figure 5 orders the configurations by monetary cost: neither Pass@1 nor KillComplete@1 rises with it. In the target-hidden view, only Codex/Luna, Claude Code/DS, and Claude Code/Sonnet lie on the Pareto frontier of cost and KillComplete@1. Every other configuration costs more than one of them without a higher KillComplete@1. 
+
+Spending more yields sharply diminishing returns. Moving along this frontier from Codex/Luna to Claude Code/DS multiplies the cost by 4.0 and raises KillComplete@1 by 6.1 pp [2.8, 8.8]. Beyond Benchmarking LLM Agents for Behaviorally Adequate Test Generation from Software Requirements 15 
+
+Table 5. Cost and resource usage per generation in the target-hidden view. 
+
+Aider OpenHands Claude Code Codex CLI DS, off DS, off DS, high Sonnet, high DS, off DS, high Luna, high Sol, high 
+
+$ per generation 0.061 0.187 0.158 0.680 0.121 0.236 0.039 1.16 $ per kill-complete test 1.56 1.21 0.49 1.99 0.55 0.74 0.15 3.92 Time (minutes) 2.0 5.7 6.2 2.7 4.1 8.7 3.2 3.1 LLM calls 2.0 137.8 88.9 22.3 96.6 102.4 23.6 16.8 Target-hidden All-hidden                   
+
+> Pass@1 and KillComplete@1 (%)
+> Pass@1 KillComplete@1 Pareto frontier of cost and KillComplete@1 $0.039 $0.061 $0.121 $0.158 $0.187 $0.236 $0.680 $1.16
+> Cost per generation (evenly spaced, in increasing order) 020 40 60 80 100 Codex/Luna Aider/DS Codex/DS (off) Claude Code/DS OpenHands/DS Codex/DS Claude Code/Sonnet Codex/Sol
+> $0.039 $0.056 $0.125 $0.160 $0.178 $0.239 $0.610 $1.09
+> Cost per generation (evenly spaced, in increasing order) Codex/Luna Aider/DS Codex/DS (off) Claude Code/DS OpenHands/DS Codex/DS Claude Code/Sonnet Codex/Sol
+
+Fig. 5. KillComplete@1 (filled) and Pass@1 (hollow) of the configurations, ordered by their cost per generation. The thick line joins the Pareto frontier of the point estimates, i.e., the configurations whose KillComplete@1 no other reaches at the same or lower cost. 
+
+that, additional spending buys no measurable gain. Codex/DS costs 1.5 times as much as Claude Code/DS for a KillComplete@1 that does not differ measurably ( −0.6 pp [ −2.4, 1.1]), and Codex/Sol 7.4 times as much for one that is no higher ( −3.1 pp [ −5.8, 0.1]). With Codex CLI, moving from GPT-6 Luna to DS multiplies the cost by 6.0 for 5.5 pp, and moving on to GPT-6 Sol by another 4.9 for no further gain: Sol costs 30 times as much as its sibling Luna for 3.0 pp [1.1, 5.0]. Reasoning effort also raises the price of success. It roughly doubles Codex/DS’s cost per generation for 10.2 pp more KillComplete@1, and a kill-complete test costs $0.74 instead of $0.55. 
+
+Answer to RQ2. Performance of agents does not follow cost. Along the target-hidden Pareto frontier, 4.0 times the cost buys 6.1 pp of KillComplete@1, and more spending buys no measurable gain. 
+
+5.3 RQ3: Associated Factors 
+
+Hiding the surrounding implementations costs passes more than kill-complete tests. 
+
+As shown in Table 4, on the same instances, the all-hidden view lowers the Pass@1 of the five high-effort configurations by 2.5–9.1 pp (least for Claude Code/Sonnet), most of all on CoreShop (7.8–39.5 pp), but their KillComplete@1 by only 0.1–3.7 pp, which for Codex/DS, Codex/Luna, and Claude Code/Sonnet is too little to tell from no drop. Reading the surrounding production code thus mainly helps a test run. Without it, Codex/DS and Codex/Luna tests more often violate the runtime contracts of the interfaces that they call (see Section 5.4). 
+
+Longer Scenarios and larger ground-truth tests are harder to pass and have more kills to reproduce. We rank each project’s instances by a characteristic and compare the third with the lowest values to the third with the highest (five high-effort configurations, target-hidden view). 16 Binhang Qi, Yiming Liu, Yun Lin, Yangjie Zhou, Hailong Sun, and Jin Song Dong (a) Where generations end                                                            
+
+> Kill-complete Kill-incomplete Failure: assertion execution binding build generation
+> Aider/DS OpenHands/DS Claude Code/DS Claude Code/Sonnet Codex/DS (off) Codex/DS Codex/Luna Codex/Sol
+> 4516 18 53 17 12 759 33 44 17 35 44 17 22 30 32 4834 45 15 28 34 29 530 39 23 40% 25% 50% 75% 100%
+> (b) Why: failure modes
+> No test delivered Project interfaces: hallucinated or mis-wired unmet runtime contract
+> Information gap: ambiguous setup tacit expected outcome Hedging Other
+> Failing generations
+> Aider/DS 60 32
+> OpenHands/DS 83 13
+> Codex/DS 45 25 11 10
+> Codex/Luna 41 43 8
+> Codex/Sol 44 49
+> Kill-incomplete tests
+> 77 22 69 28 62 28 10 92 72 26
+
+Fig. 6. (a) Where generations end, in percent of each configuration’s generations (project means over both views). Black ticks mark the end of the passing tests. (b) Why: failure modes of failing generations and kill-incomplete tests, in percent. 
+
+From the shortest to the longest Scenarios (a median of 5 against 15 Steps), Pass@1 falls from 82.8% to 70.8% and KillComplete@1 from 45.8% to 22.7%. Larger ground-truth tests show the same pattern, by lines, covered production lines, or kills: Pass@1 falls by 6–14 pp and KillComplete@1 by 24–32 pp. Repository-level characteristics matter less for kill-completeness. With more hidden code or more target interfaces, both metrics fall by 11–15 pp. 
+
+Answer to RQ3. The all-hidden view lowers Pass@1 by 2.5–9.1 pp but KillComplete@1 by only 0.1–3.7 pp. Longer Scenarios and larger ground-truth tests are harder to pass and have more kills to reproduce. 
+
+5.4 RQ4: Failure Modes 
+
+We analyze both failing generations, which produce no passing tests, and passing but kill-incomplete tests. For each of five configurations, we drew a stratified random sample of 40 cases of each type, yielding 200 failing generations and 200 kill-incomplete tests. We derived the failure modes in Figure 6(b) through a bottom-up analysis of the sampled cases’ outcomes and code, supplemented by missed-mutant analysis for kill-incomplete tests. We assigned labels using deterministic rules and an LLM judge (Claude Opus 5.5), with manual checks by the authors. 
+
+Failing generations mostly deliver no test or misuse the project’s interfaces. 1 No test delivered : As shown in Figure 6(a) (grey bar), Aider/DS and OpenHands/DS deliver no Test Imple-mentation in 53.4% and 59.0% of their generations. Aider/DS’s reply mostly repeats itself up to its output limit, and OpenHands/DS mostly exhausts its 200 LLM calls on exploration, without writing a test file. As shown in Table 5, with the same call limit and LLM, Codex CLI and Claude Code deliver a test with about 100 calls. 2 Hallucinated or miswired interfaces (45% and 41% of the failing generations of Codex/DS and Codex/Luna, Figure 6(b), left): The test uses classes, methods, signatures, or services that do not exist in the project, such as Tools::link_rewrite() in 40 Codex/Luna generated tests on PrestaShop, redefines existing Steps, or misuses the BDD frame-work. 3 Unmet runtime contracts (25% and 43%): The test calls existing interfaces in ways that their implementation rejects, e.g., an operation that the concrete class does not support. Declarations do not reveal such contracts, whereas the surrounding implementations often do. The mode is thus Benchmarking LLM Agents for Behaviorally Adequate Test Generation from Software Requirements 17 
+
+more frequent when all implementations are hidden (34% and 51%, against 13% and 32% in the target-hidden view). Another 13% and 15% fail on the information gap below. 
+
+Kill-incomplete tests fall short where the Requirement leaves information unstated. 
+
+This information gap accounts for 90–99% of each judged configuration’s kill-incomplete tests (Figure 6(b), right). In 120 of the 200 judged tests, the missing information is in the agent’s own workspace, e.g., in fixture files or helpers. In most of the remaining 80, the needed project convention of setup or check appears only in developers’ tests, which the benchmark removes from the agent’s workspace. 1 Ambiguous setup (over 50%): the Step names a state that can be established in several plausible ways, and the test takes a shorter but unexpected way than the ground truth, as in Figure 4. For example, on python-docx instances whose ground truth opens a fixture file, tests that also open one are kill-complete in 81.8% of cases, against 24.6% for tests that construct the state themselves.  
+
+> 2
+
+Tacit expected outcome (up to 28%): the Then Step states only part of what the ground truth checks, and what else to check is tacit for developers with domain knowledge. For example, on 25 Algorand SDK Scenarios, the Steps name a few fields of a response, the ground truth compares the whole response, and only 9 of the 320 passing tests are kill-complete, all of them by Claude Code/Sonnet. Ambiguous setup and tacit expected outcomes are normal in requirements: a requirement describes behavior in terms of the domain [40], and the knowledge that completes it stays tacit with the developers [9]. An agent must recover this knowledge from the project, or the requirement must be refined to state it. 3 Hedging (10% for Codex/DS): fallbacks or broad exception handlers let Steps pass whatever the product does.  
+
+> Answer to RQ4. Failing generations mostly deliver no test or misuse the project’s interfaces. Kill-incomplete tests fall short where the setup is ambiguous or the expected outcome tacit (90–99%).
+
+5.5 Toward Requirement-Grounded Harnesses 
+
+Four preliminary studies investigate what a harness around the agent can supply. 
+
+Grounding tests in project knowledge targets ambiguous setup. An added prompt paragraph instructs the agent to establish each Given through the project’s own fixtures, helpers, and entry points, not by constructing objects. On 231 python-docx and Algorand SDK instances not used to design the paragraph, this raises KillComplete@1 by 6.1 pp, 15.0 pp, and 8.0 pp for Codex/DS, Codex/Luna, and Codex/Sol ( 𝑝 ≤ 0.005). 
+
+Enhancing the Requirement targets ambiguous setup and tacit expected outcomes. In domain language and naming no code, one author modifies the prompt to clarify what the ground-truth test sets up or checks beyond what a Step states. For example, the unchanged Step “the parsed Get Block response should have rewards pool . . . ” is clarified as “the parsed response matches the mock http response as a whole”. As a result, Codex/Luna’s kill-complete tests rise from 2 to 14 on 17 Algorand SDK Scenarios with tacit outcomes ( 𝑝 < 0.001), and from 25 to 36 on 60 python-docx instances with an ambiguous Given . Enhancing requirements automatically with the project’s conventions, fixtures, and helpers is a potential direction. 
+
+Decomposing the Requirement targets misused project interfaces. Longer Scenarios are harder to pass (Section 5.3), but many of their Steps are shared with smaller Scenarios that they depend on. A harness could therefore decompose the target requirement and generate tests for the re-sulting smaller requirements first, and give them to the agent for the test generation of target requirement. We repeated test generation for 100 requirements from CoreShop and Kapua for which Codex/Luna had initially failed to produce passing tests. Retries with the unchanged prompt produced passing tests for 39 requirements due to the agent’s non-determinism. Augmenting the prompt with Codex/Luna’s own previously generated passing tests for smaller depends_on 18 Binhang Qi, Yiming Liu, Yun Lin, Yangjie Zhou, Hailong Sun, and Jin Song Dong 
+
+requirements increased this number to 74 ( 𝑝 < 0.001), suggesting that reusing these tests improves success beyond retries alone. 
+
+Exploiting non-determinism. Non-determinism makes a single generation unreliable but leaves room for improvement. We observed that the best of three generations, chosen by the evaluator, is kill-complete 8.6–10.2 pp more often than a single one (e.g., for Codex/DS, 44.8% against 36.2% on the repeated sample). A harness can exploit this only if it recognizes the behaviorally adequate candidate. 
+
+6 Threats to Validity 
+
+Construct validity. KillComplete@1 measures behavioral adequacy against one developer-written test, so a kill-incomplete test may still validly test a narrower reading of the requirement. However, the gap persists when only check-dependent kills count, and most kill-incomplete tests run a faulty line and still pass (Section 5.1), so the gap does not stem only from the test’s setup route. Moreover, mutants are artificial faults, but their detection correlates with that of real faults [22]. Equivalent mutants, which no test can kill, do not lower any score, because we count only the mutants that the ground-truth test kills. 
+
+Internal validity. Due to the time budgets, the experiments did not repeat all agents’ test genera-tions multiple times on the whole benchmark to reduce the effects of agents’ non-determinism. We choose five configurations (Codex/DS, Codex/Luna, Claude Code/DS, OpenHands/DS, and Aider/DS) to regenerate twice to assess the effects. Up to 24% of their pass verdicts and 17% of their kill-complete verdicts flip, but their Pass@1 and KillComplete@1 change by at most 4.5 pp. Additionally, the target-hidden view rests on an LLM-drafted, author-accepted map of the target implementation, which may hide slightly more or less than the code that realizes the target behavior. However, the all-hidden view does not depend on this map, and it shows the same gap between passing and kill-complete tests. Finally, the projects are public and may be in the training data of some LLMs. But memorized developer tests would raise KillComplete@1 and thus narrow, not widen, the gap that we report. 
+
+External validity. The eight projects were selected purposively, but they cover five languages, four BDD frameworks, six domains, and three test levels, and our reported gap appears in every one of them. Moreover, Gherkin Scenarios are more structured than most informal requirements. Informal requirements are likely to state even less of the setup and the expected outcome, so we expect the information gap to be larger for them, not smaller. Finally, both views in the benchmark remove the tests of all Scenarios, so that none reveals part of the ground truth. However, in practice, a developer who extends a test suite could read them. Our results thus concern writing a test without the tests of other Scenarios. We leave such cases in future work. 
+
+7 Conclusion 
+
+We presented Req2Test-Bench, a benchmark of 5,086 execution-validated requirement-to-test instances from 8 real projects. It evaluates a generated test by whether it passes and reproduces the fault detection of the developers’ own test. We evaluated eight agent–model–reasoning con-figurations, and found that the best-passing configuration passes 82.8% of the instances but is kill-complete on only 33.8%. Kill-incomplete tests mostly fall short where the requirement leaves the setup ambiguous or the expected outcome tacit. They take shortcuts instead of the project’s own fixtures and entry points, or check less than the developers’ tests. This gap persists even with costlier agent configurations, motivating requirement-grounded harnesses for test generation that guide requirement understanding, test validation, and project-specific knowledge acquisition. Benchmarking LLM Agents for Behaviorally Adequate Test Generation from Software Requirements 19 
+
+8 Data Availability 
+
+The benchmark code and evaluation results are available at https://github.com/code-philia/Req2Test-Bench, and the dataset is available at https://huggingface.co/datasets/code-philia/Req2Test-Bench. 
+
+References 
+
+[1] Toufique Ahmed, Martin Hirzel, Rangeet Pan, Avraham Shinnar, and Saurabh Sinha. 2024. Tdd-bench verified: Can llms generate tests for issues before they get resolved? arXiv preprint arXiv:2412.02883 (2024). [2] Aider. 2026. aider is AI pair programming in your terminal. https://github.com/Aider-AI/aider. [3] Parsa Alian, Noor Nashid, Mobina Shahbandeh, Taha Shabani, and Ali Mesbah. 2025. Feature-driven end-to-end test generation. In 2025 IEEE/ACM 47th International Conference on Software Engineering (ICSE) . IEEE, 450–462. [4] Anthropic. 2026. Claude Sonnet 5.5. https://www.anthropic.com/claude-sonnet-5-5. [5] Bubblewrap Contributors. 2026. Low-level unprivileged sandboxing tool used by Flatpak and similar projects. https://github.com/containers/bubblewrap [6] Bei Chen, Fengji Zhang, Anh Nguyen, Daoguang Zan, Zeqi Lin, Jian-Guang Lou, and Weizhu Chen. 2022. Codet: Code generation with generated tests. arXiv preprint arXiv:2207.10397 (2022). [7] claude-code Authors. [n. d.]. Claude Code. https://github.com/anthropics/claude-code. [8] DeepSeek-AI. 2026. DeepSeek-V4.1-Flash: Pushing the Limits of KV Cache Compression. arXiv:2609.19969 [cs.CL] https://arxiv.org/abs/2609.19969 [9] Alessio Ferrari, Paola Spoletini, and Stefania Gnesi. 2016. Ambiguity and tacit knowledge in requirements elicitation interviews. Requir. Eng. 21, 3 (Sept. 2016), 333–355. doi:10.1007/s00766-016-0249-3 [10] Margarida Ferreira, Luis Viegas, Joao Pascoal Faria, and Bruno Lima. 2025. Acceptance test generation with large language models: An industrial case study. In 2025 IEEE/ACM International Conference on Automation of Software Test (AST) . IEEE, 1–11. [11] Jannik Fischbach, Julian Frattini, and Andreas Vogelsang. 2021. Cira: A tool for the automatic detection of causal relationships in requirements artifacts. arXiv preprint arXiv:2103.06768 (2021). [12] Jannik Fischbach, Andreas Vogelsang, Dominik Spies, Andreas Wehrle, Maximilian Junker, and Dietmar Freudenstein. 2020. Specmate: Automated creation of test cases from acceptance criteria. In 2020 IEEE 13th international conference on software testing, validation and verification (ICST) . IEEE, 321–331. [13] Pedro Luís Fonseca, Bruno Lima, and João Pascoal Faria. 2025. Streamlining Acceptance Test Generation for Mobile Applications Through Large Language Models: An Industrial Case Study. In 2025 40th IEEE/ACM International Conference on Automated Software Engineering (ASE) . 3311–3321. doi:10.1109/ASE63991.2025.00273 [14] Mattheus França and Fabiane Benitti. 2026. Req2test: an approach for the automatic generation of unit tests from user stories using llms. In Proceedings of the 41st ACM/SIGAPP Symposium on Applied Computing . 1654–1663. [15] Huimin Hu, Cristian Cadar, and Michael Pradel. 2026. DiffTestGen: Change-Directed LLM-Based Testing for Exposing Behavioral Differences. arXiv preprint arXiv:2607.16024 (2026). [16] Dong Huang, Jie M Zhang, Michael Luck, Qingwen Bu, Yuhao Qing, and Heming Cui. 2023. Agentcoder: Multi-agent-based code generation with iterative testing and optimisation. arXiv preprint arXiv:2312.13010 (2023). [17] Infection. [n. d.]. PHP Mutators. https://infection.github.io/guide/mutators.html. [18] Kush Jain, Gabriel Synnaeve, and Baptiste Rozière. 2025. TestGenEval: A Real World Unit Test Generation and Test Completion Benchmark. In The Thirteenth International Conference on Learning Representations . https://openreview. net/forum?id=7o6SG5gVev [19] Yue Jia and Mark Harman. 2011. An Analysis and Survey of the Development of Mutation Testing. IEEE Trans. Softw. Eng. 37, 5 (Sept. 2011), 649––678. doi:10.1109/TSE.2010.62 [20] Carlos E Jimenez, John Yang, Alexander Wettig, Shunyu Yao, Kexin Pei, Ofir Press, and Karthik R Narasimhan. 2024. SWE-bench: Can Language Models Resolve Real-world Github Issues?. In The Twelfth International Conference on Learning Representations . https://openreview.net/forum?id=VTF8yNQM66 [21] Luciano Belo de Alcântara Júnior and João Eduardo Montandon. 2026. GivenWhenThen: A Dataset of BDD Test Scenarios Mined from Open Source Projects. In Proceedings of the 23rd International Conference on Mining Software Repositories . 595–599. [22] René Just, Darioush Jalali, Laura Inozemtseva, Michael D Ernst, Reid Holmes, and Gordon Fraser. 2014. Are mutants a valid substitute for real faults in software testing?. In Proceedings of the 22nd ACM SIGSOFT international symposium on foundations of software engineering . 654–665. [23] Weiyu Kong, Yun Lin, Xiwen Teoh, Duc-Minh Nguyen, Ruofei Ren, Jiaxin Chang, Haoxu Hu, and Haoyu Chen. 2026. Compiling Large Multi-modal Requirement Documents into Runnable Software Systems: From an Agentic Test-Driven Perspective. Proc. ACM Softw. Eng. 3, ISSTA, Article ISSTA105 (Oct. 2026), 24 pages. doi:10.1145/3832196 20 Binhang Qi, Yiming Liu, Yun Lin, Yangjie Zhou, Hailong Sun, and Jin Song Dong 
+
+[24] Bowen Li, Wenhan Wu, Ziwei Tang, Lin Shi, John Yang, Jinyang Li, Shunyu Yao, Chen Qian, Binyuan Hui, Qicheng Zhang, Zhiyin Yu, He Du, Ping Yang, Dahua Lin, Chao Peng, and Kai Chen. 2024. DevBench: A Comprehensive Benchmark for Software Development. arXiv:2403.08604v1 [cs.CL] https://arxiv.org/abs/2403.08604v1 [25] Jingyao Liu, Chen Huang, Zhizhao Guan, Wenqiang Lei, and Yang Deng. 2026. E2EDev: Benchmarking Large Language Models in End-to-End Software Development Task. In Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) . 35032–35068. [26] Niels Mündler, Mark N Müller, Jingxuan He, and Martin Vechev. 2024. Swt-bench: Testing and validating real-world bug-fixes with code agents. Advances in Neural Information Processing Systems 37 (2024), 81857–81887. [27] Zifan Nan, Zhaoqiang Guo, Kui Liu, and Xin Xia. 2025. Test Intention Guided LLM-Based Unit Test Generation. In 
+
+2025 IEEE/ACM 47th International Conference on Software Engineering (ICSE) . 1026–1038. [28] OpenAI. 2026. Introducing GPT-6 Sol and Luna. https://openai.com/index/introducing-gpt-6-sol-and-luna/. [29] OpenAI. 2026. Lightweight coding agent that runs in your terminal. https://github.com/openai/codex. [30] PIT. [n. d.]. Java Mutation Operators. https://pitest.org/quickstart/mutators/. [31] Binhang Qi, Yun Lin, Xinyi Weng, Yuhuan Huang, Chenyan Liu, Hailong Sun, Zhi Jin, and Jin Song Dong. 2026. Generating Project-Specific Test Cases with Requirement Validation Intention. Proc. ACM Softw. Eng. 3, ISSTA, Article ISSTA090 (Oct. 2026), 23 pages. doi:10.1145/3832181 [32] Req2Test-Bench Authors. 2026. Req2Test-Bench. https://github.com/code-philia/Req2Test-Bench [33] Max Sch"afer, Sarah Nadi, Aryaz Eghbali, and Frank Tip. 2024. An Empirical Evaluation of Using Large Language Models for Automated Unit Test Generation. IEEE Trans. Softw. Eng. 50, 1 (Jan. 2024), 85––105. doi:10.1109/TSE.2023.3334955 [34] Xinyu Shi, Zhou Yang, and An Ran Chen. 2026. Bridging Behavior and Implementation: Automated Java Glue Code Generation for Behavior-Driven Development. arXiv:2607.19703 [cs.SE] https://arxiv.org/abs/2607.19703 [35] The Cucumber Open Source Project. 2026. Gherkin Reference. https://cucumber.io/docs/gherkin/reference/ [36] Michele Tufano, Shao Kun Deng, Neel Sundaresan, and Alexey Svyatkovskiy. 2022. Methods2Test: A dataset of focal methods mapped to test cases. In Proceedings of the 19th International Conference on Mining Software Repositories .299–303. [37] Chunhui Wang, Fabrizio Pastore, Arda Goknil, Lionel C Briand, and Zohaib Iqbal. 2015. UMTG: a toolset to automatically generate system test cases from use case specifications. In Proceedings of the 2015 10th Joint Meeting on Foundations of Software Engineering . 942–945. [38] Xingyao Wang, Boxuan Li, Yufan Song, Frank F. Xu, Xiangru Tang, Mingchen Zhuge, Jiayi Pan, Yueqi Song, Bowen Li, Jaskirat Singh, Hoang H. Tran, Fuqiang Li, Ren Ma, Mingzhang Zheng, Bill Qian, Daniel Shao, Niklas Muennighoff, Yizhe Zhang, Binyuan Hui, Junyang Lin, Robert Brennan, Hao Peng, Heng Ji, and Graham Neubig. 2025. OpenHands: An Open Platform for AI Software Developers as Generalist Agents. In The Thirteenth International Conference on Learning Representations . https://openreview.net/forum?id=OJd3ayDDoF [39] Chen Yang and Junjie Chen. 2026. Uncovering Business Logic Bugs via Semantics-Driven Unit Test Generation. arXiv:2604.23509 [cs.SE] https://arxiv.org/abs/2604.23509 [40] Pamela Zave and Michael Jackson. 1997. Four dark corners of requirements engineering. ACM Trans. Softw. Eng. Methodol. 6, 1 (Jan. 1997), 1–30. doi:10.1145/237432.237434 [41] Quanjun Zhang, Ye Shang, Chunrong Fang, Siqi Gu, Jianyi Zhou, and Zhenyu Chen. 2024. Testbench: Evaluating class-level test case generation capability of large language models. arXiv preprint arXiv:2409.17561 (2024).

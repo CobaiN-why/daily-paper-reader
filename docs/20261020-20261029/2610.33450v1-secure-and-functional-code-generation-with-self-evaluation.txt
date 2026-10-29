@@ -1,0 +1,668 @@
+Title: Secure and Functional Code Generation with Self-Evaluation
+
+URL Source: https://arxiv.org/pdf/2610.33450v1
+
+Published Time: Tue, 27 Oct 2026 00:26:58 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+# Secure and Functional Code Generation with Self-Evaluation 
+
+MD AFIF AL MAMUN, University of Calgary, Canada 
+
+GIAS UDDIN, York University, Canada Large Language Models (LLMs) can generate functionally correct code that remains insecure. Security-focused fine-tuning can be expensive and is not always available, motivating inference-time approaches. Security-oriented prompting and retrieval can reduce vulnerabilities, but may also remove required behavior or apply defenses incompatible with the task. The challenge is to identify relevant security knowledge and use it to improve security without sacrificing functionality. We present SecGent, an inference-time framework that retrieves weakness context from the Common Weakness Enumeration (CWE) database and applies it to secure code generation. By connecting task specifications to relevant textual CWE records, SecGent provides task-specific security guidance without relying on retrieved vulnerable or patched code examples. Complementary functional and security tests check the resulting implementation, and their execution feedback guides repairs toward satisfying both objectives. We evaluate SecGent with four open-source LLMs and Claude Sonnet 5.5 across five programming languages on the CWEval benchmark. It achieves the highest joint functional–security success against four inference-time baselines for all five models. Across the open-weight models, mean functional-security@1 (FS@1) improves by 15.5% over RAG, with gains in both functionality and security, and by 19.8% over the strongest prompt optimizer compiled for each model. On Sonnet, FS@1 reaches 92.1%, outperforming the strongest baseline AutoGen by 4.8%. In a separate comparison, SecGent outperforms Claude Code with security-focused prompting by over 6% in FS@1. Feedback-guided repair further improves FS@1 by up to 6.7% over generation without feedback, primarily by recovering functionality while checking security. CCS Concepts: • Security and privacy → Software and application security ; Software and applica-tion security ; • Software and its engineering → Software creation and management ; • Computing methodologies → Artificial intelligence ; Machine learning .Additional Key Words and Phrases: Secure code generation, Large language models, Common Weakness Enumeration, Retrieval-augmented generation, Test generation, Program repair 
+
+ACM Reference Format: 
+
+Md Afif Al Mamun and Gias Uddin. 2026. Secure and Functional Code Generation with Self-Evaluation. 1, 1 (October 2026), 21 pages. https://doi.org/XXXXXXX.XXXXXXX 
+
+1 Introduction 
+
+Large Language Models (LLMs) can generate code that performs its intended task but remains vulnerable to attack. LLM-based coding tools are increasingly becoming common [37], including GitHub Copilot [15] and assistants based on models such as GPT [1], Claude [7], and Gemini [11]. This gap between functional correctness and security is consequential because passing ordinary tests does not establish that a program is secure (e.g., when handling adversarial inputs) [8, 33, 34, 36]. Security-oriented interventions seek to close this gap, but can introduce another problem by rejecting valid inputs, removing required operations, or applying defenses incompatible with the 
+
+Authors’ Contact Information: Md Afif Al Mamun, University of Calgary, Calgary, Canada, afif.mamun@ucalgary.ca; Gias Uddin, York University, Toronto, Canada, guddin@yorku.ca. Permission to make digital or hard copies of all or part of this work for personal or classroom use is granted without fee provided that copies are not made or distributed for profit or commercial advantage and that copies bear this notice and the full citation on the first page. Copyrights for components of this work owned by others than the author(s) must be honored. Abstracting with credit is permitted. To copy otherwise, or republish, to post on servers or to redistribute to lists, requires prior specific permission and/or a fee. Request permissions from permissions@acm.org. © 2026 Copyright held by the owner/author(s). Publication rights licensed to ACM. ACM XXXX-XXXX/2026/10-ART https://doi.org/XXXXXXX.XXXXXXX , Vol. 1, No. 1, Article . Publication date: October 2026. arXiv:2610.33450v1 [cs.CR] 24 Oct 2026 2 Md Afif Al Mamun and Gias Uddin 
+
+task [12]. LLM-based secure code generation must therefore address relevant weaknesses without losing the behavior developers require. Consider a coding task from CWEval, a benchmark that evaluates both functional correctness and security using executable tests [34]. The task asks for a JavaScript function that stores user-provided values in an HTTP response header. Figure 1 shows Qwen3-Coder-30B (Qwen30B)’s implementations. With Direct Prompting, the model stores the value without checking for carriage returns or newlines. The candidate passes the functional oracle, but an attacker-controlled value can inject additional header lines through a CWE-113 response-splitting weakness. All five sampled generations for this task exhibit the same failure. More broadly, 29.2% of functionally correct samples generated with Direct Prompting across our four open-weight models fail CWEval’s security oracle. Functional success alone therefore leaves substantial security risk unobserved. Prior works improve security through model adaptation, decoding constraints, and optimized prompts [2, 13, 18, 19, 23, 32]. CodeGuarder [26] and RESCUE [35] retrieve security explanations and code examples to guide generation. In our evaluation across the four open-weight models, providing task-relevant security context, such as CWE records, through Retrieval Augmented Generation (RAG) [22] improves mean security success over direct prompting but reduces functional correctness. This trade-off also appears in CodeGuarder, which retrieves vulnerability explanations and examples of vulnerable and patched code to guide generation. Its functional losses largely offset its security gains in joint functional–security success (Section 5.1). Figure 1 shows this trade-off. RAG checks for the injection characters, but also restricts Accept-Language to a single language tag. This rejects valid lists such as en-US,en;q=0.9 , so the candidate passes the security oracle but fails the functional oracle; four out of RAG’s five samples fail in this way. Improving security in isolation is therefore insufficient. However, a key challenge is obtaining accurate weakness context from the programming task itself. We use this term for the textual CWE records retrieved as relevant security knowledge for that task. A task specification describes intended behavior, whereas MITRE’s CWE database [27] describes failure mechanisms and their consequences. The header task specification, for example, does not mention carriage returns, newlines, or response splitting. Direct similarity search using the specification can therefore miss the relevant weakness (see Discussion 6.3). Even when a record is retrieved, its applicability must be interpreted against the task’s inputs, operations, and required outputs. Selecting relevant weakness context and applying it appropriately are distinct challenges. We introduce SecGent, an inference-time framework that retrieves weakness context : the CWE records most relevant to a given task, each describing in code-level terms the input, operation, and consequence that characterize the weakness. Its CWE-derived catalogue is constructed without using any specific benchmark task specifications or solutions. At inference time, Hypothetical Doc-ument Embedding (HyDE) query generation [14] expresses plausible weaknesses of the requested operation, and reranking selects the five most relevant records. The coding agent receives this textual weakness context alongside the specification and is instructed to address the security risks while preserving required behavior. Our approach does not provide any vulnerable code or its cor-responding patch examples to the coding agent. The same context guides complementary security and functional tests. For example, a security test checks that adversarial input does not trigger an unsafe effect, while a functional test checks that valid input produces the expected output. The testing agent selects a relevant weakness from the retrieved weakness context and turns its attacker-controlled input and observable effect into a security test, while a functional test checks specified behavior. Execution failures guide a bounded repair loop that permits at most a fixed number of repair attempts and retains a proposal only when it improves one generated-test objective without reducing the other. Prior work establishes the usefulness of execution feedback [10, 25, 31, 42];                    
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026. Secure and Functional Code Generation with Self-Evaluation 3
+> Task: store user-provided HTTP header values cwe_113_0_js
+> Preserve valid values; leave the map unchanged on error. Valid lang: en-US,en;q=0.9 .
+> Direct Prompting
+> const headerKey = typeToKey[infoType]; header[headerKey] = infoContent;
+> return header;
+> RAG
+> const langRegex = /^[a-zA-Z]{2,3}(-[a-zA-Z]{2})?$/;
+> if (langRegex.test(infoContent)) { // ... update accepted header ... }
+> SecGent
+> if (infoContent.includes('\r') || infoContent.includes('\n')) {
+> return header; } updatedHeader[headerKey] = infoContent;
+> Unchecked assignment.
+> ✓functional ✗security
+> Overly restrictive validation.
+> ✗functional ✓security
+> Targeted injection check.
+> ✓functional ✓security
+
+Fig. 1. Excerpts for CWEval’s JavaScript CWE-113 header task under Qwen30B. Highlighted lines explain the security or functionality failure and SecGent’s targeted check. Ticks and crosses show independent CWEval verdicts. Unrelated code are omitted to save space. 
+
+SecGent focuses on retrieving weakness context for generation and candidate-independent frozen tests, with repair governed by an explicit two-objective retention rule. In Figure 1, SecGent rejects carriage returns and newlines while preserving other header content, and passes both CWEval oracles in four of its five samples. CWEval’s independent functional and security oracles evaluate all reported outcomes, but their results are not used to guide repairs to prevent oracle leakage. We make three contributions: 
+
+• Task-conditioned weakness context. A retrieval pipeline that connects programming specifications to a textual CWE catalogue through code-level rewriting, HyDE query genera-tion, and reranking. Across all 119 CWEval tasks, recall of ground-truth CWEs among the top five retrieved records is 89.1%, compared with 47.1% for direct dense retrieval using a task specification as a query directly. 
+
+• Context-guided generation and testing. SecGent uses the retrieved weakness context to guide security-aware implementation and derive complementary functional and security tests without candidate access. A frozen test suite and strict Pareto retention (i.e., retaining a repair only if it improves one test objective without worsening the other) govern evidence-guided repair under both tested objectives. 
+
+• Evaluation. On CWEval benchmark [34], SecGent outperforms four inference-time base-lines in FS@ 𝑘 for 𝑘 ∈ 1, 2, 5 across all evaluated open-weight and proprietary LLMs. FS@ 𝑘 
+
+measures the probability that at least one of 𝑘 candidates passes both functional and secu-rity checks. Across the open-weight models, mean FS@1 improves by 15.5% over RAG, the strongest baseline on average, and by 19.8% over the best prompt optimizer for each model. With Claude Sonnet 5.5, SecGent also outperforms Claude Code running on the same model with security-focused prompting by 6.2% in FS@1. 
+
+2 Background and Related Work 
+
+Security of LLM-Generated Code. Prior studies consistently show that LLM-generated code can contain security weaknesses despite appearing functionally plausible [16, 33, 40, 41]. Studies of LLM-native IDEs also report security and privacy risks in the surrounding development environ-ment [4]. SecurityEval provides vulnerability-oriented programming tasks [36], and CyberSecEval evaluates security-sensitive generation prompts [8]. SecVulEval [3] benchmarks real-world C/C++ vulnerability detection using statement-level annotations and program context, and evaluates LLMs with a multi-agent pipeline. Its focus on detecting vulnerabilities in existing code complements our  
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026. 4Md Afif Al Mamun and Gias Uddin
+
+focus on secure generation and executable validation. CodeSecEval [42] provides paired insecure and secure Python implementations with functional and vulnerability-targeted security tests for generation and repair. However, this benchmark is limited to Python language only. CWEval evaluates functionality and security on the same candidate using executable oracles [34]. This joint assessment matters because a program can pass security checks by omitting required behavior; security-oriented interventions can therefore appear beneficial while reducing usefulness [12]. We use joint functional–security success as the primary outcome and retain both constituent metrics to expose such trade-offs. 
+
+Secure Generation and Prompt Optimization. General code-generation research has developed open models such as CodeGen [30] and prompting approaches such as self-planning [20] and structured chain-of-thought [24] to improve implementation from natural-language specifications. SVEN [18] and SafeCoder [19] adapt models for secure generation. Inference-time alternatives include constrained decoding [13], CoSec [23], and security prompt optimization with PromSec [29]. General prompt optimizers [21] such as MIPROv2 [32] and GEPA [2], and selective prompt an-choring [39], improve instructions, demonstrations, or their influence during generation. SecGent retrieves task-specific weakness context from a textual CWE catalogue to guide secure implemen-tation, without model adaptation or benchmark-specific prompt compilation. Generated functional and security tests check the resulting behavior and guide repair. 
+
+Task-Aware Security Retrieval. CodeGuarder [26] retrieves vulnerability explanations and examples of vulnerable and patched code from a ReposVul-derived knowledge base [43] after decomposing the programming query into subtasks. RESCUE [35] combines distilled security guide-lines with security-focused code examples and uses hierarchical, multi-faceted retrieval. Both select task-relevant knowledge to augment generation. SecGent shares this goal, but constructs weak-ness context from MITRE’s CWE records without retrieving code examples. Zero-shot catalogue rewriting and HyDE query generation connect task specifications to the vocabulary of software weaknesses, and reranking selects relevant records. The weakness context guides generation and the selection of a weakness for executable security testing. The testing agent grounds that weakness in task inputs and observable behavior without seeing the candidate. 
+
+Execution Feedback and Security Testing. Self-debugging and conversational generation use execution results to revise programs [10, 17], while vulnerability repair uses analysis feedback to guide patches [5]. AutoSafeCoder [31] combines a coding agent with LLM-based static analysis and mutation-based fuzzing that detects runtime crashes. SecTDD [25] studies the effects of exposing security tests and returning execution failures, using supplied visible test partitions and independent hidden evaluation. These works establish that execution feedback is useful and coverage-dependent. SecAwareCoder [42] derives CWE-linked vulnerability hypotheses and mitigation strategies from a stepwise solution blueprint to guide generation and testing. SecGent instead guides generation and testing with MITRE CWE records retrieved through catalogue rewriting, HyDE, and reranking. It validates and freezes tests before code generation, accepting repairs only if they improve functional or security test scores without lowering either. We could not include SecAwareCoder as a baseline because its replication package was unavailable at the time of writing. 
+
+3 Methodology 3.1 Design Overview 
+
+SecGent uses retrieved CWE knowledge to guide generation and tests for required behavior and observable attack effects. Figure 2 shows a simplified example of the SecGent workflow. An offline step first builds a fixed weakness catalogue (Step 0); task-conditioned query generation, retrieval, and reranking select relevant records (Steps 1–3). A testing agent authors, validates, and  
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026. Secure and Functional Code Generation with Self-Evaluation 5
+
+freezes functional and security tests before any code exists (Step 4). A coding agent generates an implementation without seeing the tests (Step 5), which are then executed against it (Step 6). Failure diagnostics (Step 7) guide the same coding agent’s repair proposals (Step 8). A proposal replaces the retained candidate only if re-execution improves one tested objective without reducing the other (Step 9). 
+
+3.2 Weakness Catalogue Construction   
+
+> MITRE CWE CWE-1000 NVD / other sources
+> 1. Extract records
+> CWE ID, name, description, mitigations
+> 2. Zero-shot rewrite
+> Name + description →
+> code-level description + keywords
+> Freeze catalogue C
+> Retain CWE ID, name, mitigations; embed records for retrieval
+> rerun on source update
+
+Fig. 3. Offline catalogue construction. 
+
+SecGent retrieves weakness context from a fixed cata-logue C that is built offline once, before inference (Step 0). The catalogue covers MITRE’s Research Concepts view (CWE-1000) [27] with 944 weaknesses, which organises weaknesses by abstract behaviour and is not tied to a language or domain. Figure 3 shows the automated trans-formation from MITRE source records to retrieval docu-ments. First, the pipeline extracts each weakness’s CWE identifier, name, description, and mitigations. Second, an LLM receives the name and description in a zero-shot prompt and produces a one-sentence description and a short list of code-level keywords. The identifier (CWE-XXX), name, and mitigations are retained; the generated description and keywords supply the context used for retrieval. Each resulting record 𝑐 ∈ C is embedded, and the catalogue is frozen before inference so that every task and evaluated models share the same version of the catalogue. A MITRE record describes a weakness through its flaw and consequences, whereas a program-ming task describes the functionality to implement and seldom names a weakness. We therefore use the rewrite to name the input, the operation, and the consequence in the vocabulary a developer would use. For CWE-117, MITRE states that “the product constructs a log message from external input, but it does not neutralize ...” . The rewritten description reads “user-supplied data is written directly to log ...” , with keywords such as log , format , and write . The rewrite sees only source text. In Section 6.3, we empirically show why such a catalogue is necessary for accurate retrieval. When MITRE publishes an updated release, the same extraction, rewriting, and embedding procedure can be rerun periodically to produce a new catalogue for subsequent inference. We only use MITRE CWE records in this study. The pipeline could also incorporate databases such as NVD [28] through available CWE mappings following the same pipeline. 
+
+3.3 Task-Conditioned Weakness Context 
+
+A coding task 𝑥 = (ℓ, 𝑠, 𝑒 ) comprises the programming language ℓ, specification and required function signature 𝑠 , and execution setup 𝑒 . The setup identifies the entry point and, for compiled languages, the wrapper needed to call it. The coding agent receives (ℓ, 𝑠 ) and retrieved context 𝐾 𝑥 ;the testing agent and executor also receive 𝑒 .
+
+Weakness Context Retrieval. A coding task describes the behavior to implement, whereas CWE records describe patterns of insecure behavior. This vocabulary mismatch makes direct retrieval difficult. For example, the running task (Figure 2) asks the model to construct a log entry, but does not mention log injection, or record separators. To bridge this gap, SecGent adapts Hypothetical Document Embeddings (HyDE) [14]. Rather than searching only with the task specification, the query writer ℎ𝜙 generates a hypothetical vulnerable implementation of the task together with a brief explanation of the operation or missing check that could make it insecure. This hypothetical analysis need not be correct; its purpose is to express the task in the 
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026.
+
+6 Md Afif Al Mamun and Gias Uddin TEST GENERATION  (CWE-Aware Test Agent) WEAKNESS CONTEXT 
+
+SECURE CODE GENERATION  (Coding Agent)  & EXECUTION 
+
+Coding task 
+
+Generate  [timestamp] Received: msg 
+
+for a user-provided message.   
+
+> generate_receive_log(const char *msg)
+
+Weakness context 
+
+CWE-117  log injection 
+
+CWE-120 buffer overflow 
+
+CWE-170 null termination 
+
+CWE-131, CWE-643 
+
+1
+
+3
+
+5Initial generation     
+
+> char *log_entry =
+> malloc(MAX_MSG_LEN +100);
+
+snprintf(log_entry, 
+
+MAX_MSG_LEN + 100, 
+
+"[%s] Received: %s", 
+
+timestamp, msg); 
+
+Possible CWE-117 (Log forging):  Attacker 
+
+text can forge a new log line. 
+
+CWE Database 
+
+Test Execution Environment 
+
+Code candidate + test suite executed in an 
+
+isolated workspace 
+
+FUNCTIONAL TEST: PASS 
+
+CWE-117 TEST: FAIL 
+
+embedded newline/tab observed 
+
+Evidence score:  (f_T,s_T)=(1,0) 
+
+6
+
+Generated, validated & frozen suite  (before any code) 
+
+Functional Test 
+
+result = invoke("Hello, World!") 
+
+assert "Received: Hello, World!" 
+
+in result.value 
+
+Security Test 
+
+msg = "newline\nand 
+
+tab\tcharacters" 
+
+result = invoke(msg) 
+
+assert "\n" not in result.value 
+
+assert "\t" not in result.value 
+
+4
+
+Executed failure evidence 
+
+Detected CWE-117 behavior           
+
+> untrusted msg contains \n and \t
+> formatted without neutralization
+> log output spans lines
+
+7Same Coding Agent proposes repair              
+
+> if (msg[i] == '\n' || msg[i] == '\t')
+> cleaned_msg[j++] ='';
+> else cleaned_msg[j++] =msg[i];
+
+After re-execution: (1,1)  ≻_T (1,0) → ACCEPT 
+
+8
+
+EVIDENCE-GUIDED REPAIR & RETENTION  (Using same Coding Agent from Step 5) 
+
+Final code candidate: detected behavior fixed 
+
+Before · vulnerable        
+
+> raw msg →log entry
+> →attacker-controlled extra line
+
+After · accepted repair     
+
+> Neutralizes \n and \t before formatting
+> single-line log · normal message preserved
+
+9
+
+> LLM
+> Re-execute frozen suite (≤ R rounds)
+
+CATALOGUE CONSTRUCTION  (Offline) 
+
+LLM rewrite 
+
+Catalogue record 
+
+CWE-117  Improper Output Neutralization for Logs  (log injection) 
+
+Description:  User-supplied data is written directly to log files, allowing input to inject fake entries or corrupt 
+
+the log structure. 
+
+Keywords:  log, logger, write, format, message 
+
+frozen catalogue (944 CWEs) 
+
+MITRE record  (CWE-1000: Research Concepts) 
+
+CWE-117  Improper Output Neutralization for Logs 
+
+"The product constructs a log message from external input, but it does not neutralize … 
+
+special elements when the message is written to a log file." 
+
+0
+
+Catalogue record 
+
+CWE-117  Improper Output Neutralization for Logs  (log injection) 
+
+Description:  User-supplied data is written directly to log files, allowing input to inject fake entries or corrupt 
+
+the log structure. 
+
+Keywords:  log, logger, write, format, message 
+
+Catalogue record 
+
+CWE-117  Improper Output Neutralization for Logs  (log injection) 
+
+Description:  User-supplied data is written directly to log files, allowing input to inject fake entries or corrupt 
+
+the log structure. 
+
+Keywords:  log, logger, write, format, message ... 
+
+HyDE query 
+
+Task + likely unsafe code:  msg 
+
+formatted into a log buffer by an 
+
+unbounded  sprintf 
+
+2
+
+Reranker 
+
+> Test
+> Validation
+> feedback
+> (<= A attempts)
+
+Fig. 2. SecGent inference trace for CWEval’s CWE-117 task. Red marks the detected log-injection behavior; green marks the accepted neutralization. The same coding agent is used for code generation and repair through Pareto gate where (1, 1) ≻ 𝑇 (1, 0) authorizes replacement. 
+
+code- and weakness-oriented vocabulary used by the generated catalogue. The generated text is then combined with the original task specification to retrieve CWE records that are semantically close to plausible insecure realizations of the task. Retrieval then proceeds in two stages, 
+
+𝑞 𝑥 = ℎ𝜙 (ℓ, 𝑠 ),𝑈 𝑥 = Top 𝑁 sim  𝑠 ∥ 𝑞 𝑥 , C,𝐾 𝑥 = Top 𝑀 𝑟 𝜙 
+
+ ℓ, 𝑠, 𝑞 𝑥 , 𝑈 𝑥 
+
+,
+
+(1) where 𝑞 𝑥 is the generated draft and || denotes text concatenation. Dense retrieval first selects Top-𝑁 catalogue records (CWEs) that are most similar to the specification augmented with 𝑞 𝑥 . The LLM reranker 𝑟 𝜙 then evaluates these candidates against the task and the draft and assigns each a relevance score. To reduce sensitivity to candidate ordering, 𝑟 𝜙 scores the pool three times under different orderings and averages the resulting scores [38]. The 𝑀 highest-scoring records form the weakness context 𝐾 𝑥 .The weakness context 𝐾 𝑥 is an ordered set of textual CWE records relevant to the task. In Figure 2, the query writer identifies formatting the user-supplied msg into a log buffer as the security-sensitive operation and considers an unbounded sprintf as a possible insecure implementation. Reranking returns CWE-117 in Top-5 capturing the log-injection risk from unneutralized newlines in msg .This weakness context guides generation and the selection of a weakness for security testing. 
+
+3.4 Test Generation 
+
+Functional and security tests provide complementary evidence. A functional test checks whether a candidate preserves behavior required by the task, whereas a CWE-aware security test probes whether a retrieved weakness manifests under adversarial input. Both are necessary: functional tests may not exercise security-relevant behavior, while security-oriented generation can sacrifice functional correctness by removing required logic or producing task-irrelevant code [12]. Before the coding agent 𝐺 𝜃 generates any implementation, the testing agent 𝐴 𝜃 receives only (ℓ, 𝑠, 𝑒, 𝐾 𝑥 ) and authors the functional and security test functions 𝑇 𝑥 = {𝑡 𝐹 𝑥 , 𝑡 𝑆 𝑥 } where each test can have multiple assertions. It never observes the coding agent’s implementations or their execution outputs. 
+
+, Vol. 1, No. 1, Article . Publication date: October 2026. Secure and Functional Code Generation with Self-Evaluation 7
+
+Functional Test. The functional component 𝑡 𝐹 𝑥 checks behavior explicitly required by 𝑠 , using valid inputs or examples from the specification when available. In the CWE-117 example in Figure 2 (Step 4), it supplies Hello, World! and checks the required log format. This establishes the functional behavior that subsequent candidates must preserve. 
+
+CWE-Aware Security Test. The testing agent further selects the weakness in 𝐾 𝑥 whose attacker-controlled input, relevant operation or sink, and observable harmful effect are most directly grounded in the task, and converts it into the security test 𝑡 𝑆 𝑥 . The generated test may exercise multiple adversarial inputs or assert multiple observable effects of the selected weakness. In Figure 2, it supplies a message containing \n and \t and checks that neither control character remains in the returned log entry. Both components are generated as Python test functions that call the candidate through a uniform invoke interface exposing its return value, crash status, standard output, and standard error. Using one function per component keeps the test-suite structure and execution budget fixed while allowing multiple inputs and assertions within each function. Furthermore, a validator in SecGent verifies syntax, exactly one functional and one security test, association with a retrieved CWE, correct use of invoke , and executable assertions. It returns detected issues for revision, up to 𝐴 authoring attempts. A validated suite is frozen and reused unchanged for the initial candidate and every following repair. 
+
+3.5 Coding Agent: Initial Generation 
+
+After the suite is frozen, the coding agent 𝐺 𝜃 generates the initial candidate 𝑦 0 from (ℓ, 𝑠, 𝐾 𝑥 )
+
+without access to 𝑇 𝑥 . It is instructed to preserve the required signature, valid-input behavior, return values, and observable side effects while treating the retrieved weaknesses as possible security concerns rather than as reasons to alter required behavior. The resulting candidate is security-informed. Execution of the frozen suite checks whether it satisfies the generated functional expectations and rejects the tested attack behavior; a pass establishes only those tested properties. In the running example, the initial candidate formats msg 
+
+directly with snprintf . It produces the required output for an ordinary message, but preserves embedded newline and tab characters, exposing the CWE-117 behavior shown in Figure 2 (Step 5). The same coding-agent role 𝐺 𝜃 is used later for repair, where it receives the retained candidate and its execution evidence rather than the hidden test suite. 
+
+3.6 Test Execution 
+
+The test-execution layer bridges the language-independent invoke interface used by generated tests to the language-specific way a candidate must be built and called. An adapter materializes the candidate and benchmark entry point, performs any required compilation or loading, invokes the function, and normalizes its observable result. This lets the testing agent express the same kind of assertion for Python, C, C++, Go, and JavaScript without encoding build or process details in the generated test suite. Each code candidate is evaluated against the frozen test suite in a fresh, throwaway Docker-compatible container. Subprocess and outer timeouts bound execution. The harness separates build failures from assertion failures and classifies the result as candidate evidence (build diagnostics or named functional/security outcomes), a complete pass, or an unusable test suite. An unusable test suite—for example, one that cannot be imported or reported reliably—does not support a conclusion about candidate quality and cannot trigger repair. On the Figure 2 example, the initial candidate passes the ordinary-message test but the security test observes the injected newline and tab. Execution therefore produces the score (𝑓 𝑇 (𝑦 0), 𝑠 𝑇 (𝑦 0)) =
+
+(1, 0) together with a named CWE-117 failure trace (Step 6). This execution evidence motivates repair such that the security failure identifies the observable behavior that must be corrected, while the functional pass identifies required behavior that the repair must preserve.  
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026. 8Md Afif Al Mamun and Gias Uddin
+
+3.7 Evidence-Guided Repair and Retention 
+
+Execution Evidence. The repair loop uses two forms of information from each usable execution. A functional–security score and a bounded diagnostic trace. For a code candidate 𝑦 evaluated against the frozen test suite 𝑇 = 𝑇 𝑥 , define its test-outcome pair 𝑞 𝑇 (𝑦 ) as 
+
+𝑞 𝑇 (𝑦 ) =  𝑓 𝑇 (𝑦 ), 𝑠 𝑇 (𝑦 ) ∈ { 0, 1}2, (2) where 𝑓 𝑇 (𝑦 ) = 1 exactly when the functional test passes and 𝑠 𝑇 (𝑦 ) = 1 exactly when the CWE-aware security test passes while failures result in 0. The complete execution evidence is 
+
+𝐸 (𝑦,𝑇 𝑥 ) =  𝑞 𝑇 (𝑦 ), 𝑏 𝑦 , 𝑑 𝑦 
+
+, (3) where 𝑏 𝑦 records build and runtime status and 𝑑 𝑦 contains bounded compiler or assertion diagnos-tics. A build failure yields score (0, 0) and compiler output. An execution that cannot produce a reliable report is marked unusable as it cannot justify repair or replacement. 
+
+Repair Proposal. If the retained candidate 𝑦 ★ has not reached (1, 1), the same coding agent 𝐺 𝜃 
+
+receives the task, its source, and execution evidence 𝐸 (𝑦 ★,𝑇 𝑥 ) to generate a separate proposal e𝑦 . The prompt asks for correction of the reported failure while preserving the interface and behavior already passed. Additionally, it also contains compiler or assertion diagnostics. The retained candidate remains unchanged until the proposal is re-executed in a fresh container and accepted. In the running example, the CWE-117 failure trace leads the agent to copy the message into a bounded buffer while replacing \n and \t with spaces. 
+
+Retention. A repair proposal is retained only if it preserves every test category already passed by the current candidate and converts at least one failing category into a pass. Formally, proposal 𝑦 ′
+
+replaces the currently retained candidate 𝑦 when its measured score strictly Pareto-dominates the score of 𝑦 :
+
+𝑦 ′ ≻𝑇 𝑦 ⇐⇒ 𝑓 𝑇 (𝑦 ′) ≥ 𝑓 𝑇 (𝑦 ) ∧ 𝑠 𝑇 (𝑦 ′) ≥ 𝑠 𝑇 (𝑦 ) ∧ 
+
+𝑓 𝑇 (𝑦 ′) > 𝑓 𝑇 (𝑦 ) ∨ 𝑠 𝑇 (𝑦 ′) > 𝑠 𝑇 (𝑦 ) . (4) Thus, ties and regressions are rejected. In the example (Step 8), re-execution changes the score from 
+
+(1, 0) to (1, 1): the repaired code preserves the required ordinary-message behavior while correcting the CWE-117 failure; hence, it becomes the new retained candidate. Repair stops when the retained candidate reaches (1, 1) or budget 𝐵 is exhausted. With one test suite (including both functional and security tests) shared across 𝑛 samples, LLM calls per task are bounded by 𝐴 + 𝑛 (1 + 𝐵 ) excluding the fixed retrieval stage: at most 𝐴 test-suite-authoring calls, one initial generation per sample, and at most 𝐵 repairs per sample. Early passes and unusable test suites reduce the realized cost. 
+
+4 Experiments 4.1 Research Questions 
+
+We ask the following research questions (RQs): 
+
+RQ1: Effectiveness against Inference-Time Baselines. How effectively does SecGent generate functionally correct and secure code, compared with methods that require neither model fine-tuning nor benchmark-specific prompt optimization? 
+
+RQ2: Comparison with Prompt Optimizers. How does SecGent compare with prompt opti-mizers that compile instructions or demonstrations from code examples? 
+
+RQ3: Language-Specific Effectiveness. How does the effectiveness of SecGent vary across different programming languages? 
+
+RQ4: Impact of Generated-Test Feedback. How do generated-test-guided repairs improve or regress individual candidates, and how does it affect overall functional and security success?  
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026. Secure and Functional Code Generation with Self-Evaluation 9
+
+4.2 Evaluation Benchmark 
+
+We evaluate on CWEval [34], which contains 119 coding tasks spanning 31 CWE classes in five programming languages: 31 C, 21 C++, 19 Go, 23 JavaScript, and 25 Python tasks. 
+
+4.3 Baselines 
+
+We consider methods that do not require fine-tuning an LLM. Apart from the following baselines, we also evaluate Claude Code [6] and compare with our approach (Section 6.1). 
+
+Direct Prompting. The model receives the task specification and an instruction to return only the implementation. It receives no security instruction, retrieved weakness context, optimized prompt, generated tests, or repair feedback. 
+
+RAG [22]. The model receives the task specification, a general secure-code instruction, and the top five CWE descriptions retrieved by querying the vector database directly with the task description, as possible weaknesses to consider. Unlike SecGent, RAG uses neither HyDE query generation nor reranking. 
+
+CodeGuarder [26]. CodeGuarder retrieves vulnerability explanations and vulnerable–patched code examples from a ReposVul [43] and injects them into the generation prompt. In contrast, SecGent retrieves textual CWE records as weakness context and uses generated functional and security tests to check candidate behavior and guide repair. 
+
+Microsoft AutoGen [44]. We instantiate AutoGen agentic framework as a two-agent coder– reviewer workflow. The coder generates an implementation from the task specification, and the reviewer assesses its quality against the task and either approves or rejects it based on that judgment. We allow a maximum of three generation–review cycles per candidate for AutoGen. In contrast, SecGent guides repair with executable functional and security feedback and retains a proposal only if its generated-test score improves without regressing either objective. 
+
+Prompt Optimizers. We evaluate three methods that optimize the code-generation prompt on the training partition (Section 5.2). Each training task provides the language, specification, and retrieved weakness context, and candidate prompts are scored by the same executable functional–security criterion. BootstrapFewShot [21] keeps generated security analyses and implementations that pass both checks as few-shot demonstrations. MIPROv2 [32] jointly searches over instructions and such demonstrations. GEPA [2] revises the instructions using textual feedback from executed evaluations, with the evaluated model acting as both reflector and generator. Each method outputs a reusable prompt, a compiled program , which is then applied unchanged to held-out tasks with their specifications and retrieved weakness context. 
+
+4.4 Experimental Setup 
+
+Large Language Models. The experiments cover two general-purpose LLMs, GPT-OSS-20B (GPT-OSS) and Gemma-4-26B (Gemma4), and two code language models, Qwen2.5-Coder-14B (Qwen14B) and Qwen3-Coder-30B (Qwen30B). To examine whether the findings hold for a frontier proprietary model, we additionally evaluate Claude Sonnet 5.5 (Sonnet-5.5) against the inference-time baselines and in the language-specific and paired repair analyses. The prompt optimizers are applied to the four open-weight models. RQ1 identifies RAG and AutoGen as the strongest baselines at FS@1 across models and establishes SecGent’s consistent advantage over them across all five models. We therefore focus the proprietary evaluation on these common inference-time comparisons and limit RQ2 to the open-weight models because compiling each optimizer entails repeated generation and evaluation on the training tasks, adding substantial API cost for Sonnet. We use the short names throughout the remainder of the paper. Every reported method uses five independently sampled candidates per task and temperature 0.8 (excluding Sonnet-5.5, which does not allow temperature  
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026. 10 Md Afif Al Mamun and Gias Uddin
+
+changes), and we report 𝑘 ∈ { 1, 2, 5}. SecGent permits at most two test-generation attempts and two repair proposals. We serve all open-weight models locally using Ollama and access Sonnet-5.5 through the Anthropic API. 
+
+Embedding Model. We encode the CWE records and every task query with Qwen3-Emb-8B [45] and retrieve by dense similarity over these embeddings. We selected this model because it is openly available and reported to be competitive with proprietary embedding models on multilingual and code retrieval benchmarks [45], which keeps the retrieval component of the study reproducible. The same encoder is used by all methods except CodeGuarder when required. CodeGuarder retains its own published CVE-based retrieval setup. Alternative encoders would likely change absolute retrieval quality; we do not vary them here, as isolating the effect of the encoder is outside the scope of this study. 
+
+CWE Database. Retrieval draws on a fixed catalogue of 944 weaknesses from MITRE’s Research Concepts view (CWE-1000) [27], which organises weaknesses by abstract behaviour rather than by language or domain and thus gives the broadest coverage of software weaknesses. We build the catalogue in two steps. First, we take each weakness’s identifier, name, description, and potential mitigations from the MITRE records. Second, an LLM (Qwen3.8:27b) is prompted once, in a zero-shot setting, with the MITRE name and description of each weakness and rewrites them into a one-sentence description and a short list of code-level keywords, that name the input, operation, and consequence in the vocabulary a developer would use. The generation does not involve any benchmark task. Each entry thus holds the identifier, name, generated description, keywords, and MITRE mitigations. The catalogue is built offline and frozen before the experiments. 
+
+Retrieval Pipeline. Given the task’s language and specification, the query writer identifies an operation that could make the code vulnerable. It describes how that operation could be implemented insecurely and explains the resulting weakness without naming a CWE. We combine these last two descriptions with the task specification to form the retrieval query. Each CWE record is embedded using its name, rewritten description, keywords, and up to 600 characters of MITRE mitigations. We retrieve the 20 records whose embeddings are most similar to the query embedding. The reranker compares each record’s name and description with the operation and insecure implementation described by the query writer, assigning a relevance score from 0 to 100. It scores all 20 records together in three calls: one in retrieval order and two in shuffled orders. We average the scores to reduce the influence of candidate order, then use the five highest-scoring records to guide code and test generation. We use qwen3.8:27b for query writing and reranking and reuse each task’s retrieved records across all evaluated models. 
+
+Hardware. Local model inference and candidate evaluation were run on a single compute server with 96 Intel Xeon Gold 6442Y cores and two NVIDIA L40S GPUs (48 GB each). Model checkpoints were obtained from the official Hugging Face and Ollama (as required) repositories of each open-weight model. Sonnet inference used the Anthropic API; candidate code was evaluated in isolated containers with no internet access. 
+
+4.5 Metrics 
+
+Following Chen et al. [9], for 𝑛 generated candidates and 𝑐 successful candidates for a task, we compute Pass@ 𝑘 = 1 −
+
+ 𝑛 −𝑐 𝑘 
+
+ 𝑛 𝑘 
+
+ . (5) We report three CWEval outcomes. Functional@ 𝑘 (F@ 𝑘 ) counts a candidate as successful when it passes the functional tests; Secure@ 𝑘 (S@ 𝑘 ) counts a candidate as successful when it passes the security tests; and Func-Sec@ 𝑘 (FS@ 𝑘 ) requires the same candidate to pass both. We compute each  
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026. Secure and Functional Code Generation with Self-Evaluation 11
+
+metric at 𝑘 ∈ { 1, 2, 5}. The tables in this paper report F@1, S@1, FS@1, and FS@5; the complete results for every metric and 𝑘 are provided in the replication package. While FS@ 𝑘 is the primary outcome of this study, F@ 𝑘 and S@ 𝑘 show whether a security improvement is accompanied by a loss in functional correctness. All metric values are reported as percentages. Improvements and declines are computed as 100 (𝑃 method /𝑃 baseline − 1), using unrounded metric scores, and reported as percentages of the baseline score. 
+
+5 Results 5.1 RQ1: Comparison with Inference-Time Baselines 
+
+Approach. We compare SecGent with four inference-time baselines that require no benchmark-specific optimization: Direct Prompting, RAG, CodeGuarder, and AutoGen (Section 4.3). Every method is evaluated on all 119 CWEval tasks with five samples per task. 
+
+Results. Table 1 shows that SecGent achieves the highest joint functional–security success for every model at 𝑘 =1 and 5. More results (e.g., F@2, S@2, FS@2) have been shared in the replication package. Across the four open-weight models, its mean FS@1 is 71.6%, compared with 61.9% for RAG and 59.1% for AutoGen, corresponding to improvements of 15.5% and 21.0%, respectively. At FS@1, RAG ranks second behind SecGent for three models, while AutoGen ranks second for Qwen14B and Sonnet-5.5. The margin narrows as additional samples give every method more chances to succeed, but SecGent retains the highest FS@2 and FS@5 for all five models. The gains extend to the proprietary Sonnet-5.5 which leaves the least headroom with direct prompting reaching 81.2% FS@1, yet SecGent raises it to 92.1%, outperforming AutoGen by 4.8%, the closest baseline for this model. 
+
+Security–Functionality Trade-offs. The baselines expose a recurring failure mode of security-oriented prompting. On the open-weight models, RAG raises mean S@1 by 30.0% over Direct Prompting, but does so while reducing functional correctness. The trade-off is sharper for Code-Guarder: its mean F@1 falls by 17.6% compared with Direct Prompting, and the resulting mean FS@1 is effectively unchanged. Security gains alone therefore need not translate into joint success: FS@1 requires the same candidate to satisfy both the functional and security oracles. AutoGen shows the opposite profile. Its reviewer improves functional correctness, giving the highest mean F@1 among the baselines (79.1%, 8.4% above Direct Prompting), but its mean S@1 of 62.4% remains 11.4% below RAG, which limits its mean FS@1 to 59.1%. General-purpose review thus recovers functionality but leaves more security failures. On Sonnet-5.5, RAG avoids this trade-off and im-proves both F@1 and S@1 over Direct Prompting, whereas CodeGuarder again lowers F@1, by 14.1%, and its FS@1 falls 14.3% below Direct Prompting. On Qwen30B, CodeGuarder’s security gains are outweighed by functional losses, leaving joint success below direct prompting. RAG achieves a larger security improvement, but still sacrifices functionality. SecGent improves both objectives over direct prompting and RAG. Its advantage therefore comes from addressing security weaknesses while preserving required behavior. This pattern extends across the open-weight models: compared with RAG, SecGent improves mean functional and security success by 14.5% and 9.1%, respectively. It also achieves functional accuracy comparable to AutoGen while improving mean security success by 23.2%. 
+
+RQ1 Summary. Across all 119 tasks, SecGent achieves the highest FS@k for all five mod-els, including the proprietary Sonnet-5.5. Compared with RAG, the strongest inference-time baseline on average across the open-weight models, it improves both functional and security success, raising mean FS@1 by 15.5% ; AutoGen matches its functional accuracy but not its security. 
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026.
+
+12 Md Afif Al Mamun and Gias Uddin 
+
+Table 1. RQ1: effectiveness against inference-time baselines on all 119 CWEval tasks ( 𝑛 =5 samples per task; percentages). Func-Sec@ 𝑘 (FS@ 𝑘 ) is the primary metric, and its best result per model and column is bold; all metrics at 𝑘 ∈ { 1, 2, 5} are in the replication package.                                                                                                                          
+
+> Method Gemma4 GPT-OSS Qwen14B Qwen30B Sonnet-5.5 F@1 S@1 FS@1 FS@5 F@1 S@1 FS@1 FS@5 F@1 S@1 FS@1 FS@5 F@1 S@1 FS@1 FS@5 F@1 S@1 FS@1 FS@5
+> Direct 70.9 52.3 49.9 63.9 74.1 54.8 53.6 75.6 70.4 51.6 48.6 65.5 76.5 58.0 54.6 64.7 84.7 81.2 81.2 87.4 RAG 71.3 75.6 67.6 79.8 73.9 78.0 70.1 84.0 67.4 59.0 52.9 75.6 65.4 69.1 57.1 73.9 89.6 89.1 86.6 89.9 CodeGuarder 61.0 60.0 53.1 69.7 63.2 66.6 59.3 79.8 54.3 52.1 43.0 67.2 62.0 59.5 52.1 69.7 72.8 73.3 69.6 76.5 AutoGen 78.0 68.6 64.2 75.6 83.9 65.0 62.5 77.3 76.0 56.8 53.3 68.9 78.7 59.2 56.5 63.0 89.9 88.6 87.9 89.9 SecGent 80.2 82.5 77.1 85.7 85.7 84.0 79.7 91.6 75.5 68.1 63.2 81.5 77.0 72.8 66.2 77.3 92.8 93.1 92.1 94.1
+
+Table 2. RQ2: comparison with prompt optimizers for four open-weight models on the 48 held-out CWEval tasks. 
+
+Method Gemma4 GPT-OSS Qwen14B Qwen30B F@1 S@1 FS@1 FS@5 F@1 S@1 FS@1 FS@5 F@1 S@1 FS@1 FS@5 F@1 S@1 FS@1 FS@5 
+
+BSFewShot 62.5 67.1 61.7 75.0 70.8 76.2 68.8 87.5 42.1 45.8 34.6 64.6 72.9 66.2 61.2 77.1 MIPROv2 62.9 67.5 61.7 81.2 67.9 77.9 65.8 83.3 50.4 54.6 42.5 70.8 63.8 67.5 58.3 77.1 GEPA 73.8 75.4 71.7 83.3 69.6 75.8 67.9 85.4 30.0 37.1 23.3 45.8 63.3 57.1 52.5 72.9 SecGent 83.3 85.4 80.8 89.6 87.5 81.7 79.6 91.7 72.9 71.3 64.2 79.2 80.4 70.8 67.9 79.2 
+
+5.2 RQ2: Comparison with Prompt Optimizers 
+
+Directory listing (CWE-78) 
+
+Return ls -l output for a valid directory, or "" on error. Valid input: /tmp/reports (assumed to exist). 
+
+(a) BootstrapFewShot ✗ functional ✓ security     
+
+> if os.path.isabs(path):
+> return False # Before invoking ls:
+> if not _is_valid_directory(dir_path):
+> return ""
+
+The helper rejects the absolute path; the function returns "" .Joint success: 1/5 candidates. 
+
+(b) SecGent ✓ functional ✓ security  
+
+> result = subprocess.run( ["ls", "-l", dir_path], capture_output=True, text=True, check=True, )
+> return result.stdout
+
+Returns the listing without shell evaluation or an additional path restriction. Joint success: 5/5 candidates. 
+
+Fig. 4. Preserving valid directory access (GPT-OSS, Python). 
+
+Approach. Prompt optimizers learn from bench-mark examples, hence, they must be evaluated on unseen tasks. We split CWEval by task fam-ily, where a family is one CWE scenario across languages. We divide CWEval into 71 training tasks from 23 families and 48 held-out tasks from 13 families (60–40 split). BootstrapFewShot, MIPROv2, and GEPA (Section 4.3) are compiled on the training tasks for each of the four open-weight models, and every method is evaluated on the held-out tasks with five samples per task. We restrict prompt optimization to the four open-weight models as compiling the optimizers for Sonnet-5.5 would incur substantial API costs. 
+
+Results. Table 2 shows that SecGent achieves the highest FS@1 and FS@5 for all four open-weight models, and the same holds at FS@2 (see replication package). The strongest optimizer at FS@1 varies by model. Selecting the best opti-mizer for each model yields a mean FS@1 of 61.0%; SecGent reaches 73.1%, outperforming this optimizer mean by 19.8%. 
+
+Improving Security While Preserving Functionality. At 𝑘 =1, SecGent also achieves the highest functional and security success for every model. Its joint advantage thus accompanies improvements in both objectives, although their relative contributions vary. On GPT-OSS, the 
+
+, Vol. 1, No. 1, Article . Publication date: October 2026. Secure and Functional Code Generation with Self-Evaluation 13 
+
+optimizers are already competitive in security; the larger difference is functional accuracy, which SecGent improves by 23.5% over BootstrapFewShot, the closest optimizer at FS@1. On Qwen14B, the optimizers performed the worst, however, SecGent improve both functionality and security FS@1 by 51% over MIPROv2. These results show that prompt optimizers often adversely affect the balance between functional and security aspects, and security-aware generation must preserve the task’s required behavior to turn security gains into joint success. Figure 4 makes this distinction concrete on a Python CWE-78 directory-listing task under GPT-OSS. The function must return the output of ls -l for a user-provided directory, or an empty string if execution fails. The specification does not restrict valid directories to a particular filesystem root. One BootstrapFewShot candidate nevertheless rejects every absolute path through 
+
+os.path.isabs(path) , returning an empty string even for an existing, accessible directory. Other candidates add a restriction to the current working directory. Across the five samples, all pass the security oracle, but only one passes the functional oracle. SecGent invokes ls through an argument list without shell evaluation and accepts valid directory paths without adding an unspecified filesystem boundary; all five candidates pass both oracles. 
+
+RQ2 Summary. SecGent outperforms prompt optimizers while optimizer performance vary depending on the model. Compared with the mean performance of the strongest optimizer for each model, SecGent improves FS@1 by 19.8% .
+
+5.3 RQ3: Language-Specific Effectiveness 
+
+Approach. We compare FS@1 per language on the 48 held-out tasks of RQ2 (13 C, 9 C++, 9 Go, 8 JavaScript, and 9 Python tasks) against all baselines of RQ1 and RQ2. 
+
+Results. As Figure 5 shows, SecGent achieves the highest overall FS@1 for every model, with overall gains of 10.8–15.8% over the best overall baseline on the open-weight models and 7.2% on Sonnet-5.5. Averaging each method’s language-specific FS@1 equally across the open-weight models, it also ranks first in every language. This consistency extends to individual model–language combinations: SecGent ranks first or second in 19 of the 20 open-weight comparisons (5 languages 
+
+× 4 models), outperforms RAG in all 20, CodeGuarder in 19, and AutoGen in 17. On Sonnet-5.5, it ranks first in C, C++, and Python and second to RAG in Go. The gain therefore extends to both retrieval-based baselines, despite their different forms of security knowledge, and is not confined to languages where prompt optimization performs poorly. 0 25 50 75 100                   
+
+> All
+> Py JS Go C++ C
+> +13%
+> -2% -9% +3% +13% +17%
+> Gemma-4-26B
+> 025 50 75 100
+> +16%
+> +29% -3% -3% +13% +2%
+> GPT-OSS-20B
+> 025 50 75 100
+> +11%
+> +19% +8% +0% -8% +10%
+> Qwen2.5-Coder-14B
+> 025 50 75 100
+> +11%
+> -3% +0% -3% +0% -2%
+> Qwen3-Coder-30B
+> 025 50 75 100
+> +7%
+> +2% -3% -3% +10% +16%
+> Claude-Sonnet-5.5
+> Func-Sec@1 Baseline range Best baseline SecGent
+
+Fig. 5. FS@1 (%) by language and model on the 48 held-out tasks. Grey band: range of the seven baselines; grey dot: highest baseline score in each row; blue dot: SecGent. 
+
+Language Sensitivity of Prompt Optimizers. Prompt optimization can improve joint success in one language while weakening it in another. On Qwen30B, GEPA improves Python performance but reduces Go FS@1 by 79.4% compared with Direct Prompting. MIPROv2 shows a milder version  
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026. 14 Md Afif Al Mamun and Gias Uddin
+
+of the same pattern on Gemma4, improving JavaScript performance but reducing joint success in Go. SecGent remains competitive or better in the languages where these optimizers improve, while achieving much stronger Go results than either optimizer. This variation matters when a single compiled prompt is reused for tasks in several languages. GEPA’s decline on Go includes functional failures on tasks that Direct Prompting can already solve. SecGent preserves Direct Prompting’s functional accuracy and achieves much stronger security than GEPA on these tasks. These differences may arise from reusing a single optimized prompt across languages. Although optimization uses a multilingual training set, the selected prompt can emphasize only a few languages. For example, BootstrapFewShot’s optimized prompts contain only C demonstrations in all four models. These are LLM-generated examples selected for their functional and security success. The model therefore receives worked examples of secure C code even when asked to generate code in another language. Instruction optimization can also show the same imbalance, such as, GEPA’s prompt for Qwen30B gives concrete API advice for Python and detailed implementation rules for C and JavaScript, but no Go-specific guidance. Such advice may help in the languages it addresses yet transfer poorly when another language requires different APIs or error handling. These patterns suggest that language-specific solutions learned during optimization may limit gains in other languages. SecGent applies security guidance to the current task and checks the resulting code with task-specific tests, helping preserve functionality across languages. 
+
+Magnitude of Per-Language Differences. Each language in the test split contains only 8–13 tasks, hence, a shortfall of SecGent can reflect differences on very few tasks. For example, the 2.9% FS@1 shortfall against Direct Prompting on Qwen30B’s Go tasks comes from a lower success rate on just one of nine tasks; the methods tie on the other eight. Yet SecGent outperforms Direct Prompting in all four other languages on the same model. Similarly, the largest shortfall, 9.1% against MIPROv2 on Gemma4’s JavaScript tasks, comes from a lower success rate on one of eight tasks, partly offset by higher rates on two others. MIPROv2 also trails SecGent in all four other languages on Gemma4. On Sonnet-5.5, SecGent trails all four baselines in JavaScript because it succeeds on four rather than five samples of a single task; all methods tie on the remaining seven. These examples show that the local advantages belong to different baselines and concern small task sets, while SecGent maintains competitive performance across languages. 
+
+RQ3 Summary. SecGent leads overall on every model and maintains competitive performance across languages. Prompt optimizers can improve one language while degrading another; SecGent ranks first or second in 19 of 20 open-weight language–model comparisons. 
+
+5.4 RQ4: Impact of Generated-Test Feedback 
+
+Approach. Since SecGent repairs each sample independently, we compare each candidate gener-ated initially by the coding agent with its counterpart retained after feedback-guided repair, for all 119 tasks with five samples per task. The samples for both kinds are evaluated with CWEval. 
+
+Results. Table 3 summarizes the transitions. Generated suites provide usable execution evidence (Equation 3) for 470–510 samples per open-weight model and 590 for Sonnet-5.5; 259–385 samples trigger repair on the open-weight models, compared with 73 on Sonnet-5.5. Across models, 291 samples receive a retained repair. CWEval confirms that 71 become jointly functional and secure, while 11 regress. Gemma4 accounts for the most joint improvements, with 30 gains against one regression. 
+
+Functional Recovery. Although the suites target both functional properties and retrieved CWEs, their main contribution is functional recovery: 66 of the 71 joint improvements start from candidates 
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026.
+
+Secure and Functional Code Generation with Self-Evaluation 15 
+
+that CWEval scores as non-functional. In 65 cases, repair is triggered by a build failure or a failing functional test, rather than a security test alone. 
+
+Table 3. Generated-test repair outcomes (595 samples per model). Among kept repairs, Impr./Regr. count joint CWEval gains/losses in functional-security; F and S show functional and security changes. 
+
+Repair loop Joint Per objective Model Usable Tried Kept Impr. Regr. F+ F− S+ S−
+
+Gemma4 485 270 45 30 1 26 2 28 0GPT-OSS 500 259 130 13 7 17 2 14 5Qwen14B 510 385 34 5 2 8 2 6 1Qwen30B 470 305 30 7 0 7 0 5 0Sonnet-5.5 590 73 52 16 1 16 1 5 1Total 2555 1292 291 71 11 74 7 58 7
+
+This pattern is consistent with the functional losses observed under security-oriented genera-tion in RQ1 and RQ2. Generated functional tests can expose an overly strict input check or a mis-used API, while the Pareto gate requires the re-pair to preserve any security test already passed. The per-objective gains in Table 3 also overlap substantially. Of the 58 security improvements, 48 accompany functional recovery, including 30 candidates that initially fail to build and are therefore scored as both non-functional and insecure. Only 10 security improvements oc-cur without a functional gain. Thus, much of the measured security gain comes from making candidates executable and functional, rather than from fixing a security failure alone. 
+
+Redirect within example.com cwe_020_0_cpp                    
+
+> Subdomain checks (abridged); exact domain matches are han-dled separately.
+> Initial ✗functional ✓security
+> dot = netloc.find_last_of('.'); valid = netloc.substr(dot) == "." + domain;
+> For music.example.com ,this compares .com with
+> .example.com , rejecting a valid subdomain.
+> Generated tests
+> ✗("https://music.example.com")
+> →"https://music.example.com"
+> ✓("https://example.com.attacker.com")
+> →"https://example.com"
+> Expected outputs; marks show initial generated-test outcomes. The CWE-187 test rejects a host that contains example.com
+> but lies outside that domain.
+> Retained repair ✓functional ✓security
+> if (netloc.size() > domain.size()) { n = netloc.size() - domain.size(); valid = netloc.substr(n) == domain && netloc[n-1] == ’.’; }
+> Accepts the valid subdomain and still rejects the tested attacker domain.
+
+Fig. 6. Repairing a functional failure with a passing security test. 
+
+Representative Example. Figure 6 illustrates this complementary role of the tests. CWEval la-bels the C++ redirect task CWE-020, while the testing agent selects CWE-187 (partial string com-parison) from the weakness context. This weak-ness is still relevant because a partial domain match can cause the task’s input validation to accept an unauthorized redirect. The security test checks that example.com.attacker.com is rejected. This host belongs to attacker.com ,even though its name contains the allowed do-main example.com . Gemma4 attempts to pre-vent partial domain matches, but its subdomain check compares the suffix starting at the last dot, .com , with .example.com , rejecting the valid host music.example.com .A functional test taken from the specification exposes this error, while the security test passes. Guided by the failing assertion, the coding agent changes the check to match the full domain suffix preceded by a dot. The generated score improves from (0, 1) to (1, 1), so the gate retains the re-pair; CWEval independently confirms the same transition using the task’s original oracles. The functional test drives the correction, and the se-curity test checks that the tested partial-match attack remains rejected. Seven of the 11 joint regressions occur with GPT-OSS. In each case, the original code passes both CWEval tests but fails a generated security test. Four cases involve the Python CWE-117 task, where changing the code to satisfy the generated test causes it to fail CWEval. The gate retains 
+
+, Vol. 1, No. 1, Article . Publication date: October 2026. 16 Md Afif Al Mamun and Gias Uddin 
+
+these repairs because it checks improvement only against the generated tests. These cases highlight the need of further validation of generated tests before using them to guide repair. 
+
+Ablation: Task-Level Effectiveness of Test Feedback. We evaluate the task-level effectiveness of generated-test feedback by comparing SecGent with and without feedback-guided repair. Both configurations use the same retrieval, code-generation prompt, 119 tasks, and five samples per task. Table 4 reports this comparison for Gemma4, Qwen30B, and Sonnet-5.5. Across the four open-weight models, feedback improves mean FS@1 by 2.6%, with gains also at FS@2 and FS@5. Mean functionality and security both improve. FS@1 increases for all five models: Gemma4 gains the most at 6.7%, followed by Sonnet-5.5 at 3.0%, while the remaining models gain 0.6–1.8%. Without repair, SecGent already achieves a higher mean FS@1 than RAG. Generated-test feedback improves this performance further. The ablation isolates the benefit of repair by keeping retrieval and the generation prompt fixed. The comparison with RAG also reflects differences in retrieval and generation prompts.                              
+
+> Table 4. Effect of generated-test feedback on all 119 tasks (%), with the same five samples per task. Better configuration per model in bold.
+> Configuration Gemma4 Qwen30B Sonnet-5.5 F@1 S@1 FS@1 F@1 S@1 FS@1 F@1 S@1 FS@1 SecGent w/o test feedback 76.1 77.6 72.3 75.6 72.1 65.0 90.6 91.9 89.4 SecGent w/ test feedback 80.2 82.5 77.1 77.0 72.8 66.2 92.8 93.1 92.1
+
+RQ4 Summary. Generated tests expose functional errors and guide repairs, restoring func-tionality in 66 of the 71 joint improvements. Security tests check these fixes, but incorrect test expectations can also cause regressions. Across all 119 tasks, repair raises mean FS@1 by 2.6% 
+
+on the open-weight models and 3.0% on Sonnet-5.5. 
+
+6 Discussion 6.1 Comparison with an Agentic Coding Harness                 
+
+> Table 5. Claude Code and SecGent with Sonnet-5.5 on the 48 held-out tasks.
+> Method F@1 S@1 FS@1 FS@5 Claude Code (func) 94.2 87.1 86.7 87.5 Claude Code (func-sec) 88.8 91.2 87.9 91.7 SecGent 93.3 93.8 93.3 95.8
+
+General-purpose coding agents plan, write, and execute code, which raises the question of whether such a harness can implement code that is both functional and secure. We therefore run Claude Code [6] with Sonnet-5.5 on the 48 held-out tasks, with five independent sessions per task. The agent receives a task specification under one of two prompts: a functionality-focused prompt, which asks the agent to verify that its code com-piles and behaves as specified, and a security-focused prompt, which asks for code that is both functional and secure but without providing any CWE context. Table 5 shows that the functionality-focused configuration attains the highest F@1 (94.2%), yet its S@1 is only 87.1% and its FS@5 saturates at 87.5% such that six tasks remain insecure in all five sessions. Checking that code behaves as specified does not expose the weaknesses it contains. The security-focused instruction raises S@1 to 91.2%, but F@1 falls to 88.8% resulting in a slight improvement of FS@1 to 87.9%. SecGent achieves the highest S@1 and FS@ 𝑘 at every 𝑘 , improving FS@1 by 6.2% relative to the stronger configuration while maintaining comparable functionality. This analysis shows that a capable agentic harness with execution access can still be prone to  
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026. Secure and Functional Code Generation with Self-Evaluation 17
+
+insecure code generation, and a generic security instruction exchanges functionality for security rather than achieving both supporting to our findings in RQ1 and RQ2. 
+
+6.2 Reliability of Generated Tests                        
+
+> Output of ls -l in a given directory cwe_078_0
+> Initial ✓functional ✓security
+> result = subprocess.run(["ls", "-l"], cwd=dir_path, capture_output=True, ...)
+> return result.stdout
+> Runs ls -l without a shell, as specified.
+> Generated functional test ✗on initial
+> (test_dir / "file1.txt").write_text("content") result = invoke( str (test_dir))
+> assert "file1.txt" in result.value assert "test_subdir" in result.value
+> ls -l lists the directory’s contents, not its own name.
+> Retained repair ✗functional ✓security
+> if dir_name not in stdout: stdout += f"\ndrwxr-xr-x ... {dir_name}"
+> Fabricates a listing entry to satisfy the test.
+
+Fig. 7. A repair that satisfies an incorrect gener-ated test (Gemma4, CWE-078). Candidate verdicts are CWEval’s; both generated tests pass after re-pair. 
+
+Failure Sources. The 11 joint regressions in RQ4 account for 3.8% of the 291 retained repairs, de-spite improvements in their generated-test scores. Among the ten open-weight regressions, three in-volve incorrect functional expectations, five involve security assertions that reward unsafe behavior, and two involve incomplete functional coverage. One security test, for example, expects ten bytes of content from a five-byte buffer. In the two CWE-113 cases, repairs reject all header values containing spaces, while a functional test using only en-US 
+
+misses valid values such as gzip, deflate . The ad-ditional Sonnet regression occurs on a Go CWE-943 task following a build failure in the generated-test environment, a retained repair removes the SQLite driver import but then fails both CWEval objectives. This also highlights the need for compatibility be-tween the repair and evaluation environments. 
+
+Effect on Repairs. Figure 7 shows how an incor-rect expectation can actively drive a regression. A generated test requires the directory’s own name in the output of ls -l , although this command lists the directory’s contents. The repair fabricates an entry to satisfy this assertion, turning a candidate that passes both CWEval oracles into one that fails functionality. The Pareto gate retains it because both generated tests pass. Two other repairs are retained despite still failing one generated test. The Pareto gate accepts them because they pass a previously failing test without causing any previously passing test to fail. These cases motivate future work on adapting existing methods for test validation to improve the reliability of both functional and CWE-aware security tests generated before implementation. 
+
+6.3 Retrieval Quality and Its Limits 
+
+Retrieval Coverage. Table 6 compares retrieval over all 119 tasks. Direct dense retrieval uses the task specification to search embeddings of MITRE’s original CWE-1000 records [27], without rewriting their descriptions or generating a HyDE query. Recall counts the benchmark CWE or a direct child as a correct match. Direct retrieval achieves 47.1% recall among the top five records, increasing to 67.2% with reranking. With SecGent’s rewritten catalogue (Section 3.2) and HyDE query (Section 3.3), recall reaches 75.6% before reranking and 89.1% afterward. These results support the combined catalogue and query design for bridging the vocabulary gap between task requirements and weakness descriptions. 
+
+Relevance Beyond the Benchmark Label. Missing the benchmark CWE does not always mean missing a relevant weakness. Among the 13 misses, four tasks retrieve a CWE relevant to their security tests. For example, the three cwe_327_2 tasks are labeled CWE-327 (unsafe cryptographic algorithms). Their tests also check for random initialization vectors (IVs, starting values used in encryption), making the retrieved CWE-329 (predictable IVs) relevant. Even on the 13 tasks where SecGent did not retrieve the weakness named by the benchmark, 64.6% of its generated programs  
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026. 18 Md Afif Al Mamun and Gias Uddin
+
+passed the security tests, compared with 47.7% for Direct Prompting. This suggests that related weakness context may still provide useful security guidance.           
+
+> Table 6. Ground-truth CWE recall on all 119 tasks (%).
+> Configuration R@5 R@10 Direct dense 47.1 64.7 Direct dense + rerank 67.2 72.3 Catalog + HyDE query 75.6 85.7 Catalog + HyDE query + rerank 89.1 93.3
+
+Nevertheless, irrelevant context can also mis-direct generation. On the JavaScript cwe_502_0 
+
+task, path-traversal context accompanies a de-cline from 15 to 4 functional samples out of 20. This comparison does not isolate retrieval’s ef-fect, but illustrates the risk of applying security guidance that does not fit the task. Retrieved weaknesses should therefore guide security de-cisions while preserving the behavior required by the specification. 
+
+7 Threats to Validity 
+
+Internal Validity. LLM generation and test execution are stochastic, which may affect individual outcomes. We mitigate this by sampling five candidates per task and holding the model identifier, decoding settings, sample count, and evaluation split fixed within each comparison. Generated test suites may also be incomplete or incorrect. To avoid treating them as ground truth, they are used only to guide repair; all reported functional and security outcomes are determined independently by CWEval. Unusable generated test suites trigger no repair, and the initial candidate is retained instead. 
+
+External Validity. We evaluate four open-weight LLMs and Claude Sonnet 5.5 on all 119 CWEval tasks for RQ1 and RQ4, and on 48 family-disjoint tasks for RQ3. RQ2 evaluates prompt optimizers only on the four open-weight models; their comparison on Sonnet remains outside the scope of this study. Including Sonnet extends the evidence to a proprietary API model, but does not establish generalization across proprietary model families. The benchmark spans five programming languages and 31 weakness classes. Although this provides diversity across models, languages, and weaknesses, CWEval consists of function-level programming tasks and may not represent repository-scale development, long-context interactions, or proprietary coding assistants. Generalization to such settings therefore requires further study. 
+
+8 Conclusion 
+
+We presented SecGent, an inference-time framework that connects programming tasks to relevant CWE knowledge for generation, testing, and repair. Our findings suggest that security guidance is most useful when grounded in the task’s required behavior and checked alongside functionality. Execution feedback primarily recovers functionality, while security test check whether repairs preserve the tested protections; the reliability of these repairs depends on the correctness and cov-erage of generated tests. Across five models and five languages, SecGent achieves the highest joint functional–security success among the evaluated inference-time baselines, including Claude Code. Future work should extend the catalogue with additional weakness and vulnerability databases, such as NVD through CWE mappings, and assess whether broader knowledge improves retrieval and security coverage. It should also validate generated security tests against vulnerable and cor-rected variants, broaden valid-input coverage, and evaluate the framework in repository-scale development. 
+
+9 Data Availability 
+
+The replication package with data and code is available at https://zenodo.org/records/23112138 
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026.
+
+Secure and Functional Code Generation with Self-Evaluation 19 
+
+References 
+
+[1] Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ahmad, Ilge Akkaya, Florencia Leoni Aleman, Diogo Almeida, Janko Altenschmidt, Sam Altman, Shyamal Anadkat, et al. 2023. Gpt-4 technical report. arXiv preprint arXiv:2303.08774 
+
+(2023). [2] Lakshya A Agrawal, Shangyin Tan, Dilara Soylu, Noah Ziems, Rishi Khare, Krista Opsahl-Ong, Arnav Singhvi, Herumb Shandilya, Michael J Ryan, Meng Jiang, et al. 2026. Gepa: Reflective prompt evolution can outperform reinforcement learning. In International Conference on Learning Representations , Vol. 2026. 8479–8565. [3] Md Basim Uddin Ahmed, Nima Shiri Harzevili, Jiho Shin, Hung Viet Pham, and Song Wang. 2026. SecVulEval: Context-Aware Benchmarking of LLMs for Vulnerability Detection. In Proceedings of the 3rd ACM International Conference on AI-Powered Software (Montreal, QC, Canada) (AIware ’26) . Association for Computing Machinery, New York, NY, USA, 388–396. doi:10.1145/3805760.3814932 [4] Mostafijur Rahman Akhond, Md Afif Al Mamun, Gias Uddin, and Song Wang. 2026. Impossible to hide secret...: Uncovering Security and Privacy Issues in LLM-native IDEs. arXiv preprint arXiv:2607.26390 (2026). [5] Kamel Alrashedy, Abdullah Aljasser, Pradyumna Tambwekar, and Matthew Gombolay. 2023. Can llms patch security issues? arXiv preprint arXiv:2312.00024 (2023). [6] Anthropic. 2025. Claude Code. Agentic coding tool, version 2.1.282. Retrieved October 2, 2026 from https://claude. com/claude-code [7] AI Anthropic. 2024. The claude 3 model family: Opus, sonnet, haiku. Claude-3 Model Card 1, 1 (2024), 4. [8] Manish Bhatt, Sahana Chennabasappa, Cyrus Nikolaidis, Shengye Wan, Ivan Evtimov, Dominik Gabi, Daniel Song, Faizan Ahmad, Cornelius Aschermann, Lorenzo Fontana, et al. 2023. Purple llama cyberseceval: A secure coding benchmark for language models. arXiv preprint arXiv:2312.04724 (2023). [9] Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, Henrique Ponde De Oliveira Pinto, Jared Kaplan, Harri Edwards, Yuri Burda, Nicholas Joseph, Greg Brockman, et al. 2021. Evaluating large language models trained on code. arXiv preprint arXiv:2107.03374 (2021). [10] Xinyun Chen, Maxwell Lin, Nathanael Schärli, and Denny Zhou. 2024. Teaching large language models to self-debug. In International Conference on Learning Representations , Vol. 2024. 8746–8825. [11] Gheorghe Comanici, Eric Bieber, Mike Schaekermann, Ice Pasupat, Noveen Sachdeva, Inderjit Dhillon, Marcel Blistein, Ori Ram, Dan Zhang, Evan Rosen, et al. 2025. Gemini 2.5: Pushing the frontier with advanced reasoning, multimodality, long context, and next generation agentic capabilities. arXiv preprint arXiv:2507.06261 (2025). [12] Shih-Chieh Dai, Jun Xu, and Guanhong Tao. 2025. Rethinking the evaluation of secure code generation. arXiv preprint arXiv:2503.15554 (2025). [13] Yanjun Fu, Ethan Baker, Yu Ding, and Yizheng Chen. 2024. Constrained decoding for secure code generation. arXiv preprint arXiv:2405.00218 (2024). [14] Luyu Gao, Xueguang Ma, Jimmy Lin, and Jamie Callan. 2023. Precise zero-shot dense retrieval without relevance labels. In Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) .1762–1777. [15] GitHub. 2026. Github Copilot . https://github.com/copilot [16] Hossein Hajipour, Keno Hassler, Thorsten Holz, Lea Schönherr, and Mario Fritz. 2024. Codelmsec benchmark: Systematically evaluating and finding security vulnerabilities in black-box code language models. In 2024 IEEE Conference on Secure and Trustworthy Machine Learning (SaTML) . IEEE, 684–709. [17] Hojae Han, Rajhans Samdani, Yuxiong He, et al. 2025. Convcodeworld: Benchmarking conversational code generation in reproducible feedback environments. In International Conference on Learning Representations , Vol. 2025. 38737–38776. [18] Jingxuan He and Martin Vechev. 2023. Large language models for code: Security hardening and adversarial testing. In 
+
+Proceedings of the 2023 ACM SIGSAC Conference on Computer and Communications Security . 1865–1879. [19] Jingxuan He, Mark Vero, Gabriela Krasnopolska, and Martin Vechev. 2024. Instruction tuning for secure code generation. 
+
+arXiv preprint arXiv:2402.09497 (2024). [20] Xue Jiang, Yihong Dong, Lecheng Wang, Zheng Fang, Qiwei Shang, Ge Li, Zhi Jin, and Wenpin Jiao. 2024. Self-planning code generation with large language models. ACM Transactions on Software Engineering and Methodology 33, 7 (2024), 1–30. [21] Omar Khattab, Arnav Singhvi, Paridhi Maheshwari, Zhiyuan Zhang, Keshav Santhanam, Sri Vardhamanan, Saiful Haq, Ashutosh Sharma, Thomas T. Joshi, Hanna Moazam, Heather Miller, Matei Zaharia, and Christopher Potts. 2023. DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines. arXiv:2310.03714 [cs.CL] https://arxiv.org/abs/2310.03714 [22] Patrick Lewis, Ethan Perez, Aleksandra Piktus, Fabio Petroni, Vladimir Karpukhin, Naman Goyal, Heinrich Küttler, Mike Lewis, Wen-tau Yih, Tim Rocktäschel, et al. 2020. Retrieval-augmented generation for knowledge-intensive nlp tasks. Advances in neural information processing systems 33 (2020), 9459–9474. , Vol. 1, No. 1, Article . Publication date: October 2026. 20 Md Afif Al Mamun and Gias Uddin 
+
+[23] Dong Li, Meng Yan, Yaosheng Zhang, Zhongxin Liu, Chao Liu, Xiaohong Zhang, Ting Chen, and David Lo. 2024. CoSec: On-the-Fly security hardening of code LLMs via supervised co-decoding. In Proceedings of the 33rd ACM SIGSOFT International Symposium on Software Testing and Analysis . 1428–1439. [24] Jia Li, Ge Li, Yongmin Li, and Zhi Jin. 2025. Structured chain-of-thought prompting for code generation. ACM transactions on software engineering and methodology 34, 2 (2025), 1–23. [25] Yunhao Liang, Chengguang Gan, Ruixuan Ying, Hanjun Wei, Zhe Cui, and Shiwen Ni. 2026. Security Tests as Executable Specifications for LLM Code Generation: Benefits, Trade-offs, and Coverage Limits. arXiv preprint arXiv:2608.09740 
+
+(2026). https://arxiv.org/abs/2608.09740 [26] Bo Lin, Shangwen Wang, Yihao Qin, Liqian Chen, and Xiaoguang Mao. 2025. Give llms a security course: Securing retrieval-augmented code generation via knowledge injection. In Proceedings of the 2025 ACM SIGSAC Conference on Computer and Communications Security . 3356–3370. [27] MITRE. 2026. Common Weakness Enumeration (CWE), Version 4.20. https://cwe.mitre.org/data/. Accessed: 2026-08-20. [28] National Institute of Standards and Technology. [n. d.]. National Vulnerability Database: Vulnerability Detail Pages. https://nvd.nist.gov/vuln/Vulnerability-Detail-Pages. Accessed: 2026-10-01. [29] Mahmoud Nazzal, Issa Khalil, Abdallah Khreishah, and NhatHai Phan. 2024. Promsec: Prompt optimization for secure generation of functional source code with large language models (llms). In Proceedings of the 2024 on ACM SIGSAC Conference on Computer and Communications Security . 2266–2280. [30] Erik Nijkamp, Bo Pang, Hiroaki Hayashi, Lifu Tu, Huan Wang, Yingbo Zhou, Silvio Savarese, and Caiming Xiong. 2022. Codegen: An open large language model for code with multi-turn program synthesis. arXiv preprint arXiv:2203.13474 
+
+(2022). [31] Ana Nunez, Nafis Tanveer Islam, Sumit Kumar Jha, and Peyman Najafirad. 2024. AutoSafeCoder: A Multi-Agent Framework for Securing LLM Code Generation through Static Analysis and Fuzz Testing. arXiv preprint arXiv:2409.10737 
+
+(2024). https://arxiv.org/abs/2409.10737 [32] Krista Opsahl-Ong, Michael J Ryan, Josh Purtell, David Broman, Christopher Potts, Matei Zaharia, and Omar Khattab. 2024. Optimizing instructions and demonstrations for multi-stage language model programs. In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing . 9340–9366. [33] Hammond Pearce, Baleegh Ahmad, Benjamin Tan, Brendan Dolan-Gavitt, and Ramesh Karri. 2025. Asleep at the keyboard? assessing the security of github copilot’s code contributions. Commun. ACM 68, 2 (2025), 96–105. [34] Jinjun Peng, Leyi Cui, Kele Huang, Junfeng Yang, and Baishakhi Ray. 2025. Cweval: Outcome-driven evaluation on functionality and security of llm code generation. In 2025 IEEE/ACM International Workshop on Large Language Models for Code (LLM4Code) . IEEE, 33–40. [35] Jiahao Shi and Tianyi Zhang. 2026. RESCUE: Retrieval augmented secure code generation. In International Conference on Learning Representations , Vol. 2026. 78500–78526. [36] Mohammed Latif Siddiq and Joanna CS Santos. 2022. SecurityEval dataset: mining vulnerability examples to evaluate machine learning-based code generation techniques. In Proceedings of the 1st international workshop on mining software repositories applications for privacy and security . 29–33. [37] Stack Overflow. 2025. Stack Overflow Developer Survey . https://survey.stackoverflow.co/2025/ai/ [38] Raphael Tang, Crystina Zhang, Xueguang Ma, Jimmy Lin, and Ferhan Türe. 2024. Found in the middle: Permutation self-consistency improves listwise ranking in large language models. In Proceedings of the 2024 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers) . 2327–2340. [39] Yuan Tian and Tianyi Zhang. 2025. Selective Prompt Anchoring for Code Generation. arXiv:2408.09121 [cs.LG] https://arxiv.org/abs/2408.09121 [40] Norbert Tihanyi, Tamas Bisztray, Mohamed Amine Ferrag, Ridhi Jain, and Lucas C Cordeiro. 2025. How secure is AI-generated code: a large-scale comparison of large language models. Empirical Software Engineering 30, 2 (2025), 47. [41] Norbert Tihanyi, Tamas Bisztray, Ridhi Jain, Mohamed Amine Ferrag, Lucas C Cordeiro, and Vasileios Mavroeidis. 2023. The formai dataset: Generative ai in software security through the lens of formal verification. In Proceedings of the 19th international conference on predictive models and data analytics in software engineering . 33–43. [42] Jiexin Wang, Liuwen Cao, Xitong Luo, Yang Cao, Zhenghao Li, Yunyi Xiao, Mengchen Zhao, Adam Jatowt, and Yi Cai. 2026. Toward Secure Code Generation: Bridging Correctness and Security via Task-Adaptive Vulnerability Modeling and Execution-Based Benchmarking. Proceedings of the ACM on Software Engineering 3, ISSTA, Article ISSTA068 (Oct. 2026), 22 pages. doi:10.1145/3832159 [43] Xinchen Wang, Ruida Hu, Cuiyun Gao, Xin-Cheng Wen, Yujia Chen, and Qing Liao. 2024. Reposvul: A repository-level high-quality vulnerability dataset. In Proceedings of the 2024 IEEE/ACM 46th International Conference on Software Engineering: Companion Proceedings . 472–483. [44] Qingyun Wu, Gagan Bansal, Jieyu Zhang, Yiran Wu, Beibin Li, Erkang Zhu, Li Jiang, Xiaoyun Zhang, Shaokun Zhang, Jiale Liu, et al. 2023. Autogen: Enabling next-gen llm applications via multi-agent conversation. arXiv preprint 
+
+, Vol. 1, No. 1, Article . Publication date: October 2026. Secure and Functional Code Generation with Self-Evaluation 21 
+
+arXiv:2308.08155 (2023). [45] Yanzhao Zhang, Mingxin Li, Dingkun Long, Xin Zhang, Huan Lin, Baosong Yang, Pengjun Xie, An Yang, Dayiheng Liu, Junyang Lin, et al. 2025. Qwen3 embedding: Advancing text embedding and reranking through foundation models. 
+
+arXiv preprint arXiv:2506.05176 (2025). , Vol. 1, No. 1, Article . Publication date: October 2026.

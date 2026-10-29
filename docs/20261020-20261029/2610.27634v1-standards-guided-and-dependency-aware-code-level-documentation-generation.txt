@@ -1,0 +1,593 @@
+Title: Standards-Guided and Dependency-Aware Code-Level Documentation Generation
+
+URL Source: https://arxiv.org/pdf/2610.27634v1
+
+Published Time: Wed, 21 Oct 2026 00:46:32 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+1
+
+# Standards-Guided and Dependency-Aware Code-Level Documentation Generation 
+
+Tingxu Han ∗, Wei Song ∗, Ziming Li ∗, Yuchen Chen, Weisong Sun †,Zhenpeng Chen, Chunrong Fang †, Zhenyu Chen, and Yang Liu 
+
+✦
+
+Abstract —Automatically generating high-quality documentation for software repositories remains challenging because existing approaches largely treat documentation as an unconstrained text generation prob-lem. As a result, they often lack explicit quality specifications, depend heavily on long-context prompts over raw code, and provide limited sup-port for reproducible evaluation. We argue that code-level documenta-tion generation should instead be formulated as a standards-guided software engineering task , in which documentation is generated and assessed against explicit, reusable quality requirements derived from authoritative documentation standards. In this paper, code documenta-tion refers to natural-language descriptions of repository functions and classes, organized by source-code path. We present C ODE DOC , a standards-guided and dependency-aware framework for code-level documentation generation. C ODE DOC iden-tifies dependencies between code entities using static call-graph and AST analysis. It then constructs dependency-aware structured prompts that combine local code context, repository paths, and documentation criteria derived from authoritative standards and style guides. We further introduce an interactive LLM-as-a-judge protocol that provides criterion-aligned feedback to optimize generated documentation, enabling tar-geted refinement based on fine-grained dimensions derived from formal and practice-oriented documentation standards. Experiments on ten open-source Python repositories show that C ODE DOC produces higher-quality documentation than both RepoAgent and a long-context base-line under standards-aligned evaluation, with relative improvements of 11.6%–17.0% and 21.4%–29.6%, respectively, while consuming roughly an order of magnitude fewer tokens per documentation entity than the long-context baseline. A human evaluation study confirms substantial alignment between LLM-based and human judgments (Spearman’s 
+
+ρ = 0.72 ), and the relative findings are preserved across different judge LLMs. Code is available at https://github.com/ControllableModel/ CodeDoc. 
+
+Index Terms —Code documentation generation, repository-level code understanding, documentation standards, large language models, static analysis, LLM-as-a-judge. 
+
+Tingxu Han, Ziming Li, Yuchen Chen, Chunrong Fang, and Zhenyu Chen are with the State Key Laboratory for Novel Software Technology, Nanjing Uni-versity, Nanjing, Jiangsu, 210093, China (e-mail: txhan@smail.nju.edu.cn; dzycd53@gmail.com; fangchunrong@nju.edu.cn; zychen@nju.edu.cn). Wei Song is with the School of Computer Science and Engineering, UNSW Sydney, NSW 2052, Australia (e-mail: wei.song1@unsw.edu.au). Weisong Sun and Yang Liu are with the College of Computing and Data Science, Nanyang Technological University, 639798, Singapore (e-mail: weisong.sun@ntu.edu.sg; yangliu@ntu.edu.sg). Zhenpeng Chen is with Tsinghua University, Beijing, China. E-mail: zpchen@tsinghua.edu.cn. Tingxu Han, Wei Song, and Ziming Li contributed equally to this work. Weisong Sun and Chunrong Fang are corresponding authors. 
+
+1 INTRODUCTION 
+
+Throughout the software lifecycle, developers continuously interact with existing code artifacts [1]–[4], especially during tasks such as feature extension [5], bug fixing [6], code review [7], and system maintenance [8]. A growing body of empirical evidence shows that a substantial portion of developers’ effort is devoted to understanding existing code rather than writing new functionality [9]–[11]. In this context, high-quality code documentation plays a critical role in facilitating code comprehension, supporting collab-oration, and improving the maintainability and evolution of software systems. However, maintaining documentation manually is labor-intensive and error-prone [12], [13]. As software evolves, documentation often becomes incomplete, inconsistent, or outdated, reducing its usefulness and po-tentially harming overall software quality. These challenges have motivated increasing research interest in automatic code documentation generation, with the goal of reducing manual effort while improving the availability and quality of software documentation [14]–[16]. Code Repo Documentation     
+
+> Project-level Architecture-level Code-level
+> README.md CONTRIBUTING.md LICENSE
+> ARCHITECTURE.md
+> USER_API.md Function Description Class Description Docstrings
+> README.md CONTRIBUTING.md LICENSE
+> api/ docs/
+> USER_API.md module_a.py module_b.py
+> ARCHITECTURE.md
+> root/ src/
+> module_c.py
+
+Fig. 1. An intuitive example for different documentation levels for a code repo. We focus on code-level documentation in this paper. 
+
+As shown in Figure 1, following [17], documentation in a code repository can be organized at different levels. Project-level documentation describes the repository as a whole, such as README, CONTRIBUTING, and LICENSE files. Architecture-level documentation explains higher-level de-sign and interface information, such as architecture descrip-tions and API documents. In contrast, this work focuses on arXiv:2610.27634v1 [cs.SE] 20 Oct 2026 2
+
+code-level documentation, which refers to natural-language descriptions attached to individual code entities, such as function and class descriptions and docstrings. Different from inline code comments, which are implementation-level annotations embedded in the code body that explain how or why particular statements work, code-level documentation describes an entity’s purpose, behavior, interface, and role within the repository, forming a self-contained description. Repository-level documentation can be constructed by orga-nizing these entity-level descriptions according to the source code structure, but our study specifically targets generating documentation for a single code entity at a time. Existing research on automatic code documentation gen-eration falls into three strains. Heuristic-based methods gen-erate documentation through handcrafted templates, rules, or retrieval over similar fragments [18]–[25]. They are inter-pretable and controllable, but rely on manually designed heuristics or code-similarity assumptions and generalize poorly to large, evolving codebases, especially in repository-level settings with cross-file and cross-function dependen-cies. Neural model-based methods learn mappings from code to natural language using pretrained code models such as CodeNN [25], CodeBERT [26], and PLBART [27], sub-stantially improving semantic modeling, but most focus on function-level summarisation rather than repository-wide coverage. LLM-based methods leverage in-context learning and long-context capabilities of general-purpose LLMs to produce more fluent and adaptable documentation, and recent repository-level systems such as RepoAgent [16] and RepoSummary [14] explicitly incorporate directory struc-tures, code dependencies, and feature-level organization to improve global coherence beyond isolated method-level summaries. Despite these advances, existing approaches still face several fundamental challenges: 1 They lack ex-plicit and verifiable documentation criteria, leaving the no-tion of what constitutes high-quality documentation largely implicit and inconsistent across tools and usage scenarios; 2 They often incur high token costs because they rely on deep recursive analysis and redundant dependency inputs, which limit scalability and hinder practical deployment on large repositories. 3 Their code understanding can become unstable when excessively long contexts are provided, as critical information may be diluted by irrelevant details, leading to inconsistent or inaccurate documentation gen-eration. 4 Their evaluation methods still rely heavily on human judgments and subjective assessments, which makes results harder to reproduce and limits objective comparison across methods. To address the above challenges, we formulate automatic code documentation generation as a standards-guided and verifiable generation task, in which the content, structure, and scope of the generated documentation are explicitly constrained by well-defined documentation requirements derived from documentation standards. In this work, we propose C ODE DOC , a standards-guided and dependency-aware framework for code-level documentation generation. We first extract documentation standards from authoritative sources, including ISO/IEC/IEEE standards and widely used style guides, and convert them into explicit criteria that define what to document and how to structure it. Guided by these criteria, C ODE DOC generates accurate and structured documentation by combining standards grounding with static program analysis. It further incorporates dependency-aware context construction to capture relationships between code entities across the repository, and closes the loop with a criterion-aligned LLM judge whose feedback iteratively refines the generated documentation against the same stan-dards. The main contributions of this work are as follows:  
+
+> •
+
+We present a standards-guided perspective on automatic code documentation generation, systematically deriving explicit and actionable documentation criteria from au-thoritative ISO/IEC/IEEE and GitHub documentation standards. The resulting criteria provide a reusable foun-dation for both defining and evaluating documentation quality.  
+
+> •
+
+We propose CODE DOC , a standards-guided and dependency-aware framework for code-level documentation generation. C ODE DOC couples standards-derived criteria with AST-based structural analysis and static call-graph dependency modeling, constructing dependency-aware structured prompts that improve repository-level code understanding while reducing redundant context and token consumption.  
+
+> •
+
+We introduce a criterion-aligned LLM-as-a-judge proto-col that plays a dual role: it provides dimension-level feedback to iteratively optimize the generated documen-tation in a closed loop, and it doubles as a reproducible, standards-grounded evaluation paradigm—so that a sin-gle explicit specification governs both generation and assessment.  
+
+> •
+
+We conduct experiments on ten open-source Python repositories, showing that CODE DOC improves doc-umentation quality by 11.6%–17.0% over RepoAgent and 21.4%–29.6% over a long-context baseline under standards-aligned evaluation, while consuming roughly an order of magnitude fewer tokens per documentation entity. The LLM-based evaluation aligns with human judgment (Spearman’s ρ = 0 .72 ), and the relative findings are preserved across different judge model families. 
+
+2 BACKGROUND 
+
+2.1 Code-Level Documentation Generation 
+
+Software documentation can describe a repository at dif-ferent levels, from project-level files such as READMEs to architecture-level documents and code-level descriptions. ISO/IEC/IEEE standards [28] treat source code as a dis-tinct life-cycle artifact subject to inspection, analysis, ver-ification, and validation. Following this source-code-level perspective, we define code-level documentation as natural-language descriptions attached to individual code entities, such as functions, methods, and classes. Typical examples include Python docstrings, Javadoc comments, and Doxy-gen documentation blocks, which are written alongside source code and can be extracted into API or reference documentation [29]–[31]. Code-level documentation gener-ation therefore aims to automatically produce such entity-level descriptions from code, a task commonly studied as function or method documentation generation in prior work [26], [32]. In this paper, we focus on generating doc-3
+
+umentation for a single code entity at a time, rather than producing project- or architecture-level documents. 
+
+2.2 Formalizing Code-Level Documentation Genera-tion as a Standards-Guided Task 
+
+Let a code repository be represented as C = ( E, R), where E
+
+denotes a set of code entities (functions and classes within scope, plus enclosing modules used for path metadata), and 
+
+R denotes the structural relations among them, such as call relations, import dependencies, and module hierarchies. The documentation target is code-level : we produce one natural-language artifact per code entity, with the repository structure R serving as generation context rather than as the documentation unit. Formally, code-level documentation generation produces a set of per-entity artifacts D = {de |
+
+e ∈ E} , where each de explains entity e at an appropriate level of abstraction given its relevant context in R. Unlike unconstrained natural language generation, the quality of each documentation artifact is governed by a set of explicit documentation criteria Q = {q1, q 2, . . . , q n} that are them-selves derived from authoritative documentation standards (e.g., ISO/IEC/IEEE standards, mature open-source style guides). Each criterion qi specifies a concrete, assessable requirement, such as covering core functionality, clarifying inter-module dependencies, or describing usage assump-tions. Collectively, these criteria define both the information that should be documented and how it should be organized. Under this formulation, code-level documentation genera-tion can be modelled as a standards-guided generation task 
+
+in which the criterion set Q acts as the bridge between high-level documentation standards and low-level genera-tion behaviour. Because documentation quality is inherently graded rather than binary, we associate each criterion qi
+
+with a per-entity scoring function si(de, C) ∈ { 1, . . . , S }
+
+that measures how well artifact de satisfies qi, where S is the maximum score (in our experiments, S = 5 ). The generation objective is the mean over entities and criteria: 
+
+D∗ = arg max 
+
+> D
+
+1
+
+|E| |Q| 
+
+X
+
+> e∈E
+
+X
+
+> qi∈Q
+
+si(de, C).
+
+This matches our evaluation protocol, where the repository-level score is the mean of per-entity, per-dimension scores. Different instantiations of Q correspond to different docu-mentation scenarios, giving a unified modelling framework for code-level documentation generation, and making crite-ria explicit and measurable supports principled generation and evaluation beyond implicit, prompt-driven approaches. We note that the optimisation formulation above serves as a conceptual framework that clarifies the generation objective rather than a problem that is solved directly. In practice, the method presented in Section 3 approximates this objective through iterative prompt-and-refine generation guided by criterion-level feedback, rather than through formal opti-mization over the documentation space. 
+
+3 METHODOLOGY 
+
+In this paper, we present an automated framework for gen-erating and evaluating code-level documentation by inte-grating static program analysis with large language models (LLMs). As shown in Figure 2, the framework is organized into two phases. Phase (a) Offline Criteria Extraction (Sec-tion 3.1) is performed once, ahead of any repository being processed, and turns authoritative documentation standards into an explicit, reusable criterion set Q. Phase (b) Online Code Documentation Generation is the per-repository run-time pipeline; it consists of Stage 1 (Section 3.2), which builds a dependency-aware structural representation from the source code, and Stage 2 (Section 3.3), which combines that representation with Q to produce, organise, and refine the per-entity documentation. Together, the three components support standards-guided , dependency-aware , and token-efficient code-level documentation generation, departing from prior work that relies on long-context prompting over raw source code without explicit quality specifications. The remainder of this section describes the three compo-nents in order: Section 3.1 details Phase (a); Section 3.2 and Section 3.3 detail Stages 1 and 2 of Phase (b); and Section 3.4 walks through a representative example end-to-end. 
+
+3.1 Phase (a): Offline Criteria Extraction 
+
+Both stages of Phase (b) rely on an explicit set of documen-tation criteria Q derived once, offline, from authoritative documentation standards. The criteria simultaneously serve two roles: they constrain what Stage 2 must produce (as part of the structured prompt), and they form the rubric under which the document judge inside Stage 2, as well as any external evaluator (Section 4), scores the generated artifacts. Making these criteria explicit, fine-grained, and standards-aligned is what distinguishes C ODE DOC from prior repository-level documentation systems that rely on implicit, ad-hoc prompts. Source standards: we draw criteria from two comple-mentary references that together cover formal and practice-oriented documentation expectations. ISO/IEC/IEEE soft-ware documentation standards [33] provide a formal en-gineering rubric covering correctness, completeness, con-sistency, modular organisation, maintainability, accessibility, internationalisation, safety, and update discipline; we adopt them as a baseline against which “engineering-grade” doc-umentation is assessed. The GitHub documentation style guide encodes the practice of widely used open-source doc-umentation, including developer-facing readability, task-oriented organization, navigability, procedural clarity, and contributor usability; we adopt it to complement the formal ISO rubric with the developer-experience axis. Extraction pipeline: we operationalize the standards into machine-actionable criteria in two steps. (i) Candidate extrac-tion. GPT-5-mini processes each source standard document and is prompted to identify distinct, assessable quality aspects, producing candidate items of the form (category, di-mension, description, scoring guideline) where each dimension corresponds to one independently verifiable property. This step yields an over-complete set that may contain duplicates and ambiguous phrasings. (ii) Manual review and normalisa-tion. We manually inspect the candidates, deduplicate se-mantically overlapping entries, and normalize the wording so that each dimension maps to a concrete, independently scorable aspect. The output is a fixed-schema rubric: each dimension carries a short name (used as the judge’s vari-4Source Code Repositories 
+
+Dependency Structure 
+
+> Structured Prompt
+
+Extract Python File 
+
+> DOT
+> Dependency Parsing
+> Target Function Dependent Function Depend-on Function
+> AST
+> Source Code Monitoring
+> Function Path Function Code
+> Place Documents by Source Code Path
+
+Prompt Engine   
+
+> Criteria Source Code
+> Code Paths Relation Ships
+> ISO/IEC/IEEE26515:2018 Github Style Guide
+> from stage1
+> Chart Visualization
+
+Document Judge 
+
+> Score Evaluation LLM-as-a-Judge
+
+Stage1:Source Code Analysis Stage2: Criterion-Driven Code Documentation Generation   
+
+> Organize Document Structure
+> Generate Documentation
+> Meta Info Dimension Dependency Template
+
+Pyan3 Analysis Evaluation Feedback     
+
+> Detailed Feedback
+> ⭐≥4: high rated
+> ⭐<4: needs improvement
+> Python Code Docs/Config/Git…
+> Retrieve Deeper Dependencies
+> Modification Focus Dimensions
+
+①②③
+
+Phase (a). Offline Criteria Extraction 
+
+ISO/IEС/IEEE 26514 + GitHub Style Guide GPT-5-mini Candidate Extraction Manually Review Criteria Set Q 
+
+Phase (b). Online Code Documentation Generation 
+
+Fig. 2. Overview of C ODE DOC , a standards-guided and dependency-aware framework for code-level documentation generation. Phase (a) Offline Criteria Extraction (top) is run once, independently of any input repository: it turns authoritative documentation standards (ISO/IEC/IEEE 26514 and the GitHub style guide) into an explicit criterion set Q through GPT-5-mini candidate extraction followed by two-author manual review (Section 3.1). Phase (b) Online Code Documentation Generation (bottom) is the per-repository runtime pipeline. It comprises two stages. 
+
+Stage 1 performs static source code analysis: it extracts function- and class-level entities from Python source files and constructs a dependency-aware structural representation via call-graph analysis ( Pyan3 ) and AST parsing. Stage 2 feeds that representation together with Q into the prompt engine to produce standards-guided prompts for LLM-based documentation generation; the generated documents are organised by source-code path, and the LLM-as-a-Judge module scores them dimension by dimension and returns feedback for a single in-stage refinement pass. 
+
+able), a one-sentence definition (used in the prompt), and a 1–5 scoring anchor (used to calibrate the judge). Resulting rubrics: the final ISO rubric contains 7 cate-gories and 14 dimensions ; the final GitHub rubric contains 
+
+5 categories and 12 dimensions . Table 7 and Table 8 list both rubrics with dimension definitions; a complete traceability table from source-standard clauses to extracted dimensions is provided in the supplementary material. Usage in Phase (b): the extracted criteria Q flow into Phase (b) at two points: (i) as the first block of every prompt assembled in Stage 2, so that the LLM generates documenta-tion explicitly aligned with the rubric; and (ii) as the scoring rubric used by the document judge inside Stage 2 as well as by external evaluators when reporting experimental results in Section 4. This double use is precisely what makes the framework standards-guided : a single explicit specification governs both generation and evaluation, rather than relying on separate, implicit notions of quality on either side. 
+
+3.2 Phase (b), Stage 1: Source Code Analysis 
+
+Stage 1 builds the refined repository representation C′ =(E, R′) that serves as the structural interface to Stage 2. Following the scope defined in Section 2.1, the analysis is performed at function and class granularity: each function or class is recorded as an entity in E together with its repository path and source code body, preserving traceabil-ity for downstream documentation placement. Two comple-mentary static analyses populate R′. (i) Call-graph analysis via Pyan3 resolves imports and call sites to produce a repository-level directed call graph; the resulting caller– callee edges form the backbone of R′. (ii) AST parsing of each entity extracts localised structural cues—function signatures, parameter lists, class attributes, and major control-flow constructs—which complement the global call-graph structure with local semantic grounding. The inte-grated representation lets Stage 2 retrieve only dependency-relevant context, reducing redundant inputs and improving repository-level coherence under a controlled token budget. 
+
+3.3 Phase (b), Stage 2: Standards-Guided Documenta-tion Generation 
+
+Stage 2 takes the refined representation C′ together with the criterion set Q from Phase (a), and produces per-entity documentation through an iterative prompt-and-refine loop (see Figure 2). For each target entity the prompt engine selectively retrieves a small set of dependency-relevant entities from R′—typically the direct callers and callees— rather than exposing the LLM to the entire repository. It then assembles a structured prompt that combines four 5(b) Visualize Chart         
+
+> UserService
+> __ init __() ①
+> login()
+> app.py
+> utils.py validate_input() ②
+> main() ③
+> File Name Class Name Function Name
+> dependent
+> dependent
+
+(c) Prompt Inject        
+
+> digraph G {
+> subgraph cluster_G {
+> app […];
+> utils […];
+> app__UserService […];
+> app__UserService____init__ […]; ①
+> app__UserService__login […];
+> app__main […];
+> utils__validate_input […];
+> }
+> app__UserService____init__ ->
+> utils_validate_input; ②
+> app__main ->
+> app__UserService__init__; ③
+> …
+> }
+> Class Part
+> Function Part
+> Relationship Part
+
+(a) Source DOT Code               
+
+> ---
+> ## Target Code Information
+> Function Name:
+> `{UserService.init()}` ①
+> File Path: ` root/app.py `
+> Source Code:
+> ```python
+> [app.py line 3 -5 source code]
+> ```
+> uses
+> 1. [utils.py/validate_input()] ②
+> [utils.py/validate_input
+> line 1 -5 source code]
+> used_by
+> 1. [app.py /main ()] ③
+> [app.py/main line
+> 11 -14 source code]
+> ---
+
+Fig. 3. Dependency-graph construction and dependency-aware prompt injection in C ODE DOC . (a) The DOT code structure is organized into three sections: Class Part, Function Part, and Relationship Part. (b) The visualized DOT graph, which includes two files, one class, four functions, and two call relationships. (c) Illustrates how the information derived from the DOT structure is utilized in our prompt template—dependency relations are injected into the “uses” and “used by” sections with markers, ready for subsequent AST-based source code injection. (b)  Visualize Chart  (c)  Prompt Inject (a)  Source AST Code                                                              
+
+> Project (root)
+> ├── app.py [Module] ①
+> ││
+> │├── [CD: UserService]
+> │││(line 2 -9)
+> │││
+> ││├── [FD:__init__]
+> |||(line 3 -5) ②
+> │││
+> ││└── [FD:login]
+> ││(line 7 -9)
+> ││
+> │└── [FD:main]
+> │(line 11 -14) ④
+> │
+> └── utils.py [Module]
+> │
+> └── [FD:validate_input]
+> (line 1 -5) ③
+> root
+> app.py ①utils.py
+> ClassDef
+> UserService
+> FunctionDef
+> Main()
+> FunctionDef
+> validate_input()
+> FunctionDef
+> __init__()
+> FunctionDef
+> Login()
+> Source
+> Code ④
+> ---
+> ## Target Code Information
+> Function Name:
+> `UserService.init()`
+> File Path: `root/app.py ` ①
+> Source Code:
+> ```python
+> [app.py line 3 -5 source code] ②
+> ```
+> uses
+> 1. [utils.py/validate_input()]
+> [utils.py/validate_input
+> line 1 -5 source code] ③
+> used_by
+> 1. [app.py /main ()]
+> [app.py/main
+> line 11 -14 source code] ④
+> ---
+> Source
+> Code ③
+> Source
+> Code ②
+> Source
+> Code
+> •FD: Function Definition
+> •CD: Class Definition
+
+Fig. 4. AST-based structural extraction and prompt construction in C ODE DOC . (a) The raw AST tree printed from the parsed repository, displaying the starting and ending positions of all classes and functions within each file starting from the root directory. (b) The visualised AST hierarchy, where each class or function node is annotated with its corresponding starting and ending line numbers in the source code. (c) Based on the DOT dependency structure, the AST injects the source code of retrieved functions into the corresponding “uses” and “used by” positions, forming a comprehensive prompt template. 
+
+blocks in a fixed order: (i) documentation criteria definitions drawn from Q, (ii) target entity source code with its reposi-tory path, (iii) dependency-relevant entity source code with caller/callee annotations, and (iv) generation instructions specifying the expected output format. The LLM produces documentation that is anchored in the entity’s local im-plementation while remaining aware of its role within the broader dependency structure. The output is organised by source-code path so that each artifact remains traceable to its code entity. Within the same stage, an LLM-based document judge 
+
+evaluates the generated documentation against the same cri-terion set Q, producing dimension-level scores and textual feedback. The feedback is appended to the original prompt for a single regeneration pass (we use one refinement it-eration across all experiments); this closes the loop within Stage 2 without requiring repeated long-context analysis of the entire repository. All generation and evaluation use GPT-5-mini with default temperature settings, and example prompt templates and representative outputs are provided in the supplementary material. 
+
+3.4 Walk-through Example 
+
+We now walk through Phase (b) end-to-end on a concrete Python repository consisting of two files, app.py and 
+
+utils.py , as illustrated in Figure 3 and Figure 4. 
+
+Phase (a): Offline Criteria Extraction. Before Phase (b) begins, Phase (a) runs offline to produce the criterion set Q,6
+
+extracted from authoritative documentation standards (the ISO/IEC/IEEE documentation standards and the GitHub documentation style guide). The same Q is used down-stream by both the prompt engine and the document judge, so that a single explicit specification governs both genera-tion and evaluation. 
+
+Phase (b)-Stage 1: Source Code Analysis. Stage 1builds the refined representation C′ = (E, R′) through two complementary static analyses. (i) Call-graph analysis. 
+
+Pyan3 analyses the whole repository and emits a directed call graph in DOT format. Figure 3(a) shows the raw DOT output for our running example, which declares entities such as app__UserService____init__ ,
+
+utils__validate_input , and app__main ,together with caller–callee edges from 
+
+app__main to app__UserService__init__ 
+
+and from app__UserService____init__ to 
+
+utils__validate_input . Parsing this DOT file yields the call graph in Figure 3(b), whose nodes are the code entities in E and whose caller–callee edges form the backbone of R′. At this point the representation captures only dependency structure; no source code is attached, since the DOT format records relations without implementation details. (ii) AST parsing. AST parsing then complements the call graph with localised structural cues. Figure 4(a) presents the AST hierarchy of the same repository: the root node represents the project, with child modules app.py 
+
+and utils.py ; app.py contains the class UserService 
+
+(lines 2–9), which encloses the methods __init__ (lines 3–5) and login (lines 7–9), together with the top-level function main (lines 11–14); utils.py contains the standalone function validate_input (lines 1–5). From this tree the analysis extracts function and class signatures, parameter lists, and precise line ranges for each entity, and uses the recorded line ranges to attach the corresponding source code to each node. Figure 4(b) visualises the resulting refined representation C′ = ( E, R′), in which each entity now carries both its caller–callee relations and its exact source location. 
+
+Phase (b)-Stage 2: Standards-Guided Documentation Generation. Stage 2 takes C′ and the criterion set Q and assembles the structured prompt. For the target entity 
+
+UserService.__init__ , the prompt engine selectively retrieves its direct callers and callees from R′: it identifies 
+
+main() as a caller and validate_input() as a callee and records them under the used_by and uses sections of the prompt, respectively (Figure 3(c)). It then fills these sections with the source code retrieved via the AST line ranges— 
+
+validate_input() from utils.py and main() from 
+
+app.py —alongside the target entity’s own file path and source code (Figure 4(c)). Combined with the repository-path metadata and the criteria Q, these form the structured prompt, from which the LLM generates documentation that is anchored in the target entity’s local implementation while remaining aware of its role in the broader dependency structure. Finally, the document judge applies Q to score the generated documentation and produce textual feedback, which the prompt engine consumes for a single refinement pass before the LLM regenerates the documentation. This closes the loop within Stage 2 without requiring repeated long-context analysis of the entire repository. 
+
+4 EXPERIMENTAL EVALUATION 
+
+This section evaluates C ODE DOC along a deliberate pro-gression: we first establish that our measuring instrument is sound, then use it to assess quality, and finally dis-sect the cost and mechanism behind the results. RQ1 asks whether the standards-derived, LLM-based evaluation is itself trustworthy—sensitive to quality degradation, aligned with human judges, and stable across judge families. RQ2 then uses this validated protocol to test whether C ODE -DOC improves documentation quality over baselines and whether the gain is broad-based. RQ3 finally asks at what token cost these gains come, which components drive them, and how reliable the static dependency recovery underpin-ning the method is. Each question builds on the previous: RQ2 relies on the rubric validated in RQ1, and RQ3 inter-prets the cost of the quality established in RQ2.  
+
+> •
+
+RQ1 (Evaluation Validity): Is the standards-derived, LLM-based evaluation a trustworthy measure of docu-mentation quality—i.e., is it sensitive to controlled quality degradation, aligned with human judgement, and stable across judge model families?  
+
+> •
+
+RQ2 (Documentation Quality): Does C ODE DOC produce higher-quality documentation than existing baselines un-der the standards-aligned evaluation, and is the improve-ment broad-based across quality dimensions?  
+
+> •
+
+RQ3 (Cost, Components & Reliability): At what genera-tion cost does C ODE DOC achieve these gains, which of its design choices drive them, and how reliable is the static dependency recovery the method depends on? 
+
+4.1 Experimental Setup 
+
+Repositories: We evaluate ten open-source Python repos-itories spanning AI and software-infrastructure domains (Table 5). Each repository is preprocessed by removing directories unrelated to source code (datasets, build arti-facts, configuration files, and pre-existing documentation) so that all methods are run on identical inputs. We measure repository scale by the total number of documentation en-tities (#Class + #Function) and group repositories into small 
+
+(≤ 200 ), medium (200 <·≤ 400 ), and large (> 400 ). Evaluation rubric: All experiments evaluate documen-tation quality under the two standards-derived rubrics in-troduced in Section 3.1: the ISO rubric (7 categories, 14 dimensions, drawn from ISO/IEC/IEEE software documen-tation standards [33]) and the GitHub rubric (5 categories, 12 dimensions, drawn from the GitHub documentation style guide). See Table 7 and Table 8 for the full rubrics. LLM-based judge: Following recent work [34], [35], we use an LLM judge to score generated documentation against predefined criteria. For each dimension, the judge assigns a 
+
+1–5 score (higher is better) and is instructed to focus exclu-sively on the documentation artifact and the corresponding criterion. The repository-level score under a given standard is the mean of dimension-level scores. To examine whether the judge’s interaction style affects evaluation stability, we report results under two scoring strategies: single-round (S), where all dimensions are scored within a single-round conversation, and multi-round (M), where each dimension is scored in an independent interaction 7Source code logs.py def setup_logger(file): global logger if file: handler = FileHandler(file) 2   
+
+> else: handler = StreamHandler() handler.setLevel(DEBUG) handler.setFormatter(formatter) if file is None: uv = getLogger("uvicorn") uv.setLevel(lvl) # DEBUG/INFO uv.addHandler(handler) logger = getLogger("openui") logger.setLevel(DEBUG) logger.addHandler(handler) 1
+> return logger 3
+
+CodeDoc 898 tokens ## metadata ## description ## parameters - file: str | None ## example_output ## warnings - global state via `global` - duplicate handlers on re-call 1  
+
+> - FileHandler may raise 2
+> - ANSI codes written into file - datefmt has no effect - returns the openui logger 3
+> - thread-safety caveat
+
+RepoAgent 1,434 tokens ## summary ## parameters - file: str | None Code Description: - global state via `global` - handler selection & level 1      
+
+> - formatter / ANSI color codes - uvicorn level from DEBUG env - FileHandler may raise 2
+> - openui logger & return 3
+> Behavior & Side-Effects: - duplicate handlers on re-call 1
+> - ANSI codes written into file - FileHandler may raise 2
+> Note: - remove old handlers first 1
+> - DEBUG env truthiness check - returns the openui logger 3
+> ## output example
+
+Fig. 5. A qualitative comparison of documentation generated for the setup_logger function ( openui/logs.py ) by C ODE DOC (898 tokens) and RepoAgent [16] (1,434 tokens). Circled markers ①–③ trace individual documentation statements back to their corresponding source-code lines. CODE DOC yields a more concise, criterion-structured artifact that still covers the key behaviors and side-effects, e.g., duplicate handlers on re-call 
+
+## ①, a possible FileHandler exception ②, and the returned openui logger ③, at substantially lower token cost. 
+
+Statistical reporting: the unit of analysis is the repository (n = 10 ): each repository yields one paired observation (baseline vs. C ODE DOC ). For each pairwise comparison we report the mean score difference, Cliff’s delta effect size, and the Wilcoxon signed-rank p-value across repositories. Given the small sample size, we interpret results based on the combination of consistent per-repository trends, score distributions, effect sizes, and statistical indicators rather than relying on any single metric. 
+
+4.2 RQ1: Is the Standards-Based Evaluation Trustwor-thy? 
+
+RQ1.a – Criterion sensitivity (controlled masking). To an-swer whether the extracted criteria capture quality, we use a controlled-masking method: if the criteria genuinely capture quality, their scores should fall as quality is progressively removed. We therefore validate whether the extracted cri-teria respond sensibly to controlled quality degradation. Using official PyTorch 2.8 documentation files [36], we select all files larger than 20 KB as high-quality references and randomly mask 20% , 40% , or 60% of each file’s content to obtain four document groups (one clean, three progressively degraded). All groups are scored by the LLM judge under the multi-round strategy only (to isolate criterion sensitivity from intra-dialogue effects) under both ISO- and GitHub-based criteria. Figure 6 shows that both criterion sets assign progres-sively lower scores as the masking ratio increases. The monotonic decline indicates that the extracted dimensions respond to controlled information loss rather than produc-ing arbitrary scores. The two standards differ in magnitude: the ISO criteria drop more sharply under heavy masking (sensitive to structural incompleteness), whereas the GitHub criteria degrade more gently (consistent with their emphasis on readability rather than formal completeness alone). 
+
+TABLE 1 Human Alignment and Cross-Family Judge Comparison. 
+
+Method Human GPT-5-mini Claude-3.5-Sonnet 
+
+Score Rank Score Rank Score Rank RepoAgent 3.09 2 3.24 2 3.11 2CODE DOC 3.61 1 3.79 1 3.63 1
+
+∆ +0.52 – +0.55 – +0.52 –
+
+RQ1.b – Human alignment and cross-family judge ro-bustness. We validate the LLM-based evaluation along two axes: alignment with human judges, and robustness across judge model families. We sample three repositories spanning different scales—Flask (small), NumPy (medium), and PyTorch (large)—and randomly select 15 functions per repository, yielding 45 documentation pairs (one from CODE DOC and one from RepoAgent per function). Three graduate students with two or more years of Python de-velopment experience score every artifact (blinded, ran-domised order) on a 1–5 scale across a representative subset of eight ISO dimensions. To assess robustness across judge families, we re-evaluate the same 45 pairs using Claude-3.5-Sonnet under an identical rubric. Table 1 reports both views. Human evaluators con-sistently prefer C ODE DOC (+0 .52 on average; inter-rater Fleiss’ κ = 0 .51 , moderate). The Spearman correlation be-tween average human scores and GPT-5-mini judge scores across all 45 pairs is ρ = 0 .72 (p < 0.001 ); human scores are systematically 0.1–0.2 points lower than LLM-judge scores, consistent with known mild LLM-judge inflation [34]. The relative ranking is fully preserved when switching the judge to Claude-3.5-Sonnet, with ρ = 0.85 between the two judges at the dimension level and a near-identical score gap between methods ( ∆ = 0 .55 vs. 0.52 ). 80% 20% 40% 60% 
+
+Content Masking Ratio   
+
+> 2.0 2.5 3.0 3.5 4.0 4.5
+> Average Score (1-5)  4.20 3.81 3.55 2.91 4.10 3.74 3.65 3.18
+
+(a) Score vs. masking ratio   
+
+> ISO GitHub 20% 40% 60%
+
+Content Masking Ratio 
+
+> 0510 15 20 25 30 35
+> Relative Score Decline (%)
+> 9.3% 15.5% 30.8% 8.7% 11.0% 22.4%
+
+(b) Relative score decline                       
+
+> ISO GitHub
+> Fig. 6. Responses of the extracted criteria to controlled documentation degradation. (a) Average score under progressive content masking (0– 60%). (b) Relative decline from the unmasked baseline. Both rubrics decline monotonically as the masking ratio grows, with ISO dropping faster than GitHub at high masking ratios. TABLE 2 Average Documentation Scores Across Ten Repositories Under the ISO and GitHub Standards. Single-Round (S) and Multi-Round (M) Evaluation. Best in Bold .
+> Method ISO GitHub
+> SMSMLong-Context 2.87 2.93 3.01 3.08 RepoAgent 3.18 3.24 3.29 3.35 CODE DOC 3.72 3.79 3.68 3.74
+
+✎ Summary ▶ Both standards detect quality differences in a controlled masking test, declining monotonically with information loss. The LLM-based evaluation cor-relates strongly with human judgement ( ρ = 0 .72 ) and the relative method ranking is preserved across judge families, mitigating same-family bias. ◀
+
+4.3 RQ2: Does CODE DOC Improve Documentation Quality? 
+
+RQ2.a – Quality vs. baselines. Having established that the criteria distinguish quality levels, we compare C ODE DOC 
+
+against two baselines: RepoAgent [16], the most directly com-parable open-source repository-level documentation gen-eration tool, and a Long-Context baseline that feeds the full source file containing each target entity to the same backbone LLM (GPT-5-mini) under a matched token budget, without documentation criteria or dependency selection. For each repository we generate documentation under both ISO- and GitHub-oriented objectives, and evaluate each generation only under its aligned criteria. Table 2 reports aggregate scores. C ODE DOC achieves the highest score in every cell, with margins of +0 .39 to 
+
++0 .55 over RepoAgent and +0 .67 to +0 .86 over Long-Context. All pairwise improvements are statistically signifi-cant (Wilcoxon p < 0.05 , Cliff’s δ > 0.6 in every setting). RQ2.b – Category-level breakdown. A category-level decomposition (Figure 7) confirms that the improvement is broad-based rather than driven by one or two dimensions: CODE DOC leads in every ISO and GitHub category, with the largest absolute gains in Content Quality , Information Structure , and Format & Presentation for ISO, and Content Model and Reference Content for GitHub. 
+
+✎ Summary ▶ Across all ten repositories, C ODE DOC 
+
+outperforms RepoAgent ( +0 .39 to +0 .55 ) and Long-Context ( +0 .67 to +0 .86 ) under both standards and both judge interaction strategies, with significant effect sizes and consistent category-level gains. ◀
+
+4.4 RQ3: Cost–Quality Trade-off, Component Contribu-tions, and Mechanism Reliability 
+
+RQ3.a – Cost–quality trade-off. Higher documentation qual-ity is valuable only at reasonable generation cost, so we examine token cost and documentation quality jointly. Figure 8 shows the cost–quality trade-off directly, rather than combining cost and quality into a single ratio. The x-axis reports the number of tokens used per documentation entity, shown on a log scale because the methods differ by roughly an order of magnitude. The y-axis reports the doc-umentation score. Thus, points closer to the upper-left are better, as they achieve higher scores with fewer tokens. For visual compactness, each point uses the average score over the single-round and multi-round judge interactions. The separate S and M results are reported in Table 2. For each method, the figure shows 10 small markers, one for each repository, together with a larger centroid that represents the method-level mean. CODE DOC sits in the upper-left region under both ISO and GitHub criteria—higher scores at roughly an order of magnitude lower token cost than Long-Context, and notice-ably to the upper-left of RepoAgent. The decomposed view makes clear that the advantage comes from both sides simul-taneously: dependency-aware retrieval reduces redundant context (the x-axis), and standards-guided prompting raises the resulting documentation quality (the y-axis). Table 6 in the appendix reports absolute per-repository token usage for C ODE DOC under the ISO standard for reference, and Figure 5 illustrates the same efficiency–quality combination 9Content Quality Info. Structure Format & Pres. i18n & L10n Usability & UX Safety & Comp. Maintenance             
+
+> 12345
+> Avg Score (1--5)
+> 2.95 2.80 2.78 2.92 2.88 2.60 2.40 3.25 3.18 3.10 3.20 3.15 2.95 2.70 3.85 3.78 3.72 3.80 3.75 3.30 3.05
+
+(a) ISO-based criteria            
+
+> Long-Context RepoAgent CodeDoc
+> Content Model Article Content Reference Tutorial Further Reading
+> 12345
+> Avg Score (1--5)
+> 3.10 3.05 2.95 3.00 2.30 3.40 3.32 3.25 3.30 2.55 3.85 3.78 3.72 3.74 2.95
+
+(b) GitHub-based criteria 
+
+Fig. 7. Per-category documentation-quality comparison between baselines and C ODE DOC under the ISO and GitHub criteria. Scores are averaged across the dimensions within each category. 10 3 10 4
+
+Tokens per documentation entity (log scale) 
+
+2.0 2.5 3.0 3.5 4.0 
+
+> Documentation Score (1-5)
+
+better 
+
+(a) ISO standard 
+
+> Long-Context RepoAgent CodeDoc
+
+10 3 10 4
+
+Tokens per documentation entity (log scale) 
+
+2.0 2.5 3.0 3.5 4.0 
+
+> Documentation Score (1-5)
+
+(b) GitHub standard 
+
+Fig. 8. Cost–quality trade-off of C ODE DOC and the two baselines under (a) ISO and (b) GitHub criteria. Small markers are individual repositories; large markers are method-level centroids. Lower-left = cheaper; upper-left = better quality at lower cost. 
+
+qualitatively on a single function, where C ODE DOC matches RepoAgent’s coverage of the key side-effects at substantially lower token cost. RQ3.b – Component ablation. To attribute the quality gains, we isolate the two main design choices in C ODE -DOC —dependency-aware retrieval and standards-guided structured prompting—via four variants: Full Method (both components), No Dependency (only the target entity, no dependency-relevant context), No Prompt (dependency re-trieval retained, but the structured prompt is replaced by a simplified prompt without standards-derived criteria), and 
+
+Baseline (both components removed). Table 3 reports the repository-wide ablation under the ISO single-round setting. The ordering Full > No Dep. >
+
+No Prompt > Baseline holds in every repository. On aver-age, removing dependency retrieval reduces the score by 
+
+0.28 points, and removing the structured prompt reduces it by 0.40 points relative to the full method—both components contribute consistently, with the standards-guided prompt being the larger driver of quality. RQ3.c – Static dependency recovery audit. Be-cause CODE DOC relies on Pyan3 static call graphs for dependency-aware retrieval, the accuracy of recovered caller–callee edges directly affects the relevance of the in-jected context. We therefore audit Pyan3’s precision and recall on Flask, NumPy, and PyTorch, which span our repository-scale groups and vary in their use of dynamic Python features. For each repository, we randomly sample 50 functions. Two authors independently annotate each function’s ground-truth callers and callees from the source code, resolving disagreements by discussion. We then com-pute precision as the fraction of recovered Pyan3 edges that are correct, and recall as the fraction of ground-truth edges that Pyan3 recovers. We also report the share of ground-truth edges involving dynamic features, such as getattr , parameterized decorators, metaclasses, or 10                                                                        
+
+> TABLE 3 Component Ablation Across Ten Repositories Under the ISO Standard (Single-Round). Each Cell Shows the Average Score (1–5); Best per Repository in Bold .
+> Repository Full No Dep. No Prompt Baseline
+> NumPy 3.82 3.54 3.39 3.08 OpenUI 3.58 3.32 3.21 2.89 RAGFlow 3.74 3.48 3.35 3.02 Dify 3.69 3.43 3.30 2.97 Flask 3.78 3.51 3.42 3.11 Pyro 3.61 3.37 3.25 2.91 Fairseq 3.71 3.45 3.33 3.00 Joblib 3.76 3.49 3.38 3.05 Sonnet 3.63 3.38 3.27 2.93 PyTorch 3.85 3.57 3.44 3.12
+> Average 3.73 3.45 3.33 3.00
+> TABLE 4 Static Dependency Recovery by Pyan3 per Repository.
+> Repository Precision Recall F1 Dynamic %
+> Flask 91.2% 76.4% 83.1% 18.3% NumPy 88.7% 71.8% 79.4% 24.1% PyTorch 86.3% 67.2% 75.6% 31.5%
+> Average 88.7% 71.8% 79.4% 24.6%
+
+monkey-patching, since these are especially difficult for static analysis. Table 4 reports the audit. Precision is uniformly high (86–91%): Pyan3 rarely fabricates dependency edges. Re-call is moderate (67–76%), reflecting the inherent limitation of static analysis on dynamic-feature-heavy code. PyTorch exhibits the lowest recall and the highest dynamic-edge proportion (31.5%). To quantify the downstream impact, we compare ISO scores for functions with complete depen-dency recovery (all ground-truth edges recovered) against those with at least one missed edge: 3.82 vs. 3.51 (∆ = 0 .31 ,Wilcoxon p = 0 .023 ). Dependency completeness therefore correlates positively with downstream quality, indicating that future work on improving static-analysis coverage (or supplementing it with dynamic analysis) would directly translate into documentation gains. 
+
+✎ Summary ▶ CODE DOC achieves higher documenta-tion quality than both baselines at substantially lower token cost. The repository-wide ablation shows that both dependency-aware retrieval and standards-guided prompting contribute across all repositories, with the standards-guided prompt being the larger contribu-tor. Static dependency recovery is high-precision but moderate-recall on dynamic-feature-heavy code; func-tions with complete recovery score 0.31 points higher, identifying static-analysis coverage as a concrete lever-age point for future improvement. ◀
+
+5 THREATS TO VALIDITY 
+
+We organise threats to validity along construct, internal, and external dimensions. 
+
+Construct validity. Our evaluation relies on an LLM judge that scores documentation against predefined criteria, raising two concerns: judge reliability and rubric circularity. For reliability, RQ1.a shows that the judge responds consis-tently to controlled quality degradation, and RQ1.b corrobo-rates it against human scores ( ρ = 0 .72 , κ = 0 .51 ) and across model families. For circularity—the same criteria drive both the generation prompt and the evaluation rubric—we note that the sensitivity test in RQ1.a uses official PyTorch doc-umentation rather than C ODE DOC outputs, validating the rubric independently of our method, and that all baselines are scored under the same rubric so any criterion-alignment inflation affects them equally. 
+
+Internal validity. The Long-Context baseline isolates the contribution of dependency-aware retrieval from sim-ply providing more code context, but additional baselines (e.g., retrieval-only approaches and other repository-context methods) would further strengthen the comparison. The relatively small repository sample ( n = 10 ) limits statistical power. We therefore report per-repository results so con-sistency can be assessed directly. Generation, refinement, and judging in the default configuration all use the same model family (GPT-5-mini), introducing potential same-family bias; the cross-family comparison in RQ1.b provides partial mitigation. The criteria-extraction pipeline uses GPT-5-mini followed by two-author manual normalisation, with a full traceability table from source clauses to dimensions provided in the supplementary material; independent inter-annotator agreement remains future work. 
+
+External validity. The evaluation is limited to ten open-source Python repositories. Pyan3 ’s static analysis cannot fully capture dependencies arising from dynamic Python constructs (RQ3.c), and missed edges degrade downstream quality by 0.31 points on average. Results may therefore not generalize to repositories that rely heavily on dynamic constructs or to other programming languages. 
+
+6 RELATED WORK 
+
+Our work combines automatic code documentation gen-eration, repository-level software understanding, and standards-guided evaluation. Unlike prior approaches that focus on method-level summarization or repository-level prompting, we ground both generation and evaluation in explicit criteria derived from authoritative standards [33]. 
+
+6.1 Software Documentation and its Quality 
+
+Software documentation is critical for software evolution, maintenance, and developer productivity, yet maintaining high-quality documentation remains challenging, especially in large and rapidly evolving systems [1], [4], [6], [11]. While documentation quality depends on multiple dimensions, in-cluding accuracy, completeness, consistency, readability, and maintainability, these attributes are rarely defined through explicit and actionable criteria. We therefore treat docu-mentation quality as an assessable engineering objective, grounding both generation and evaluation in established documentation standards rather than subjective judgments. 11 
+
+6.2 Automatic Code Documentation Generation 
+
+Early work on automatic code documentation generation relied on heuristic, template-based, and retrieval-oriented methods, using code stereotypes, method context, structural cues, and mined developer discussions to generate natural-language summaries for functions or code fragments [18]– [20], [22]–[24], [37], [38]. Such approaches are interpretable but typically limited to local contexts, struggling to capture broader repository structure and cross-file dependencies. Neural models subsequently improved summarisation by learning code-to-text mappings [25]–[27], and the emer-gence of LLMs has enabled zero-shot and few-shot docu-mentation generation with general-purpose LLMs [13], [15]. Much of this literature, however, still focuses on method- or snippet-level generation, where the target is relatively local and self-contained. 
+
+6.3 Repository-Level Documentation Generation 
+
+More recent work has moved beyond isolated functions toward repository-level documentation generation, since real repositories exhibit dependencies across files, mod-ules, classes, and functions, and useful documentation often requires reasoning over this broader context. RepoAgent leverages repository structure and inter-file relationships to generate repository-level documentation [16], and Re-poSummary explores feature-oriented summarisation that emphasises higher-level functional organisation over purely local descriptions [14]. These systems represent an impor-tant step toward practical documentation generation, but they generally define documentation quality implicitly —through prompting strategies, output formats, or high-level user instructions—rather than grounding generation or evaluation in reusable criteria derived from standards or engineering guidelines. In contrast, our work makes documentation criteria first-class: fine-grained criteria are extracted from established standards and used to guide both generation and evaluation. Within the same per-entity scope, we additionally report cost–quality trade-offs and dependency-recovery audits that are typically absent from prior repository-level work. 
+
+6.4 Evaluation of Documentation and Code Under-standing Quality 
+
+Evaluation remains a major challenge in automatic docu-mentation generation. Earlier work relied on human judge-ment or small-scale comparative studies to assess sum-mary usefulness and quality [39], while broader software-engineering research emphasises the importance of rigor-ous and transparent evaluation methodology with careful treatment of datasets, criteria, and metrics [7]. Recent stud-ies on code understandability similarly argue that mean-ingful evaluation should go beyond surface-level fluency and assess whether artifacts genuinely improve compre-hension and developer usefulness [9], [10]. The LLM-as-a-judge paradigm has emerged as a scalable alternative for evaluating generated text, with representative approaches including MT-Bench [34], G-Eval [35], and JudgeLM [40], showing that carefully designed rubrics and prompts can achieve reasonable agreement with human evaluators—a finding that motivates our standards-aligned judge design. In the broader context of repository-level code intelligence, retrieval-augmented approaches such as RepoCoder [41] and benchmarks such as RepoBench [42] demonstrate the value of selectively retrieving cross-file context for code completion; our dependency-aware retrieval shares this motivation but targets structurally relevant context for standards-guided documentation generation rather than completion candidates. Our work differs from prior evaluation practice in two respects. First, rather than relying solely on unconstrained preference judgements, we construct an explicit rubric of documentation criteria derived from formal and practice-oriented standards. Second, we use this rubric to support criterion-level LLM-based evaluation, enabling repository documentation to be assessed in a structured and repro-ducible way that aligns documentation generation with broader software-engineering expectations. 
+
+7 CONCLUSION AND FUTURE WORK 
+
+This paper presented C ODE DOC , a standards-guided and dependency-aware framework for code-level documenta-tion generation. By aligning the generation target, the static-analysis input, and the evaluation unit on the same per-entity scope, and by extracting fine-grained criteria from for-mal ISO/IEC/IEEE standards and practice-oriented GitHub references, C ODE DOC grounds both generation and evalua-tion in a single reusable rubric, departing from prior systems that rely on implicit, ad-hoc prompts. Our experiments show that the standards-derived cri-teria respond consistently to controlled degradation and that the LLM-based evaluation aligns with human judge-ment ( ρ = 0 .72 ) and across judge model families (RQ1); that C ODE DOC improves documentation quality over both RepoAgent and a long-context baseline, with significant effect sizes and broad per-category gains (RQ2); and that dependency-aware retrieval and standards-guided prompt-ing contribute complementarily for a more favourable cost– quality trade-off, while static dependency recovery is high-precision but moderate-recall, with completeness correlat-ing positively with downstream quality (RQ3). Future work includes scaling the human evaluation, extending C ODE DOC beyond Python, supplementing static analysis with dynamic analysis to close the recall gap, and conducting independent inter-annotator validation of the extracted criteria. We believe the standards-guided perspec-tive offers a useful foundation for documentation systems where quality must be assessed not only by fluency, but also by engineering completeness, practical usefulness, and maintainable organization. 
+
+ACKNOWLEDGEMENT 
+
+This work is partially supported by the National Key Research and Development Program of China (2024YFF0908000) and the National Natural Science Foun-dation of China (U24A20337 and 62372228) and 111 Cen-ter(No. B26023). 12 
+
+REFERENCES 
+
+[1] A. Pietri, G. Rousseau, and S. Zacchiroli, “Determining the intrin-sic structure of public software development history,” in Proceed-ings of the 17th international conference on mining software repositories ,2020, pp. 602–605. [2] N. B. Ruparelia, “Software development lifecycle models,” ACM SIGSOFT Software Engineering Notes , vol. 35, no. 3, pp. 8–13, 2010. [3] S. Georgiou, S. Rizou, and D. Spinellis, “Software development lifecycle for energy efficiency: techniques and tools,” ACM Com-puting Surveys , vol. 52, no. 4, pp. 1–33, 2019. [4] S. Shafiq, A. Mashkoor, C. Mayr-Dorn, and A. Egyed, “A literature review of using machine learning in software development life cycle stages,” IEEE Access , vol. 9, pp. 140 896–140 920, 2021. [5] A. van der Hofstad, L. Cleophas, C. Dubslaff, and J. Kr ¨ uger, “The life of software features: An exploratory case study of 189 feature requests in marlin,” Journal of Systems and Software , p. 112647, 2025. [6] H. Zhong and Z. Su, “An empirical study on real bug fixes,” in 
+
+37th IEEE International Conference on Software Engineering , vol. 1. IEEE, 2015, pp. 913–923. [7] D. Wang, Y. Ueda, R. G. Kula, T. Ishio, and K. Matsumoto, “Can we benchmark code review studies? a systematic mapping study of methodology, dataset, and metric,” Journal of Systems and Software ,vol. 180, p. 111009, 2021. [8] V. Rajlich, “Software evolution and maintenance,” in Future of Software Engineering Proceedings , 2014, pp. 133–144. [9] D. Oliveira, R. Santos, B. De Oliveira, M. Monperrus, F. Castor, and F. Madeiral, “Understanding code understandability improve-ments in code reviews,” IEEE Transactions on Software Engineering ,2024. [10] D. Oliveira, “Recommending code understandability improve-ments based on code reviews,” in 36th IEEE/ACM International Conference on Automated Software Engineering Workshops . IEEE, 2021, pp. 131–132. [11] S. Rai, R. C. Belwal, and A. Gupta, “A review on source code docu-mentation,” ACM Transactions on Intelligent Systems and Technology ,vol. 13, no. 5, pp. 1–44, 2022. [12] A. A. Alzahrani, “Software systems documentation: A systematic review.” International Journal of Advanced Computer Science & Appli-cations , vol. 15, no. 8, 2024. [13] J. Shin, J. Nam et al. , “A survey of automatic code generation from natural language,” Journal of Information Processing Systems , vol. 17, no. 3, pp. 537–555, 2021. [14] Y. Zhu, X. Zhao, X. Li, Y. Zou, H. Yuan, Y. Wang, and B. Xie, “Re-posummary: Feature-oriented summarization and documentation generation for code repositories,” arXiv preprint arXiv:2510.11039 ,2025. [15] J. Y. Khan and G. Uddin, “Automatic code documentation genera-tion using gpt-3,” in Proceedings of the 37th IEEE/ACM International Conference on Automated Software Engineering , 2022, pp. 1–6. [16] Q. Luo, Y. Ye, S. Liang, Z. Zhang, Y. Qin, Y. Lu, Y. Wu, X. Cong, Y. Lin, Y. Zhang et al. , “Repoagent: An llm-powered open-source framework for repository-level code documentation generation,” in 2024 Conference on Empirical Methods in Natural Language Process-ing: System Demonstrations , 2024, pp. 436–464. [17] IEEE Standard for Software and System Test Documentation , IEEE Std. IEEE Std 829-2008, 2008. [18] N. J. Abid, N. Dragan, M. L. Collard, and J. I. Maletic, “Us-ing stereotypes in the automatic generation of natural language summaries for c++ methods,” in IEEE International Conference on Software Maintenance and Evolution . IEEE, 2015, pp. 561–565. [19] P. W. McBurney and C. McMillan, “Automatic documentation generation via source code summarization of method context,” in Proceedings of the 22nd International Conference on Program Com-prehension , 2014, pp. 279–290. [20] S. Rai, T. Gaikwad, S. Jain, and A. Gupta, “Method level text summarization for java code using nano-patterns,” in 24th Asia-Pacific Software Engineering Conference . IEEE, 2017, pp. 199–208. [21] S. Haiduc, J. Aponte, L. Moreno, and A. Marcus, “On the use of automated text summarization techniques for summarizing source code,” in 2010 17th Working conference on reverse engineering . IEEE, 2010, pp. 35–44. [22] S. Haiduc, J. Aponte, and A. Marcus, “Supporting program com-prehension with source code summarization,” in Proceedings of the 32nd ACM/IEEE International Conference on Software Engineering-Volume 2 , 2010, pp. 223–226. [23] C. Vassallo, S. Panichella, M. Di Penta, and G. Canfora, “Codes: Mining source code descriptions from developers discussions,” in 
+
+Proceedings of the 22nd International Conference on Program Compre-hension , 2014, pp. 106–109. [24] E. Wong, T. Liu, and L. Tan, “Clocom: Mining existing source code for automatic comment generation,” in 22nd International conference on software analysis, evolution, and reengineering . IEEE, 2015, pp. 380–389. [25] S. Iyer, I. Konstas, A. Cheung, and L. Zettlemoyer, “Summarizing source code using a neural attention model,” in 54th Annual Meeting of the Association for Computational Linguistics . Association for Computational Linguistics, 2016, pp. 2073–2083. [26] Z. Feng, D. Guo, D. Tang, N. Duan, X. Feng, M. Gong, L. Shou, B. Qin, T. Liu, D. Jiang, and M. Zhou, “CodeBERT: A Pre-Trained Model for Programming and Natural Languages,” in Findings of EMNLP , 2020, pp. 1536–1547. [27] W. U. Ahmad, S. Chakraborty, B. Ray, and K.-W. Chang, “Uni-fied pre-training for program understanding and generation,” in 
+
+Proceedings of the 2021 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies , 2021, pp. 2655–2668. [28] ISO/IEC/IEEE, “ISO/IEC/IEEE 12207:2017 — systems and soft-ware engineering — software life cycle processes,” International Standard, 2017. [29] D. Goodger and G. van Rossum, “PEP 257 – Docstring Conven-tions,” https://peps.python.org/pep-0257/, 2001. [30] Oracle, “Documentation Comment Specification for the Stan-dard Doclet,” https://docs.oracle.com/en/java/javase/24/docs/ specs/javadoc/doc-comment-spec.html, 2025. [31] Doxygen, “Documenting the Code,” https://www.doxygen.nl/ manual/docblocks.html. [32] A. V. Miceli Barone and R. Sennrich, “A Parallel Corpus of Python Functions and Documentation Strings for Automated Code Doc-umentation and Code Generation,” in Proceedings of the Eighth International Joint Conference on Natural Language Processing , 2017, pp. 314–319. [33] ISO/IEC/IEEE, “ISO/IEC/IEEE 26514:2018 — Systems and soft-ware engineering — Developing information for users in an agile environment,” International Organization for Standardization, In-ternational Standard, 2018. [34] L. Zheng, W.-L. Chiang, Y. Sheng, S. Zhuang, Z. Wu, Y. Zhuang, Z. Lin, Z. Li, D. Li, E. P. Xing et al. , “Judging LLM-as-a-judge with MT-bench and chatbot arena,” in Advances in Neural Information Processing Systems , vol. 36, 2023. [35] Y. Liu, D. Iter, Y. Xu, S. Wang, R. Xu, and C. Zhu, “G-Eval: NLG evaluation using GPT-4 with better human alignment,” in 
+
+Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing , 2023, pp. 2511–2522. [36] PyTorch Contributors, “PyTorch documentation,” https:// pytorch.org/docs/2.8/, 2025, version 2.8. [37] W. Sun, Y. Miao, Y. Li, H. Zhang, C. Fang, Y. Liu, G. Deng, Y. Liu, and Z. Chen, “Source code summarization in the era of large language models,” in Proceedings of the 47th IEEE/ACM International Conference on Software Engineering , Ottawa, Ontario, Canada, 27 April-3 May 2025, pp. 419–431. [38] W. Sun, C. Fang, Y. Chen, Q. Zhang, G. Tao, Y. You, T. Han, Y. Ge, Y. Hu, B. Luo, and Z. Chen, “An extractive-and-abstractive framework for source code summarization,” ACM Transactions on Software Engineering and Methodology , vol. 33, no. 3, pp. 1–39, 2024. [39] B. P. Eddy, J. A. Robinson, N. A. Kraft, and J. C. Carver, “Eval-uating source code summarization techniques: Replication and expansion,” in International Conference on Program Comprehension .IEEE, 2013, pp. 13–22. [40] L. Zhu, X. Wang, and X. Wang, “JudgeLM: Fine-tuned large language models are scalable judges,” in arXiv preprint arXiv:2310.17631 , 2023. [41] F. Zhang, B. Chen, Y. Zhang, J. Keung, J. Liu, D. Zan, Y. Mao, J.-G. Lou, and W. Chen, “RepoCoder: Repository-level code completion through iterative retrieval and generation,” in Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing ,2023, pp. 2471–2484. [42] T. Liu, C. Xu, and J. McAuley, “RepoBench: Benchmarking repository-level code auto-completion systems,” in The Twelfth International Conference on Learning Representations , 2024. 13 
+
+TABLE 5 Statistics of the ten evaluated open-source Python repositories. For each repository, we report the repository URL, the numbers of extracted classes (#Class) and functions (#Function), and the resulting total number of documentation entities used as the structural complexity measure. Following this measure, repositories are grouped into three scale ranges: small, medium, and large. 
+
+Name Repository URL #Class #Function Total Scale 
+
+NumPy https://github.com/numpy/numpy 5 31 36 Small OpenUI https://github.com/wandb/openui 3 21 24 RAGFlow https://github.com/infiniflow/ragflow 1 14 15 Dify https://github.com/langgenius/dify 3 47 50 Medium Flask https://github.com/pallets/flask 28 207 235 Pyro https://github.com/pyro-ppl/pyro 28 234 262 Fairseq https://github.com/facebookresearch/fairseq 45 378 423 Large Joblib https://github.com/joblib/joblib 56 389 445 Sonnet https://github.com/google-deepmind/sonnet 177 801 978 PyTorch https://github.com/pytorch/pytorch 71 1279 1350 Prompt Engine 
+
+You are an AI documentation assistant. Generate clear, accurate documentation for the given code following documentation standards:{Standard} ## Target Code Information **Function Name:** {Function_Name} **File Path:** {Path} **Source Code:** ```python {Source_Code} ``` **Relation Code** ``` {Uses} {Used_by} ``` ## Required Output Structure Generate documentation in the following format: {Required_Documentation Format} 
+
+## Document Judge 
+
+Single-Round Prompt A good document should have the quality of {Dimension}, which means to {Description}. Please view the following document and judge the quality of {Dimension}, you can choose from 1 score(Not Mention) to 5 score (Excellent), and give your evidence. your output must be a JSON, which have two attribute, 'judge' include your choice, 'evidence' include your evidence. You should output like {Judge: ..., Evidence: ...} Multi-Round Prompt A good document should have the quality of {Standard}. Here are a good document details: {Description}. Please view the following document and judge the quality of {Standard}, you can choose from 1 score(Not Mention) to 5 score (excellent), and give your evidence. your output must be a JSON, which have two attribute, 'judge' include your choice, 'evidence' include your evidence. You should output like {JudgeName : {Judge: ..., Evidence: ...}, JudgeName : {Judge: ..., Evidence: ...}} 
+
+Fig. 9. The prompt used for our components “Prompt Engine” and “Document Judge” in Figure 2. TABLE 6 Per-repository token usage of C ODE DOC under the ISO standard, reported separately for input and output (cumulative across the generation pipeline). Entity counts per repository are given in Table 5. 
+
+Repository Input Output Total 
+
+numpy-2.3.4 46,004 21,865 67,869 openui 32,614 11,057 43,671 ragflow-0.21.1 21,327 18,235 39,562 dify-1.9.1 64,604 27,999 92,603 flask-3.1.2 308,876 122,794 431,670 pyro-1.9.1 464,061 168,188 632,249 fairseq-0.12.2 628,851 268,095 896,946 joblib-1.5.2 620,872 260,111 880,983 sonnet-2.0.2 1,196,715 511,800 1,708,515 pytorch-2.8 2,160,693 913,178 3,073,871 
+
+APPENDIX 
+
+.1 Evaluation Rubrics 
+
+This appendix lists the complete criterion set Q produced by the offline extraction in Phase (a). Table 7 gives the ISO rubric (7 categories, 14 dimensions), derived from ISO/IEC/IEEE 26514, and Table 8 gives the GitHub rubric (5 categories, 12 dimensions), derived from the GitHub documentation style guide. For each dimension, we report the short name used as the judge variable and the one-sentence definition supplied to the judge; the 1–5 scoring anchors, and the full clause-to-dimension traceability table. 
+
+.2 Evaluated Repositories 
+
+Table 5 lists the ten evaluated repositories with their URLs, the number of extracted classes and functions, the re-sulting documentation-entity totals used as the structural-complexity measure, and the small/medium/large scale grouping. 14 
+
+TABLE 7 ISO-based evaluation rubric extracted from the ISO/IEC/IEEE software documentation standard. The table summarizes the evaluation dimensions used in our experiments, together with brief descriptions of each dimension for criterion-aligned LLM-based documentation assessment. 
+
+Category Dimension Description 
+
+Content Quality Conciseness Avoid redundancy and repetition, and include only necessary information. Legibility Font size and color contrast should be suitable for the reading environment. Information Structure Modularity Content should be divided into independent, reusable topics. Navigability Provide table of contents, index, and search functionality. Metadata Each topic should include metadata for content management and retrieval. Format & Presenta-tion Consistent Format Use unified style guides, including fonts, colors, icons, and warning formats. Interactive Element Rep-resentation Use consistent graphics or formats to represent keyboard shortcuts. i18n & Localization Cultural Neutrality Avoid culture-specific examples, humor, or images. Translation Friendly Use simple sentences and consistent terminology. Space Consideration Reserve space for text expansion in different languages. Usability & UX Search and Indexing Provide full-text search, Boolean search, and filtering functions. Safety & Compli-ance Safety Information Danger, warning, and caution information should be prominent. Legal and Copyright Include copyright notices, trademark information, and license terms. Maintenance & Up-dates Change Log Clearly identify new or modified content, and provide update notes. 
+
+TABLE 8 GitHub-based evaluation rubric extracted from the GitHub documentation style guide. The table summarizes the evaluation dimensions used in our experiments, together with brief descriptions of each dimension for criterion-aligned LLM-based documentation assessment. 
+
+Category Dimension Description 
+
+Content Model Title Standards Ensure titles are clear, descriptive, and concise, typically within 60–80 characters. Category Title Naming Use task-based gerund titles that remain general and scalable. Article Content Permission Declaration Standards State permissions upfront using the form “People with [role] can [action].” Process Content Standards Present procedures as clear step-by-step instructions. Next Steps Standards Include follow-up links that guide users to the next relevant topic. Prerequisites Standards List warnings and requirements before sensitive tasks. Reference Content Reference Content Decide whether reference information should be presented as standalone articles or embedded sections. Conceptual Content Guidelines Begin with “About [topic]” and explain purpose and use cases clearly. Error Reference Content Guidelines Help users recognize and understand issues, separate from troubleshooting. Tutorial Content Tutorial Content Guide-lines Define the target audience and goals, and use a clear developer-oriented tone with examples. Getting Started Content Guidelines Provide a concise step-based quick start, preferably under 600 words. Further Reading Further Reading Standards Provide a bulleted list of external or advanced resources. 
+
+.3 Per-Repository Token Usage 
+
+Table 6 reports the absolute per-repository token consump-tion of C ODE DOC under the ISO standard, separated into input and output tokens and cumulative across the genera-tion pipeline. The per-entity values plotted on the x-axis of Figure 8 are obtained by dividing these totals by the entity counts in Table 5.

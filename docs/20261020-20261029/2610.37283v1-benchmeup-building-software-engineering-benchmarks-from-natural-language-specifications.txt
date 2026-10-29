@@ -1,0 +1,459 @@
+Title: BenchMeUp: Building Software Engineering Benchmarks from Natural-Language Specifications
+
+URL Source: https://arxiv.org/pdf/2610.37283v1
+
+Published Time: Wed, 28 Oct 2026 01:28:04 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# BenchMeUp: Building Software Engineering Benchmarks from Natural-Language Specifications 
+
+Islem Bouzenia 
+
+CISPA Helmholtz Center for Information Security Germany bouzenia.islem@pm.me 
+
+Michael Pradel 
+
+CISPA Helmholtz Center for Information Security Germany michael@binaervarianz.de 
+
+Abstract —Software-engineering research relies on benchmarks that evaluate new techniques on a set of problem instances. Unfor-tunately, manually constructing benchmarks is labor-intensive, as researchers must find suitable instances, prepare execution envi-ronments, establish expected outcomes, and validate correctness. This paper presents BenchMeUp, an approach for automat-ically creating software-engineering benchmarks from natural-language specifications. Given a specification defining the desired instances, data sources, and evaluation procedures, BenchMeUp generates search rules and a construction plan, invokes parallel LLM agents that identify candidate instances and construct executable instances, validates the results in fresh execution environments, and packages the instances behind a unified command-line interface. We evaluate the approach on four tasks: program repair, issue reproduction, compiler autotuning, and fixing static-analysis warnings. Targeting 50 instances per task (200 in total), BenchMeUp constructs 198 instances, of which 196 (99%) are successfully packaged. Search and construction take 36 minutes and $0.79 per instance, on average. Evaluating eight existing techniques on the generated benchmarks, we find that 189 of 196 packaged instances (96%) support end-to-end evaluation, allowing users to study the effectiveness of the techniques. Checking every constructed instance against its source, the specification, and its expected outcome, we find that 180 of 198 (91%) meet all criteria, compared with 10 of 200 instances delivered by Codex (general-purpose coding agent). Overall, we show that LLM-based agents can automate bench-mark construction across diverse software-engineering tasks and produce executable instances that existing techniques can use, while validity beyond execution still needs to be checked. 
+
+Index Terms —software engineering benchmarks, automated benchmark construction, large language model agents 
+
+I. I NTRODUCTION 
+
+Benchmarks are central to software-engineering re-search [1], enabling researchers to evaluate techniques on common problem instances, compare results, reproduce pre-vious findings, and measure progress. Some benchmarks have shaped entire research areas, such as Defects4J [2] for auto-mated program repair [3] and SWE-bench [4] for evaluating LLM-based issue-resolution agents. Unfortunately, manually constructing benchmarks is labor-intensive. Researchers must first define suitable benchmark instances and identify their data sources. They must then collect and prepare instance artifacts, such as source code and tests, set up dependencies, determine expected outcomes, and verify that each instance meets the benchmark requirements. For benchmarks involving executable software, this process often requires writing task-specific scripts, building and con-figuring projects, and manually inspecting the results. This effort leads researchers to reuse benchmarks for long periods, raising concerns about overfitting and representativeness [1]. Exploring new tasks or programming languages also requires substantial effort to construct suitable benchmarks. Several approaches automate parts of benchmark construc-tion. BugSwarm [5] mines continuous-integration histories to collect reproducible failing and passing program versions. SetUpAgent [6], ExecutionAgent [7], and RepoLaunch [8] automate building and testing repositories. SWE-smith [9], SWE-rebench [10], SWE-Factory [11], SWE-Bench++ [12], and SEC-bench [13] generate or collect issue-resolution and vulnerability tasks with executable environments. Each of these approaches targets one task or automates one construc-tion step. Beyond software engineering, AutoBencher [14] and BenchAgents [15] construct benchmarks from natural-language descriptions, but focus on synthetic questions for evaluating language models. To our knowledge, no exist-ing approach creates real-world, executable benchmarks from natural-language specifications. Recent advances in LLM-based agents [16], [7], [8] raise the question of whether they can construct software-engineering benchmarks. However, our evaluation shows that simply ask-ing a general-purpose agent to do so introduces several chal-lenges. First, agents may interpret an ambiguous benchmark description inconsistently, selecting instances by different cri-teria and producing an incoherent benchmark. For example, when collecting repair instances, one agent session includes style changes or feature implementations as “bugs”, while another accepts only changes that correct behavioral faults revealed by tests. Second, agents may construct instances that are difficult to reproduce. For example, an agent setting up an open-source project relies on preinstalled dependencies, producing an instance that works in its environment but fails on another machine. Finally, agents may expose different instances via different interfaces, even when instructed to use a common interface. For example, an agent’s run_tests.sh 
+
+executes all tests for one instance but only the bug-exposing test for another. Hence, researchers cannot evaluate a technique reliably and uniformly across such instances. This paper presents BenchMeUp, an approach for con-structing software-engineering benchmarks from a researcher-arXiv:2610.37283v1 [cs.SE] 27 Oct 2026 written benchmark specification . The specification describes the task, desired instances, their sources, and how to use them to evaluate a technique. For example, a program-repair specification may request real-world bugs from open-source projects, each with a buggy program and a test exposing the bug. Researchers can specify project properties, such as language, development activity, and popularity, without knowing which repositories contain suitable instances. BenchMeUp constructs a benchmark from the specification in four phases. First, an LLM generates explicit search rules 
+
+for finding and selecting candidates, followed by a shared 
+
+construction plan defining the construction steps and expected artifacts. Second, LLM-based search agents autonomously find and record candidates satisfying the rules. Third, con-struction agents follow the plan to build instances from the recorded candidates; BenchMeUp validates the instances by replaying the generated scripts in a fresh environment. Finally, BenchMeUp packages completed instances behind a unified command-line interface. This design aims for consistent in-stance selection, reproducible outcomes in fresh environments, and a unified interface for evaluating techniques. We evaluate our approach on four software-engineering tasks: program repair, issue reproduction, compiler autotuning, and fixing static-analysis warnings. Requesting 50 instances per task, we obtain 198 constructed instances, of which 196 are successfully packaged. Search and construction average 36 minutes and $0.79 in LLM costs per instance. We evaluate eight existing techniques across the four tasks using the con-structed benchmarks. The techniques can set up and run 189 of the 196 packaged instances (96%), enabling comparisons on common instances. Successful execution, however, does not establish validity. Checking every constructed instance against its source, the specification, and its expected outcome, we find that 180 of 198 (91%) meet all criteria. Most remaining instances concern issue reproduction and fail the specifica-tion’s filters or expected outcome. Manual inspection of 40 instances also reveals six with defective check scripts. By comparison, only 10 of the 200 instances delivered for the same specifications by Codex [17], a general-purpose coding agent, meet all criteria. In summary, this paper makes the following contributions:  
+
+> •
+
+Idea . We propose creating arbitrary software-engineering benchmarks from natural-language specifications.  
+
+> •
+
+Technique . We present BenchMeUp, an automated, LLM-based, multi-agent approach that translates a natural-language specification into search rules and a construc-tion plan. Agents follow these to construct benchmark instances, which are validated in fresh execution envi-ronments and packaged behind a common interface.  
+
+> •
+
+Empirical evidence . We evaluate the approach on four software-engineering tasks, compare BenchMeUp with a general-purpose agent, and apply eight existing tech-niques to the automatically constructed benchmarks.  
+
+> •
+
+Open science . https://github.com/sola-st/BenchMeUp           
+
+> 1Generate search rules and construction plan
+> 2Find candidates
+> 3Construct instances
+> 4Package benchmark benchmark specification researcher
+> writes, revises
+> LLM writes search rules judge LLM reviews rules LLM writes construction plan judge LLM reviews plan search agents in parallel
+> ⟲they exchange what they explore existence check + dedup
+> candidates + verification script
+> construction agents in parallel replay
+> replay report
+> ⟲they share lessons
+> framework packages and checks
+> search rules candidates approved construction plan instances + replay reports + construction plan benchmark package
+> feedback if rejected
+> Fig. 1. Overview of the approach.
+
+II. A PPROACH 
+
+A. Problem Statement 
+
+BenchMeUp takes as input a natural-language benchmark specification written by a researcher. The specification de-scribes the task to be evaluated, the required contents of each instance, the sources from which instances may be obtained, and the conditions under which a technique’s result is consid-ered correct. The researcher also specifies the benchmark size. Table I gives a simplified specification for program repair: each instance must provide a buggy Java program and a test that exposes the bug, and a repair technique must return a patch that makes the exposing test pass without introducing new test failures. We use program repair as a running example. BenchMeUp produces a benchmark package : a collection of instances and a common command-line interface through which evaluation code can use them. For program repair, an instance includes the versions and patches needed to reconstruct the buggy and fixed programs, an environment definition, and scripts to build and test them. Researchers can thus check out buggy versions, apply repair techniques, and invoke instance tests through a common interface. The goal is to construct such a benchmark for any task within a given budget, without requiring researchers to implement the collection and execution of instances. TABLE I RESEARCHER -WRITTEN BENCHMARK SPECIFICATION FOR PROGRAM REPAIR .      
+
+> Part Text
+> Task Repair a real bug in a Java project. Instance Provide a buggy program and a test exposing the bug. The repair technique returns a source-code patch. Data source Real, public Java projects that are popular, actively maintained, have substantial development histories, and contain resolved bug reports. Correctness The exposing test fails before the fix and passes after applying the submitted patch. Previously passing tests must not start failing. Constraints Exclude projects already contained in Defects4J.
+
+B. Overview 
+
+Figure 1 gives an overview of how BenchMeUp constructs a benchmark package in four phases. In Phase 1, an LLM trans-lates the researcher-written specification into shared search rules that define where to search, which candidates to retain, and what information to record about them. In a separate query, an LLM generates, from the specification, a shared 
+
+construction plan that defines the artifacts to produce, the stages to follow, and the checks to perform. In Phase 2, search agents use the search rules to search for and collect candidates from external data sources. For example, a candidate for program repair may consist of a repository, a fixing commit, and information about the changed program and test files. In Phase 3, construction agents follow the plan to construct instances from found candidates. After each stage of the plan, the framework (our backend code that coordinates the agents) runs the agent-generated scripts in a fresh container and compares their results against the expected outcomes (defined in the plan). We call this procedure replay . In Phase 4, the framework packages the completed instances behind a common command-line interface and verifies the packaged instances in fresh containers through this interface. Because searching for candidates and constructing instances can take hours, BenchMeUp runs multiple agents in paral-lel. Search agents share summaries of their exploration to reduce overlap, while construction agents work on different candidates and share summaries of problems and attempted solutions. Algorithm 1 presents the overall procedure, and Al-gorithm 2 describes agent scheduling and synchronization. We illustrate the four phases using the program-repair specification in Table I and a candidate found for that specification. 
+
+C. Phase 1: Generating Search Rules and Construction Plan 
+
+Phase 1 derives, from the specification, the two artifacts that the agents of the later phases use: the search rules for Phase 2 and the construction plan for Phase 3. 
+
+1) Generating the Search Rules: A specification describes the intended benchmark, but rarely settles every decision needed during search. In Table I, for example, “popular” and “actively maintained” do not give numerical thresholds, while “real bug” requires distinguishing behavior-changing fixes from style or feature changes. If search agents fill in 
+
+Algorithm 1 Constructing a benchmark from a specification. 
+
+Require: specification S; targets nsearch , nconstruction 
+
+Require: agent counts Nsearch , Nconstruction 
+
+Phase 1: Generating Search Rules + Construction Plan  
+
+> 1:
+
+feedback F ← ∅  
+
+> 2:
+
+repeat  
+
+> 3:
+
+R ← LLM-G ENERATE -O R-R EVISE -R ULES (S, F ) 
+
+> 4:
+
+acceptance, F ← JUDGE (R, S) 
+
+> 5:
+
+until accepted or researcher-set iteration limit reached  
+
+> 6:
+
+if the judge did not accept R then  
+
+> 7:
+
+return S and F to the researcher  
+
+> 8:
+
+feedback F ← ∅  
+
+> 9:
+
+repeat  
+
+> 10:
+
+P ← LLM-G ENERATE -O R-R EVISE -P LAN (S, F ) 
+
+> 11:
+
+acceptance, F ← JUDGE (P , S, R) 
+
+> 12:
+
+until accepted, iteration limit, or missing researcher input  
+
+> 13:
+
+if the judge did not accept P then  
+
+> 14:
+
+return issue to researcher; request missing input if needed 
+
+Phase 2: Finding Candidates  
+
+> 15:
+
+C ← ∅ // recorded candidates  
+
+> 16:
+
+agents s ← START -S EARCH -A GENTS (S, R, Nsearch , C) 
+
+> 17:
+
+every synctime s: SYNCHRONIZE (agents s) // Algorithm 2  
+
+> 18:
+
+stop search when |C| ≥ nsearch or search time expires  
+
+> 19:
+
+C ← DEDUPLICATE (C)
+
+Phase 3: Turning Candidates into Instances  
+
+> 20:
+
+I ← ∅ , L ← ∅ // instances, lessons  
+
+> 21:
+
+agents c ← start Nconstruction agents on (S, P, C, L ) 
+
+> 22:
+
+every synctime c: L ← SYNCHRONIZE (agents c) 
+
+> 23:
+
+for all agent in agents c, in parallel do  
+
+> 24:
+
+while |I| < n construction and budget remains do  
+
+> 25:
+
+if no candidates remain then  
+
+> 26:
+
+stop construction  
+
+> 27:
+
+c ← next candidate from C; artifacts Ac ← ∅  
+
+> 28:
+
+for all stage s of P do  
+
+> 29:
+
+repeat  
+
+> 30:
+
+agent creates or revises files in Ac following s 
+
+> 31:
+
+REPLAY (s, Ac) in a fresh container  
+
+> 32:
+
+until checks pass, attempt limit, or agent drops c 
+
+> 33:
+
+if checks do not pass then  
+
+> 34:
+
+drop c; break // next candidate  
+
+> 35:
+
+if not dropped then  
+
+> 36:
+
+add instance (c, A c) to I
+
+Phase 4: Packaging the Benchmark  
+
+> 37:
+
+benchmark ← package each instance in I with replay and interface  
+
+> 38:
+
+return benchmark 
+
+these details independently, one might accept a repository with 100 stars while another agent requires 1,000 stars; they might also disagree about which commits count as fixes. The found candidates would then reflect different selection policies even though they belong to the same benchmark. Phase 1 makes those choices once, before the search agents begin. The framework prompts an LLM to fill a task-independent search-rule schema from the specification. The resulting rules define how to identify a candidate, where agents may look for it, which conditions allow keeping it, and what information to record. If the specification does not mention a TABLE II SEARCH RULES GENERATED FOR PROGRAM REPAIR (EXCERPT ).     
+
+> Rule Value
+> Candidate identity Repository URL, fixing commit Source Java; at least 100 stars (popular), 1,000 commits (substantial history), and 20 closed bug reports (resolved bug reports); active within the last 12 months (actively maintained) Retain when The commit appears to fix a real bug; program code is changed; test code is added or modified Record Commit message, changed program file, changed test file
+
+data source, the LLM selects one (e.g., GitHub). The rules are saved as YAML so they can be inspected and reused. They give agents common criteria, although agents must still assess whether individual candidates meet those criteria. 
+
+Running example. For the repair specification, the generated rules in Table II identify a candidate by repository URL and fixing commit. They operationalize “popular” as at least 100 stars, require substantial development history and recent activity, and retain commits that appear to fix bugs while changing both program and test code. A fixing commit that changes no tests may be hard to turn into the specified fail-to-pass repair instance. The recorded commit message and changed-file information give Phase 3 a good starting point. Before using the rules, a second LLM judges whether the proposed rules omit requirements or leave important ambi-guities unresolved. If the judge rejects the rules, it returns the feedback to the generating LLM, which revises them for another review. The framework repeats this loop until the judge accepts the rules or a researcher-set iteration limit is reached. If the limit is reached, the specification and feedback are returned to the researcher rather than starting a search with unapproved rules (Algorithm 1, lines 1–7). Judge approval only checks the formulation against the specification; it does not establish that the resulting criteria are objectively correct. 
+
+2) Generating the Construction Plan: After the judge ac-cepts the search rules, the framework asks an LLM to generate the construction plan from the benchmark specification. The plan describes how to turn a candidate into a benchmark instance, including the steps to follow, the artifacts to produce, and the checks needed to verify the instance. It divides construction into stages, each with an objective and required artifacts. All construction agents follow the same plan, but each determines how to carry out its steps for the particular candidate it is working on. 
+
+Running example. Listing 1 shows an excerpt of the con-struction plan generated for program repair. The plan guides construction agents through a sequence of stages, starting with setting up the repository and its environment, then separating the fixing commit into program and test patches, building the buggy and fixed versions, and creating scripts to run the required tests. It also specifies the outcomes that must be demonstrated. For example, the exposing tests fail on the buggy version and pass on the fixed version, and removing the known fix restores the failure. In addition, the plan de-fines common commands for checking out versions, applying patches, building, and running tests. These commands are later exposed through the benchmark’s interface, allowing techniques to be evaluated consistently across instances.                                                                                                                                              
+
+> commands :#interface commands checkout <dir> <commit> #working tree at <commit> apply_patch <dir> <patch> #apply the patch with git build <dir> #compile, run no tests run_tests <dir> #exposing tests, JUnit XML check_all <dir> #full suite, no new failures revert_fix <dir> #remove the fix, rebuild
+> versions :buggy: [checkout {buggy_commit}, apply_patch test.patch, build] fixed: [checkout {fixing_commit}, build]
+> oracle :{run_tests fails on buggy, passes on fixed}
+> fix_removal_check :{revert_fix on fixed: tests fail}
+> technique_input :{apply_patch on buggy: accepts fix.patch, rejects empty.patch}
+> stages :-name :identify the bug, install the JDK, and clone
+> files :[Dockerfile, setup.sh, instance.json]
+> done_when :the image builds, setup.sh exits 0, instance.json records the exposing tests and the buggy commit (the parent of the fixing commit), ... -name :split the fixing commit, build both versions
+> files :[checkout.sh, apply_patch.sh, build.sh, fix.patch, test.patch, empty.patch]
+> done_when :both versions build in afresh container; ... -name :write run_tests.sh, check_all.sh, revert_fix.sh
+> done_when :oracle and fix_removal_check hold, and check_all.sh exits 0on both versions -name :evaluate fix.patch and empty.patch
+> done_when :technique_input holds
+> Listing 1. Construction plan generated for program repair (excerpt, paraphrased). “...” marks omitted text.
+
+The plan also goes through a review step. A second LLM judges the proposed plan against the specification and search rules, returning feedback when revisions are needed. The generating LLM revises and resubmits the plan until it is accepted or the feedback-iteration limit is reached. If the judge asks for information missing from both the specification and rules and the generator LLM cannot supply it, the framework asks the researcher to supplement the missing information. If the limit is reached, the framework returns the unapproved plan and the feedback to the researcher (Algorithm 1, lines 8– 14). The review process helps identify missing requirements and ambiguities in the construction plan before construction agents begin working on candidates. 
+
+D. Phase 2: Finding Candidates 
+
+Phase 2 uses the specification and the accepted search rules to assemble a pool of candidate records. The goal is to find plausible instances satisfying the search rules; the costlier creation of runnable instances waits until Phase 3. 
+
+1) Searching with Agents: Search agents autonomously explore external data sources to find candidates that satisfy the search rules. Rather than following a predefined sequence of queries, each agent decides how to proceed based on the information it obtains during the search. It can write and execute scripts to query data sources, inspect the returned records, and investigate promising results further. For each potential candidate, the agent checks available information against the search rules’ selection conditions and records the required fields if suitable. The agent then continues exploring the data source to find additional candidates. 
+
+Running example. When searching for program-repair in-stances, an agent may first query GitHub for Java repositories that meet the requirements on popularity, development history, and activity. It can then inspect their commit histories to identify potential bug fixes and examine the corresponding changes to program and test files. For commits that satisfy the selection conditions, it records the repository URL, fixing commit, and changed files, as specified in Table II. One recorded candidate, used in the following phases, is commit  
+
+> 7d7043d
+
+of 52North/SOS (“Fix bug with observation iden-tifier becoming too long”), together with its changed program file and test file. Search agents use a customized agent scaffold based on mini-swe-agent [16] and inspired by agents such as Execution-Agent [7]. Each search agent receives the original benchmark specification, search rules, and task-independent instructions on its tools, search procedure, and output format. 
+
+2) Coordinating Search Agents: A single search agent may explore only a small portion of the available data sources before its time budget expires. BenchMeUp therefore runs multiple search agents in parallel. However, agents working independently may issue similar queries and repeatedly in-vestigate the same repositories or candidates. To reduce this overlap, the framework starts agents at fixed intervals and shares information about their search activities. The first agent starts alone. Before the next agent starts, an LLM summarizes the first agent’s search directions, including its queries, filters, and explored repositories. The next agent receives this summary and is instructed to explore different directions while following the same search rules. Each subse-quent agent similarly receives summaries of preceding agents’ exploration. Once all Nsearch agents are running, the frame-work periodically updates and distributes these summaries at intervals of synctime s, allowing agents to adjust their searches based on the exploration of others. The researcher sets the candidate target nsearch , search-agent count, start delay, synchronization interval, and search time budget. The number of agents is also constrained by available computing resources and service limits, since agents querying GitHub or Hugging Face, or using Docker, compete for shared resources. Algorithm 1 (lines 16 and 17) and Algorithm 2 describe this coordination procedure. 
+
+3) Checking and Deduplicating Candidates: Before a can-didate joins the shared pool, its search agent must provide an existence-verification script. Each agent writes one such script for all of its candidates; scripts can differ because agents may use different data sources. The framework executes the script in a fresh container and checks recorded identities and fields against the source, detecting records such as nonexistent commit hashes. Only candidates that pass are recorded. Phase 2 ends when the shared pool reaches nsearch can-didates or the search time budget expires. The framework deduplicates the recorded pool before passing candidates to Phase 3 (Algorithm 1, line 19). 
+
+Algorithm 2 Synchronization of parallel agents.                                                         
+
+> 1: function START -S EARCH -A GENTS (S,R,Nsearch ,C)
+> 2: agents add candidates to Cafter existence checks pass
+> 3: agents ← { agent 1 started on (S, R )}
+> 4: for agent j= 2 to Nsearch do
+> 5: wait for the start delay
+> 6: summaries ←SUMMARIZE (trajectories of agents )
+> 7: start agent jon (S, R )and summaries; add it to agents
+> 8: return agents
+> 9: function SYNCHRONIZE (agents )
+> 10: for all agent in agents ,in parallel do
+> 11: summary of agent ←SUMMARIZE (trajectory of agent)
+> 12: if agents are search agents then
+> 13: send each agent the summaries of all other agents
+> 14: else
+> 15: lessons L←MERGE (summaries of all agents)
+> 16: send Lto each agent
+> 17: return L
+
+E. Phase 3: Turning Candidates into Instances 
+
+A candidate record identifies promising source material, but it is not yet something a researcher can use to evaluate a technique. A bug-fixing commit, for example, contains a program fix and a test change. To make it a repair in-stance, BenchMeUp must reconstruct a buggy program that includes the exposing test but excludes the fix, provide a build environment and scripts, show that the test fails before repair and passes afterward, and provide a way to judge a submitted patch. Phase 3 performs this transformation for each candidate, producing instance-specific artifacts Ac and adding successfully constructed instances to a collection I.Construction agents follow the construction plan from Phase 1 to prepare instances from individual candidates. Since an instance may work in an agent’s environment but fail elsewhere, the framework replays the generated scripts in fresh containers to check that they produce the expected results. 
+
+1) Constructing and Replaying Instances: Each construc-tion agent takes a candidate c and works through the plan’s stages in order. At each stage, the agent prepares the required artifacts, such as instance-specific metadata, environment con-figurations, and scripts (referred to as Ac in the algorithm), and then submits them to the framework for checking. Rather than relying on the agent’s reported results, the framework copies the instance files into a fresh container and runs the setup and checks specified by the plan. It compares the observed results with the expected outcomes and reports any failures to the construction agent. The agent can then revise its artifacts and submit the stage again. The framework also reruns checks from earlier stages to detect regressions caused by subsequent changes. The agent can proceed to the next stage only after all required checks of the current stage pass. 
+
+Running example. For the SOS candidate, the construction agent identifies the added test as the exposing test and sepa-rates the fixing commit into test.patch , containing the test and changes needed to compile it, and fix.patch , containing the program repair. This allows the agent to prepare a buggy version that includes the exposing test without the fix. Replay then checks that the original tests pass on the parent commit, the exposing test fails on the buggy version, and the same test passes on the fixed version. The framework also checks that the generated scripts correctly evaluate the known fix and reject an empty patch. If a required check continues to fail after a researcher-set number of attempts, the framework drops the candidate and assigns the agent another candidate. A construction agent can also drop a candidate when it finds that the candidate does not satisfy the instance criteria; it then documents its evidence. If all stages pass, the framework adds (c, A c) to I for packaging (Algorithm 1, lines 28–36). The researcher sets a construction target nconstruction and time budget. Construction stops at the target, time limit, or candidate exhaustion. 
+
+2) Coordinating Construction Agents: Constructing an in-stance can take considerable time because agents may need several attempts to configure dependencies, build projects, and pass replay checks. BenchMeUp therefore runs Nconstruction 
+
+construction agents in parallel, each working on a different candidate. Although the agents work on separate candidates, they may encounter similar problems, such as missing de-pendencies or build failures. To help agents learn from one another’s experience, the framework periodically uses an LLM to summarize their trajectories, including problems encoun-tered, attempted solutions, and replay feedback. It shares these summaries with the construction agents as lessons L,helping them reuse successful solutions and avoid previously unsuccessful attempts. The researcher sets the synchronization interval synctime c.An agent’s context grows with every step it takes, which makes its later model calls more expensive and its mistakes more likely. The framework therefore runs construction agents in waves. Each agent works for a fixed time window, during which it can construct several candidates one after another. When the window ends, the framework replaces the agent with one prompted with the current lessons L and assigns it the next candidates. An agent that is in the last stage of an instance when its window ends gets a grace period to finish it. The researcher sets the window length and the grace period. Shared experience relates to prior agent-learning ap-proaches [18], [19], [20]; our summaries include replay feed-back from executing the agents’ scripts alongside the agents’ own accounts. Algorithm 1 (lines 21–22) and Algorithm 2 describe construction coordination. 
+
+F. Phase 4: Packaging the Benchmark 
+
+After Phase 3, each completed instance has its own files and scripts, created for its particular repository. Those scripts may satisfy the shared plan, but a researcher still needs a uniform way to invoke them. Phase 4 turns the collection I
+
+into a benchmark package whose public commands have the meanings defined by the construction plan, regardless of which agent produced the underlying scripts.                                     
+
+> benchmark --instance SOS-7d7043d checkout <dir> {buggy_commit }
+> benchmark --instance SOS-7d7043d apply_patch <dir> test.patch
+> benchmark --instance SOS-7d7043d build <dir>
+> benchmark --instance SOS-7d7043d apply_patch <dir> <submitted.patch>
+> benchmark --instance SOS-7d7043d run_tests <dir> #the exposing tests must pass
+> benchmark --instance SOS-7d7043d check_all <dir> #must exit 0: no new test failures
+> Listing 2. Invoking the command-line interface on an instance of the program-repair benchmark (illustrative command syntax).
+
+For each completed instance, the framework copies Ac and retains the replay reports so users can inspect the checks per-formed during construction. It also writes a manifest mapping the plan’s common commands to that instance’s scripts and files. A shared command-line program reads the manifest and dispatches requests to the selected instance. Evaluation code can consequently obtain instance files, prepare a working tree, invoke tests, or perform other task-specific operations without knowing each instance’s internal script layout. Packaging can start upon instance delivery, alongside ongoing construction. 
+
+Running example. Listing 2 illustrates the evaluation work-flow for SOS: check out the buggy parent, apply the exposing-test patch, build, apply the technique’s patch, and invoke the exposing tests and suite-wide checks. The scripts implement-ing these steps are specific to SOS, but the commands used to invoke them are those defined for the repair benchmark as a whole. Phase 4 enforces this consistency. Finally, the framework reruns the packaged interface in a fresh container built from the instance’s Dockerfile. This differs from staged replay in Phase 3: it checks the com-pleted instance as exposed through the package, not just the intermediate artifacts submitted during construction. Instances whose packaged commands fail the plan’s required checks are excluded. Algorithm 1, lines 37–38, specifies this final step. III. E VALUATION 
+
+We organize the evaluation around four research questions: RQ1 How effectively and efficiently does BenchMeUp con-struct benchmarks for software-engineering tasks? RQ2 To what extent do constructed benchmarks support end-to-end evaluation of software-engineering techniques? RQ3 What are our benchmarks’ characteristics and quality? RQ4 How does BenchMeUp compare with a general-purpose LLM agent? 
+
+A. Experimental Setup 1) Tasks: We evaluate the approach on the four tasks shown in Table III. We select these tasks for three reasons: i) they are common software-engineering tasks with existing benchmarks that we can compare to; ii) they cover different languages (Java, Python, C) and different kinds of instances; and iii) the tasks impose different construction requirements, including commit inspection, dependency setup, test execution, static analysis, and runtime measurements. For each task, we wrote an initial benchmark specification and revised it based on the TABLE III TASKS AND CONSTRUCTION OUTCOMES . M INUTES (M IN .) AND USD ARE PER CONSTRUCTED INSTANCE .Spec Search Construction Packaging One benchmark instance Acceptance condition Words Found Min. USD Attempted Constructed Min. USD Packaged                                          
+
+> Program repair
+> A bug-fixing commit with a bug-exposing test The test fails before the fix and passes after it 1,118 176 1.9 0.47 106 50 42.8 0.30 50
+> Issue reproduction
+> An issue-closing pull request that adds or changes a test The test fails before the pull request and passes after it 858 200+ 1.4 0.35 88 50 19.3 0.25 49
+> Compiler autotuning
+> A runnable C program at a repository commit Candidate and reference builds produce the same output 2,381 60 2.9 1.08 52 50 11.9 0.18 50
+> Fixing static-analysis warnings
+> A SonarQube warning at a specific location + fix The target warning disappears without introducing a new finding 805 197 3.5 0.12 86 48 60.0 0.40 47
+> Average 1,291 160 2.4 0.51 83 49.5 33.5 0.28 49
+
+feedback from BenchMeUp’s LLM judges (0–6 revisions per task). The table reports final specification word counts. 
+
+2) Models and Budgets: We use deepseek-v4-flash for con-struction by default and Claude Opus 5 for search, rules, and plan generation. Construction requires extensive interaction with repositories and their environments, motivating the lower-cost model. Section IV discusses construction-model effects. To explore and construct in parallel, each task uses four search agents, each limited to six hours, and four construction agents with a wall-clock budget of 48 hours (192 agent-hours). Search agents synchronize every 20 minutes and construction agents every 60 minutes; search agents start 20 minutes apart. All experiments run on one machine with 32 virtual cores and 62.8 GB of memory (Ubuntu 24.04). Compiler-autotuning measurements run sequentially. 
+
+B. RQ1: Effectiveness and Efficiency of BenchMeUp 
+
+For each of the four tasks, we set a search target of 200 candidates and a construction target of 50 instances. To avoid waiting for the search to finish, BenchMeUp launches construction agents as soon as at least 50 candidates have been collected. Search and construction then proceed concurrently: search agents continue finding candidates while construction agents turn the available candidates into instances. Once 50 instances have been constructed for a task, the framework stops both phases, even if the search agents have not reached their target of 200 candidates. This stopping rule is a choice of our experiments; a researcher can let both phases continue. 
+
+1) Effectiveness: Table III summarizes the effectiveness of benchmark construction. Across the four tasks, search agents found 639 unique candidates. Construction agents tried 332 candidates, constructing 198 instances and dropping 134. The program-repair, issue-reproduction, and compiler-autotuning benchmarks meet the target of 50 instances; the static-analysis benchmark reaches only 48 constructed instances within the time limit. Of the 198 constructed instances, 196 (99%) pass the final packaging checks. The 134 candidates dropped during construction fall into two categories. First, the construction agent decides that a candidate does not satisfy the instance criteria, contrary to the search agent’s initial assessment, and documents the sup-porting evidence. Second, the construction agent is unable to construct a valid instance from the candidate. The second cat-egory reflects, at least in part, limits of the construction model. As we discuss in Section IV, a stronger construction model completes construction faster and drops fewer candidates. During construction, replay helps to identify instances that fail outside of the agent’s container. Of the 198 constructed instances, 108 (55%) initially had at least one failed replay, totaling 170 failures. Most failures are due to builds relying on residual container state (82) or test scripts failing in the replay environment (47). BenchMeUp returns these failures to the construction agents for correction and accepts the instances only after successful replay in a fresh container. However, replay does not establish whether instance checks distinguish correct from incorrect inputs; RQ3 evaluates this. 
+
+2) Time and Cost: Table III also reports the time and LLM cost, focusing on search and construction, as these are the most expensive steps. Across the four tasks, the average LLM cost is $0.79 per constructed instance, of which 64% is for search and 36% for construction. Search costs more because it uses the stronger model. Looking at time, the proportions reverse: search accounts for only 4–20% and construction for 80–96% of the total time. On average, an instance is found and constructed in 36 minutes. 
+
+C. RQ2: Existing Techniques on the Constructed Benchmarks 
+
+To assess the usefulness of the constructed benchmarks, we run existing techniques that were previously developed for the corresponding tasks on the packaged instances. For program repair, we use RepairAgent [21] with GPT-5-mini and GPT-5-nano, using the original technique’s default parameters. For issue reproduction, we run ReProAgent [22] and mini-swe-agent [16] (version 2.4.6), both with GPT-5-mini. For ReProAgent mini-swe-agent BOCA google-java-format Sorald OpenRewrite CodeCureAgent                    
+
+> Program repair Issue reproduction Compiler autotuning Static-analysis warnings
+> 37 10 322 25 319 27 320 26 321 29 46 1739 123 23 131 15 1
+> plausible patch that passes all tests test fails before the fix, passes after speedup ≥ 1.02 over -O3 in ≥ 12 of 15 runs compiles, tests pass, warning gone
+> (GPT-5-mini) RepairAgent
+> (GPT-5-nano) RepairAgent solved not solved unusable Fig. 2. Outcomes of the existing techniques on the packaged instances of each task: instances the technique solves, does not solve, or cannot use.
+
+compiler autotuning, we adapt BOCA [23] to reduce compiled-program runtime. For fixing SonarQube static-analysis warn-ings, we evaluate google-java-format [24], Sorald [25], Open-Rewrite [26], and CodeCureAgent [27]. Figure 2 reports, for each technique, how many instances it solves, fails to solve, or cannot run on (“unusable”). Of the 196 packaged instances, 189 (96%) can be used successfully by the evaluated techniques. In RQ3, we give more details about the seven unusable instances. The different techniques solve different numbers of in-stances. RepairAgent produces plausible patches for 37 of the 47 usable program-repair instances with GPT-5-mini and for 22 with GPT-5-nano. ReProAgent and mini-swe-agent reproduce 19 and 20 of the 46 usable issues, respectively. BOCA finds configurations that meet our speedup criterion for 21 of the 50 programs. For fixing static-analysis warn-ings, CodeCureAgent fixes the most instances, followed by OpenRewrite. This order matches what the techniques are designed for: google-java-format only reformats code, Sorald and OpenRewrite apply transformations for the rules they support, and CodeCureAgent uses an LLM to address any rule. In program repair, the developer fixes of the instances that RepairAgent with GPT-5-mini does not solve have a median of 25 changed lines, compared with eight for the solved ones. For compiler autotuning, BOCA runs on all 50 programs, but no explored configuration consistently beats -O3 by 2% on unsolved programs. For fixing static-analysis warnings, CodeCureAgent validates its patches with an older SonarQube version (9.9 vs 25.x), thus missing some rules. 
+
+D. RQ3: Characteristics and Quality of Benchmarks 
+
+We first characterize all constructed instances quantitatively and compare them with established benchmarks of the same tasks. We then inspect a sample of the instances qualitatively. 
+
+1) Quantitative Characterization: Table IV lists the mea-sures. For program repair, issue reproduction, and fixing static-analysis warnings, we examine the number of projects, their popularity measured by GitHub stars, and the distribution of                                                           
+
+> TABLE IV CHARACTERISTICS OF THE INSTANCES USED FOR EVALUATION COMPARED TO EXISTING BENCHMARKS OF THE SAME TASK .Measure Ours Reference
+> Program repair Defects4J [2] Projects (count) 31 17 GitHub stars (median) 141 1,391 Instances per project (mean) 1.6 49 Patch size (median lines) 13 6One-file fixes (share) 82% –
+> Issue reproduction SWT-bench Verified [30] Projects (count) 33 12 GitHub stars (median) 199 14,738 Instances per project (mean) 1.5 36 Patch size (median lines) 25 6Added test lines (median) 41.5 14 Pull requests merged in 2026 (count) 37 0
+> Compiler autotuning cBench [31] Lines of C code per project (median) 14,700 1,780 C files per project (median) 19 6Workloads per program (median) 420 Build time at -O3 (s) 2.40 0.45 Runtime at -O3 (median, s) 1.39 1.94 Runtime at -O0 / at -O3 (median) 1.73 1.84
+> Fixing static-analysis warnings Baseline [27] Projects (count) 18 106 GitHub stars (median) 9,252 260 Patch size (median lines) 10 –Instances per rule (mean) 1.95 3.43 Build tool: Maven/Ant/Gradle (count) 20/18/9 1,000/0/0
+
+instances across projects. We also measure the patch size, as in prior analyses of Defects4J [28] and SWE-bench [29]. Finally, we include task-specific measures, such as the proportion of single-file fixes in program repair and program size, build time, and workload count in compiler autotuning. 
+
+Projects. The constructed program-repair and issue-reproduction benchmarks cover more projects than their reference benchmarks, although these projects generally have fewer GitHub stars. None of the 31 program-repair projects appears in Defects4J or GitBug-Java [32], extending coverage to projects absent from these benchmarks. Project popularity depends partly on the minimum-star thresholds in the generated search rules (Table II), which researchers can adjust to target more popular projects. 
+
+Recency. Most issue-reproduction instances come from pull requests merged in 2026. Such recent instances may be less likely to appear in the evaluated models’ training data, although we do not measure contamination. 
+
+Size of programs and patches. The constructed benchmarks contain larger patches than Defects4J and SWT-bench, and larger programs than cBench [31]. None of the program-repair fixes changes only one line. Larger changes may pose greater challenges for existing techniques. For example, Re-pairAgent fails more often on instances with larger patches (Section III-C). Finally, unlike the dataset used to evaluate CodeCureAgent [27], our benchmark also includes developer fixes verified by rerunning SonarQube. 
+
+2) Qualitative Inspection: Running existing techniques on our instances provides evidence of their usability, but does not establish their quality. For example, do the program-repair instances represent genuine bug fixes, or do they contain unre-lated changes? Answering such questions requires examining individual instances in the context of their tasks. We therefore manually inspect a sample of 40 instances. For each task, we randomly select five instances solved by the best-performing technique from RQ2 and five instances it does not solve. We first check each instance against its upstream repository, verifying the specification criteria. We test interfaces with recorded inputs, such as the developer fix, and incorrect ones, e.g., random patches or empty submissions. Of the 40 inspected instances, 37 are valid instances of their tasks. The three exceptions belong to issue reproduction. Two instances have an incorrect problem description because the construction agent wrote its own description rather than using the original GitHub issue text. In the third instance, the reference test exercises a helper unrelated to the reported issue. We also find minor problems, such as bug fixes containing unrelated formatting changes and issues describing feature requests, which also occur in SWE-bench. Beyond this sample, seven packaged instances cannot be used by the techniques in RQ2: three in program repair, three in issue reproduction, and one in fixing static-analysis warnings (Figure 2). The causes include changes to external dependencies after construction, such as removed build files or incompatible pip versions. Finally, each instance provides task-specific basic com-mands, such as applying a patch, building, or running tests, which the techniques in RQ2 use. In all 40 inspected instances, the basic commands handle our incorrect inputs correctly. In six instances, however, the joint “check” command, which combines the basic commands to decide whether a submission is correct, misses special cases. For example, a patch that modifies a test to mark it as skipped leaves no failing test, so the check command accepts the patch, whereas the basic command for running tests reports that no test ran. These cases do not affect RQ2 (relies on basic commands), but researchers using the joint command need to check such details. 
+
+E. RQ4: Comparison with a General-Purpose Agent 
+
+As a baseline, we give Codex [17] (CLI 0.163.0) the specification of each task and ask it to construct the benchmark with the same model as our construction agents. We launch Codex sessions in parallel, each in its own workspace. We ask each session for five instances, because larger requests make Codex stop early or exhaust its context window. A session is limited to 8 hours and $2.50, which no session reached. We assess every instance of both approaches against seven successive criteria (Table V). The criteria follow an instance from its source to its evaluation. The first three criteria are about selection: an instance must come from a real source (real), satisfy the specification’s filters (admissible), and be unique. The next two are about reproducibility: an instance must contain all required files (complete) and have a buildable environment (builds). The last two concern the evaluation interface: its commands must run (functional) and produce the                                                                           
+
+> TABLE V INSTANCES DELIVERED BY BENCH MEUP AND BY CODEX THAT MEET EACH SUCCESSIVE CRITERION .
+> Program repair Issue reproduction Compiler autotuning Static-analysis warnings
+> Criterion Ours Codex Ours Codex Ours Codex Ours Codex
+> Delivered 50 50 50 50 50 50 48 50 Real 50 50 49 45 50 50 48 49 Admissible 50 29 43 45 49 46 46 41 Unique 50 28 43 43 49 14 46 36 Complete 50 27 43 34 49 10 46 20 Builds 50 12 43 749 646 5Functional 49 543 349 645 0Expected 47 339 349 445 0
+
+expected outcome (expected). These three groups correspond to the three challenges of Section I. The order follows the dependencies between the criteria. For example, building an instance is meaningless if its source does not exist. We auto-matically check all criteria using scripts we created, manually tested, and adapted to each task’s definition and specification. Codex delivers 200 instances in 48 hours averaging 14 minutes and $0.07 per instance. However, only 10 (5%) of them meet all criteria. In comparison, of the 198 instances that BenchMeUp delivers, 180 (91%) meet all criteria. Codex chooses sources (e.g., project names) from its knowledge without a search procedure; only 121 of its instances are real, admissible, and unique. Only 30 of its 91 complete instances build. In contrast, the criteria that BenchMeUp checks during construction hold for every admissible instance: i) all are unique, ii) complete, and iii) build. These are the properties that deduplication, the construction plan, and replay in a fresh container are designed to ensure. They are also the criteria at which Codex fails most often. The remaining BenchMeUp failures occur almost only at the specification’s filters and at the expected outcome. Both de-pend on how the agents interpret the specification. Codex fails the filters more often than BenchMeUp. Most of BenchMeUp’s failures occur in issue reproduction, where most instances that fail the filters come from projects with fewer than the 20 merged pull requests that the specification requires. In the issue-reproduction instances without the expected outcome, the test of the issue is not fail-to-pass. IV. D ISCUSSION AND THREATS TO VALIDITY 
+
+Execution in a fresh container. In BenchMeUp, the frame-work checks stage completion by replaying the agent’s scripts in a fresh container. This check is necessary: in 108 of 198 constructed instances, a stage that worked in the agent’s container failed in the fresh one, most often because abuild relied on something the agent had installed or left behind (Section III-B). Therefore, agent-based benchmark-construction approaches should re-execute every instance in a clean environment rather than trust the agent’s report. The instances’ execution environments can decay as base images, packages, and repositories change; however, users can preserve environments through container snapshots (e.g., DockerHub). Manually created specifications. The authors’ knowledge of the approach may have made their four specifications easier for it to process than specifications by other researchers. 
+
+Choice of construction model. Our evaluation uses Claude Opus 5, which is stronger than deepseek-v4-flash, to generate search rules and construction plans and conduct searches, leaving repetitive plan execution to the weaker model. To investigate whether construction also benefits from a stronger model, we run Opus 5 on the same candidates for three tasks (excluding fixing static-analysis warnings for budget reasons). Opus 5 also delivers 50 instances per task at about $10 per instance, but takes only about 9 minutes per instance, compared with 25 for deepseek-v4-flash on the same tasks. Opus 5 constructs instances from 40 candidates that deepseek-v4-flash drops, reducing wasted candidates and time. Hence, a stronger model can help with challenging tasks where a weaker one delivers fewer instances. 
+
+Limits of agent-generated checks. Replay guarantees that an instance reproduces the outcomes required by its checks. However, replay does not establish the correctness of these agent-written checks. Moreover, the checks reflect only the specification and the plan, i.e., they measure reproducibility and consistency with the plan, not faithful representation of the task. Before using a benchmark, we recommend inspecting sample instances, as in RQ3. 
+
+Generalizability. We evaluate the approach on four tasks across three languages, using only GitHub data, with one specification and 50 requested instances per task. The approach is task-independent by design, but these results do not establish its effectiveness on tasks requiring other sources, such as non-GitHub issue trackers or app stores. V. R ELATED WORK 
+
+Table VI compares BenchMeUp with related approaches. There are hundreds of software-engineering bench-marks [33], most of which are curated for one task and one ecosystem. HumanEval [34] and MBPP [35] evaluate code generation on small hand-written or crowd-sourced problems. Defects4J [2], Bears [36], BugsInPy [37], Bugs.jar [38], and GitBug-Java [32] collect real bugs for program repair, and Vul4J [39] takes a proof-of-vulnerability test as the correct-ness condition. SWE-bench [4], SWT-bench [30], and Multi-SWE-bench [40] cover issue resolution and reproduction. LiveCodeBench [41] counters contamination by collecting problems continuously. Instead of suggesting a single new benchmark, our approach automates the construction of bench-marks for arbitrary software-engineering tasks. Tools for collecting instances mine repositories and rerun their builds. PyDriller [44] extracts commits, diffs, and devel-opers from Git repositories, which task-specific scripts then filter. BugSwarm [5] collects reproducible failing and pass-ing builds from continuous-integration histories, and GitBug-Actions [42] reruns GitHub Actions workflows locally to find bug fixes and exports a Docker image for each. These tools are tied to a source of instances, such as commit histories or CI                                                                                                
+
+> TABLE VI BENCH MEUP AND RELATED APPROACHES . “A NY ”= NO EXPLICIT RESTRICTION IN THE DESIGN . I SSUE RES .= ISSUE RESOLUTION ; C ODE GEN .= CODE GENERATION ; E NV .SETUP =ENVIRONMENT SETUP ; PR S=
+> PULL REQUESTS ; J= J AVA , P Y= P YTHON ; E XECUTED =EXECUTABLE AND VERIFIED BY EXECUTION ; I NTERFACE =COMMON EVAL INTERFACE .Approach Task Lang. Input Instances Executed Interface BugSwarm [5] CI fail/fix J, Py CI builds Real ✓✓
+> GitBug-Actions [42] Bug fix Any Repositories Real ✓✓
+> SWE-smith [9] Issue res. Py Repositories Synthetic ✓✓
+> SWE-rebench [10] Issue res. Py Issues, PRs Real ✓✓
+> SWE-Factory [11] Issue res. Any Issues, PRs Real ✓✓
+> SWE-Bench++ [12] Issue res. Any Issues, PRs Real ✓✓
+> CodeBenchGen [43] Code gen. Py Code snippets Real ✓✓
+> SetUpAgent [6] Env. setup Py Repositories Real ✓✓
+> RepoLaunch [8] Env. setup Any Repositories Real ✓✓
+> ExecutionAgent [7] Env. setup Any Repositories Real ✓✗
+> SEC-bench [13] Vuln. patch C/C++ CVE reports Real ✓✓
+> AutoBencher [14] LLM eval. N/A Desiderata Generated ✗✓
+> BenchAgents [15] LLM eval. N/A NL description Generated ✗✓
+> BenchMeUp Any Any NL spec. Real ✓✓
+
+builds, and to one type of instance, whereas our search agents take the source and the selection criteria from the specification. Techniques for automatically setting up and testing repos-itories [7], [6], [45], [46] automatically install dependencies, build a project, and run its tests. EnvBench [47] shows that this task remains hard: The best approach it evaluates configures only 6.69% of the Python and 29.47% of the JVM repositories. Task-construction techniques [9], [10], [11], [12], [13] build on such setups to generate or collect issue-resolution and vul-nerability tasks with executable environments at scale. SWE-Factory [11] and SEC-bench [13] are most similar to our work as they also use agents to construct executable software bench-marks, focusing on issue-resolution and vulnerability tasks, respectively. Unlike in BenchMeUp, they rely on manually designed, task-specific definitions of an instance, the roles of the agents, and a correctness oracle. CodeBenchGen [43] and AutoCodeBench [48] use LLMs to turn code into execution-based code-generation benchmarks. Our approach differs by collecting and preparing real-world software artifacts. SWE-Gym [49], R2E [50], R2E-Gym [51], and SWE-Synth [52] construct environments with executable tasks for issue resolu-tion or for training agents. Our approach covers more software-engineering tasks and derives construction procedures from researcher-written benchmark specifications. Studies of SWE-bench find solution leakage and weak tests [53] and show that a share of patches counted as correct fail the developers’ tests [54]. UTBoost [55] generates additional tests after the fact, and BenchGuard [56] audits existing benchmarks. Our correctness conditions and replay act at construction time; as Section IV discusses, the adequacy of an oracle remains the researcher’s judgment. VI. C ONCLUSION 
+
+We present BenchMeUp, an approach that builds executable software-engineering benchmarks from a natural-language specification. Shared search rules and construction plans co-ordinate parallel agents, while replay checks their outputs in fresh containers before packaging instances behind a common interface. On four tasks, 180 of 198 constructed instances meet all criteria, compared with 10 of 200 for a general-purpose agent. We envision BenchMeUp as a useful tool for researchers who want to evaluate their techniques on new tasks, programming languages, or software versions without the overhead of manually constructing benchmarks. REFERENCES [1] M. Izadi, E. Bodden, M. B¨ ohme, P. T. Devanbu, M. Keshani, C. Le Goues, P. Maniatis, P. Orvalho, P. Rondon, S. Chandra, and M. Pradel, “Design principles for rigorous AI4SE benchmarking,” Oct. 2026. [Online]. Available: https://software-lab.org/publications/AI4SE benchmarking oct 2026.pdf [2] R. Just, D. Jalali, and M. D. Ernst, “Defects4j: A database of existing faults to enable controlled testing studies for java programs,” in Pro-ceedings of the 2014 International Symposium on Software Testing and Analysis , 2014, pp. 437–440. [3] C. Le Goues, M. Pradel, and A. Roychoudhury, “Automated program repair,” Commun. ACM , vol. 62, no. 12, pp. 56–65, 2019. [Online]. Available: https://doi.org/10.1145/3318162 [4] C. E. Jimenez, J. Yang, A. Wettig, S. Yao, K. Pei, O. Press, and K. Narasimhan, “SWE-bench: Can language models resolve real-world GitHub issues?” in International Conference on Learning Representa-tions , 2024, pp. 54 107–54 157. [5] D. A. Tomassi, N. Dmeiri, Y. Wang, A. Bhowmick, Y.-C. Liu, P. T. Devanbu, B. Vasilescu, and C. Rubio-Gonz´ alez, “BugSwarm: Mining and continuously growing a dataset of reproducible failures and fixes,” in Proceedings of the 41st International Conference on Software Engi-neering , 2019, pp. 339–349. [6] K. Vergopoulos, M. N. M¨ uller, and M. Vechev, “Automated benchmark generation for repository-level coding tasks,” in Proceedings of the 42nd International Conference on Machine Learning , ser. Proceedings of Machine Learning Research, vol. 267, 2025, pp. 61 240–61 265. [Online]. Available: https://proceedings.mlr.press/v267/vergopoulos25a. html [7] I. Bouzenia and M. Pradel, “You name it, i run it: An llm agent to execute tests of arbitrary projects,” Proceedings of the ACM on Software Engineering , vol. 2, no. ISSTA, pp. 1054–1076, 2025. [8] K. Li, R. Li, L. Zhang, Q. Jin, L. Zhu, X. Huang, G. Zhang, Y. Zhang, S. He, C. Xie, X. Zhang, Z. Jin, B. Li, C. Zhang, Y. Kang, Y. Huang, E. Nallipogu, S. Rajmohan, Q. Lin, and D. Zhang, “RepoLaunch: Automating build and management of code repositories across languages and platforms,” arXiv preprint arXiv:2603.05026 ,2026. [Online]. Available: https://arxiv.org/abs/2603.05026 [9] J. Yang, K. Lieret, C. E. Jimenez, A. Wettig, K. Khandpur, Y. Zhang, B. Hui, O. Press, L. Schmidt, and D. Yang, “SWE-smith: Scaling data for software engineering agents,” in Advances in Neural Information Processing Systems , vol. 38, 2025. [10] I. Badertdinov, A. Golubev, M. Nekrashevich, A. Shevtsov, S. Karasik, A. Andriushchenko, M. Trofimova, D. Litvintseva, and B. Yangel, “SWE-rebench: An automated pipeline for task collection and decon-taminated evaluation of software engineering agents,” in Advances in Neural Information Processing Systems (NeurIPS) , 2025. [11] L. Guo, Y. Wang, C. Li, W. Tao, P. Yang, J. Chen, H. Song, D. Tang, and Z. Zheng, “SWE data construction, automatically!” Proc. ACM Softw. Eng. , vol. 3, no. FSE, pp. 525–546, 2026. [Online]. Available: https://doi.org/10.1145/3797119 [12] L. Wang, L. Ramalho, A. Celestino, P. A. Pham, Y. Liu, U. K. Sinha, A. Portillo, O. Osunwa, and G. Maduekwe, “SWE-Bench++: A frame-work for the scalable generation of software engineering benchmarks from open-source repositories,” arXiv preprint arXiv:2512.17419 , 2025. [13] H. Lee, Z. Zhang, H. Lu, and L. Zhang, “SEC-bench: Automated benchmarking of LLM agents on real-world software security tasks,” in 
+
+Advances in Neural Information Processing Systems (NeurIPS) , 2025. [14] X. L. Li, F. Kaiyom, E. Z. Liu, Y. Mai, P. Liang, and T. Hashimoto, “AutoBencher: Towards declarative benchmark construction,” in Inter-national Conference on Learning Representations (ICLR) , 2025. [15] N. Butt, V. Chandrasekaran, N. Joshi, B. Nushi, and V. Balachandran, “BenchAgents: Multi-agent systems for structured benchmark creation,” 
+
+arXiv preprint arXiv:2410.22584 , 2024. [16] J. Yang, C. E. Jimenez, A. Wettig, K. Lieret, S. Yao, K. Narasimhan, and O. Press, “SWE-agent: Agent-computer interfaces enable automated software engineering,” in Advances in Neural Information Processing Systems , vol. 37, 2024. [17] OpenAI, “Codex CLI,” https://github.com/openai/codex, 2025. [18] N. Shinn, F. Cassano, A. Gopinath, K. Narasimhan, and S. Yao, “Reflexion: Language agents with verbal reinforcement learning,” in 
+
+Advances in Neural Information Processing Systems (NeurIPS) , 2023. [19] A. Zhao, D. Huang, Q. Xu, M. Lin, Y.-J. Liu, and G. Huang, “ExpeL: LLM agents are experiential learners,” in Proceedings of the AAAI Conference on Artificial Intelligence , 2024. [20] Z. Z. Wang, J. Mao, D. Fried, and G. Neubig, “Agent workflow memory,” in Proceedings of the 42nd International Conference on Machine Learning (ICML) , 2025. [21] I. Bouzenia, P. T. Devanbu, and M. Pradel, “RepairAgent: An au-tonomous, LLM-based agent for program repair,” in Proceedings of the 47th IEEE/ACM International Conference on Software Engineering ,2025. [22] Q. Zhang, Y. Zheng, Y. Shang, W. Sun, H. Hu, C. Fang, Z. Chen, and L. Xiao, “ReProAgent: Tool-augmented multi-stage agentic generation of bug reproduction tests from issue reports,” 
+
+arXiv preprint arXiv:2607.09123 , 2026. [Online]. Available: https: //arxiv.org/abs/2607.09123 [23] J. Chen, N. Xu, P. Chen, and H. Zhang, “Efficient compiler autotuning via bayesian optimization,” in Proceedings of the 43rd International Conference on Software Engineering , 2021, pp. 1198–1209. [24] Google, “google-java-format,” https://github.com/google/ google-java-format. [25] K. Etemadi, N. Harrand, S. Lars´ en, H. Adzemovic, H. L. Phu, A. Verma, F. Madeiral, D. Wikstr¨ om, and M. Monperrus, “Sorald: Automatic patch suggestions for SonarQube static analysis violations,” IEEE Transactions on Dependable and Secure Computing , vol. 20, no. 4, pp. 2794–2810, 2023. [26] Moderne, “OpenRewrite,” https://github.com/openrewrite/rewrite. [27] P. Joos, I. Bouzenia, and M. Pradel, “CodeCureAgent: Automatic classification and repair of static analysis warnings,” Proceedings of the ACM on Software Engineering , vol. 3, no. FSE, pp. 3000–3022, 2026. [28] V. Sobreira, T. Durieux, F. Madeiral, M. Monperrus, and M. d. A. Maia, “Dissection of a bug dataset: Anatomy of 395 patches from Defects4J,” in Proceedings of the IEEE International Conference on Software Analysis, Evolution and Reengineering (SANER) , 2018. [29] P. Rondon, R. Wei, J. Cambronero, J. Cito, A. Sun, S. Sanyam, M. Tufano, and S. Chandra, “Evaluating agent-based program repair at google,” in 47th IEEE/ACM International Conference on Software Engineering: Software Engineering in Practice, SEIP@ICSE 2025, Ottawa, ON, Canada, April 27 - May 3, 2025 . IEEE, 2025, pp. 365–376. [Online]. Available: https://doi.org/10.1109/ICSE-SEIP66354. 2025.00038 [30] N. M¨ undler, M. N. M¨ uller, J. He, and M. Vechev, “SWT-bench: Testing and validating real-world bug-fixes with code agents,” in Advances in Neural Information Processing Systems , vol. 37, 2024. [31] G. Fursin, “Collective tuning initiative: Automating and accelerating development and optimization of computing systems,” in Proceedings of the GCC Developers’ Summit , 2009. [32] A. Silva, N. Saavedra, and M. Monperrus, “Gitbug-java: A reproducible benchmark of recent java bugs,” in Proceedings of the 21st International Conference on Mining Software Repositories (MSR) . ACM, 2024. [33] X. Hu et al. , “Assessing and advancing benchmarks for evaluating large language models in software engineering tasks,” ACM Transactions on Software Engineering and Methodology , 2025. [34] M. Chen et al. , “Evaluating large language models trained on code,” 
+
+arXiv preprint arXiv:2107.03374 , 2021. [35] J. Austin, A. Odena, M. Nye, M. Bosma, H. Michalewski, D. Dohan, E. Jiang, C. Cai, M. Terry, Q. Le, and C. Sutton, “Program synthesis with large language models,” arXiv preprint arXiv:2108.07732 , 2021. [36] F. Madeiral, S. Urli, M. Maia, and M. Monperrus, “Bears: An extensible Java bug benchmark for automatic program repair studies,” in Proceedings of the 26th International Conference on Software Analysis, Evolution and Reengineering , 2019. [Online]. Available: https://arxiv.org/abs/1901.06024 [37] R. Widyasari et al. , “BugsInPy: A database of existing bugs in Python programs to enable controlled testing and debugging studies,” in Proceedings of the 28th ACM Joint European Software Engineering Conference and Symposium on the Foundations of Software Engineering (Tool Demonstrations) , 2020. [38] R. K. Saha, Y. Lyu, W. Lam, H. Yoshida, and M. R. Prasad, “Bugs.jar: A large-scale, diverse dataset of real-world Java bugs,” in Proceedings of the 15th International Conference on Mining Software Repositories ,2018. [39] Q.-C. Bui, R. Scandariato, and N. E. D´ ıaz Ferreyra, “Vul4J: A dataset of reproducible Java vulnerabilities geared towards the study of program repair techniques,” in Proceedings of the 19th International Conference on Mining Software Repositories (Data and Tool Showcase) , 2022. [40] D. Zan et al. , “Multi-SWE-bench: A multilingual benchmark for issue resolving,” in Advances in Neural Information Processing Systems ,vol. 38, 2025. [41] N. Jain et al. , “LiveCodeBench: Holistic and contamination free evalu-ation of large language models for code,” in International Conference on Learning Representations , 2025. [42] N. Saavedra, A. Silva, and M. Monperrus, “GitBug-Actions: Building reproducible bug-fix benchmarks with GitHub actions,” in Proceedings of the 46th International Conference on Software Engineering: Com-panion Proceedings (ICSE-Companion) , 2024. [43] Y. Xie, A. Xie, D. Sheth, P. Liu, D. Fried, and C. Rose, “CodeBenchGen: Creating scalable execution-based code generation benchmarks,” arXiv preprint arXiv:2404.00566 , 2024. [44] D. Spadini, M. Aniche, and A. Bacchelli, “PyDriller: Python framework for mining software repositories,” in Proceedings of the ACM Joint European Software Engineering Conference and Symposium on the Foundations of Software Engineering (Demonstrations) , 2018. [45] L. Milliken, S. Kang, and S. Yoo, “Beyond pip install :Evaluating LLM agents for the automated installation of Python projects,” in Proceedings of the International Conference on Software Analysis, Evolution and Reengineering , 2025. [Online]. Available: https://arxiv.org/abs/2412.06294 [46] R. Hu et al. , “Repo2Run: Automated building executable environment for code repository at scale,” in Advances in Neural Information Pro-cessing Systems , vol. 38, 2025. [47] A. Eliseeva et al. , “EnvBench: A benchmark for automated environment setup,” arXiv preprint arXiv:2503.14443 , 2025. [Online]. Available: https://arxiv.org/abs/2503.14443 [48] C. Zhou, A. Liu, Y. Deng, Z. Zeng, T. Zhang, H. Zhu, J. Cai, Y. Mao, C. Zhang, L. Tan, Z. Xu, B. Zhai, H. Liu, S. Zhu, W. Zhou, and F. Lian, “AutoCodeBench: Large language models are automatic code benchmark generators,” in International Conference on Learning Representations (ICLR) , 2026. [49] J. Pan et al. , “Training software engineering agents and verifiers with SWE-Gym,” in International Conference on Machine Learning , 2025. [50] N. Jain, M. Shetty, T. Zhang, K. Han, K. Sen, and I. Stoica, “R2E: Turning any GitHub repository into a programming agent environment,” in International Conference on Machine Learning (ICML) , 2024. [51] N. Jain, J. Singh, M. Shetty, L. Zheng, K. Sen, and I. Stoica, “R2E-Gym: Procedural environments and hybrid verifiers for scaling open-weights SWE agents,” arXiv preprint arXiv:2504.07164 , 2025. [52] M. V. T. Pham et al. , “SWE-Synth: Synthesizing verifiable bug-fix data to enable large language models in resolving real-world bugs,” arXiv preprint arXiv:2504.14757 , 2025. [Online]. Available: https://arxiv.org/abs/2504.14757 [53] R. Aleithan et al. , “SWE-Bench+: Enhanced coding benchmark for LLMs,” arXiv preprint arXiv:2410.06992 , 2024. [Online]. Available: https://arxiv.org/abs/2410.06992 [54] Y. Wang, M. Pradel, and Z. Liu, “Are “solved issues” in SWE-bench really solved correctly? an empirical study,” in Proceedings of the 48th International Conference on Software Engineering , 2026. [Online]. Available: https://arxiv.org/abs/2503.15223 [55] B. Yu, Y. Zhu, P. He, and D. Kang, “UTBoost: Rigorous evaluation of coding agents on SWE-Bench,” in Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics , 2025. [56] X. Tu, T. Wang, Y. Lu, K. Huang, Y. Qu, and S. Mostafavi, “Who guards the benchmarks? Automated auditing of LLM agent benchmarks,” in 
+
+Conference on Language Modeling (COLM) , 2026.

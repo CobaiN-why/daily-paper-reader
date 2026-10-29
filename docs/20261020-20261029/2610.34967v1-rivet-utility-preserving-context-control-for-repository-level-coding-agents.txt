@@ -1,0 +1,579 @@
+Title: Rivet: Utility-Preserving Context Control for Repository-Level Coding Agents
+
+URL Source: https://arxiv.org/pdf/2610.34967v1
+
+Published Time: Tue, 27 Oct 2026 02:08:49 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+# Rivet: Utility-Preserving Context Control for Repository-Level Coding Agents 
+
+RUWEI PAN ∗, Peking University, China 
+
+LINHAO WU ∗, Peking University, China 
+
+YAKUN ZHANG, Harbin Institute of Technology (Shenzhen), China 
+
+ZIXIONG YANG, Peking University, China 
+
+LU ZHANG, Peking University, China 
+
+HONGYU ZHANG †, Chongqing University, China Repository-level code generation asks an agent to implement a task requirement inside an existing repository. To produce code that works in the repository, the agent needs repository evidence , such as target locations, helper definitions, caller usages, and configuration constraints, which determine how the code should be located, integrated, and executed. Because the context budget cannot hold the entire repository, existing retrieval, compression, and structure-aware methods select context by task similarity, context length, or structural proximity, but these criteria do not directly measure whether the selected context contains this evidence. As a result, the selected context can appear relevant to the task yet miss the evidence that the implementation depends on. We call this failure mode context utility dilution . In this paper, we propose Rivet, a context control framework that preserves repository evidence for coding agents under a fixed context budget. Rivet first uses Signal Grounding to select task-related code anchors by fusing lexical, semantic, and structural signals. Utility Linking then expands these anchors through dependency, usage, and configuration relations to collect repository evidence. Finally, Budget Shaping packs the evidence by priority and, when the budget is tight, reduces snippets to signatures or summaries before dropping them. We evaluate Rivet on two executable repository-level benchmarks, DevEval and RepoExec, with four backbone models, two context budgets (4K and 8K tokens), and eight baselines. Rivet achieves the highest Pass@1 in all 16 settings and improves over the strongest baseline by 3.73–5.15 percentage points on average. Moreover, GPT-5-mini with Rivet outperforms GPT-5 without Rivet on both benchmarks while reducing inference cost by 73.3%–84.5%. CCS Concepts: • Software and its engineering → Automatic programming .Additional Key Words and Phrases: Code Generation, Large Language Models 
+
+1 Introduction 
+
+Given a task requirement and an existing repository, repository-level code generation asks an agent to produce code that satisfies the requirement within that repository [2, 23, 38, 40]. Unlike isolated programming tasks, the produced code must work with existing files, definitions, dependencies, and configurations in the target repository [16]. To produce code that works in the repository, the agent needs repository evidence , i.e., repository information that constrains the implementation, such as target locations, helper definitions, caller usages, and configuration constraints. Repository context is therefore useful only to the extent that it contains such evidence. However, a repository rarely fits into the context budget of a coding agent, so the agent can only see a selected part of it [33]. Existing context-control methods address this constraint through retrieval-based selection, compression-based shortening, and structure-aware selection [14, 18, 19, 
+
+> ∗
+
+Both authors contributed equally to this research. 
+
+> †
+
+Corresponding author. Authors’ Contact Information: Ruwei Pan, panruwei666@gmail.com, Peking University, Beijing, China; Linhao Wu, wulin-hao26@stu.pku.edu.cn, Peking University, Beijing, China; Yakun Zhang, zhangyk@hit.edu.cn, Harbin Institute of Technology (Shenzhen), Shenzhen, China; Zixiong Yang, zixiongyang02@gmail.com, Peking University, Beijing, China; Lu Zhang, zhanglucs@pku.edu.cn, Peking University, Beijing, China; Hongyu Zhang, hongyujohn@gmail.com, Chongqing University, Chongqing, China. arXiv:2610.34967v1 [cs.SE] 26 Oct 2026 2 Pan et al. 
+
+23, 27, 36, 37]. Retrieval-based methods select code snippets according to their similarity to the task requirement [19, 23]. Compression methods shorten retrieved repository context or agent observations to fit the context budget [27]. Structure-aware methods use code structure, such as dependencies or call relations, to retrieve context connected to the task [7, 14, 18]. These criteria provide useful signals for context construction, but a high relevance score, a compact representation, or structural proximity alone does not ensure that the context includes the helper definitions, caller usages, and configuration constraints needed for a particular implementation. We call the resulting failure mode context utility dilution : the selected context appears relevant to the task but lacks the evidence needed to implement the required code correctly in the repository (Section 2). 
+
+In this paper, we propose Rivet , a context control framework that preserves repository evidence for repository-level coding agents. Our key observation is that much of this evidence is reachable from the code that the task touches, through static relations such as imports, symbol references, call sites, and configuration links. Therefore, instead of ranking snippets independently by their similarity to the task, Rivet first locates where the task lands in the repository and then follows these relations to collect evidence. Following this observation, Rivet constructs repository context in three stages. ❶ Signal Grounding first uses lexical, semantic, and structural signals to identify task-related code anchors that indicate where the required code is likely to be implemented or what existing snippets it may depend on. ❷ Utility Linking then expands these anchors through dependency, usage, and configuration relations to collect helper definitions, caller usages, and configuration constraints. ❸ Budget Shaping finally packs the evidence by priority tiers and, when the budget is tight, reduces snippets to signatures or summaries before dropping them. In this way, Rivet spends the budget on evidence that constrains the implementation rather than on text that merely resembles the task. We evaluate Rivet on two executable repository-level coding benchmarks, DevEval [20] and 
+
+RepoExec [12]. Across four backbone models and two context budgets, 4K and 8K tokens, we compare Rivet against retrieval, compression, and structure-aware baselines under the same agent scaffold. Rivet achieves the highest Pass@1 in all 16 settings and improves over the strongest baseline by 3.73–5.15 percentage points on average. With a 4K budget, it outperforms the strongest baseline given an 8K budget on DevEval for all four backbone models, and GPT-5-mini with Rivet outperforms GPT-5 without Rivet while reducing inference cost by 73.3%–84.5%. Ablation studies further show that all three stages contribute, with Signal Grounding and Utility Linking accounting for the largest gains. In summary, this paper makes the following contributions: 
+
+• We identify and characterize context utility dilution , a failure mode of context con-struction for repository-level coding agents. This failure mode occurs when the selected context appears relevant to the task but lacks the repository evidence needed to locate, integrate, and execute the required code in the target repository. We illustrate this failure mode with a motivating example (Section 2) and a qualitative case study (Figure 4). 
+
+• We propose Rivet, a context control framework that preserves repository evidence under constrained context budgets. Rivet locates task-related code anchors, follows static repository relations from them to collect dependency, usage, and configuration evidence, and packs this evidence under the budget with a representation ladder. This design helps coding agents keep target locations, helper definitions, caller usages, and configuration constraints within the context budget. 
+
+• We evaluate Rivet on two repository-level coding benchmarks, DevEval and RepoExec, with four backbone models and two context budgets, 4K and 8K tokens. The results show Rivet: Utility-Preserving Context Control for Repository-Level Coding Agents 3(a) Repository-level Task 
+
+> Existing Repository
+> benedict.utils.type_util.is_json_seri alizable:
+> Check if the input value is JSON serializable. It checks if the input value is of the JSON serializable types...
+> Task
+
+(b) Relevance-oriented Context    
+
+> Retrieved Snippets
+> Task Terms Keyword-matched Snippets
+> Missing utility evidence
+> Helper defs Imports Caller usage Config
+> Plausible code But fails integration
+
+(c) Utility-Preserving Context 
+
+> Retrieved Snippets
+> Target context
+> Helper
+> Imports
+> Caller example
+> Config
+> ...
+> Compress
+> Repository-compatible code
+
+Fig. 1. Motivating example of context utility dilution. (b) Relevance-oriented retrieval returns keyword-matched snippets but misses helper definitions, caller usages, imports, and configuration. (c) Utility-preserving context retains this evidence under the same budget. 
+
+that Rivet achieves an average Pass@1 of 55.74 across all settings and consistently outperforms retrieval, compression, and structure-aware baselines under the same agent scaffold. With half the context budget or a cheaper backbone, Rivet still matches or exceeds stronger configurations at a fraction of the inference cost. 
+
+2 Motivating Example 
+
+Figure 1 shows a DevEval task in which an agent needs to implement the utility function is_json_ serializable in the module benedict.utils.type_util of an existing Python repository. The target function is expected to determine whether a given value is JSON serializable. Although the requirement is concise, the required code cannot be derived from the requirement alone [10]. To produce code that works in this repository, the agent needs repository evidence, including the target location, relevant helper definitions, caller usages, and configuration constraints. A relevance-oriented retrieval method may return code snippets related to JSON serialization or type checking. These snippets appear relevant because they share terms with the requirement, but they may miss the evidence that constrains how the function should be implemented in this repository. For example, without helper definitions, the agent may reimplement behavior that should reuse project-specific utilities. Without caller usages, it may produce an interface or return value that does not match how the function is used. Without configuration constraints, it may generate code that cannot execute correctly in the project environment [34]. Under a limited context budget, these relevant but incomplete snippets can occupy the context and leave little room for the evidence that actually constrains the implementation [11]. For this task, useful context should include not only snippets related to JSON serialization, but also the target module benedict.utils.type_util ,relevant helper definitions, caller usages, dependencies, and configuration constraints. With such evidence, the agent can determine not only what behavior to implement, but also how the required code should align with the existing repository. This example illustrates context utility dilution : within a fixed budget, snippets that merely resemble the task dilute the context, so the evidence that determines how is_json_serializable 
+
+fits into the repository is either missing or crowded out. It suggests that context construction should 4 Pan et al. src/ tests/ setup.py ... 
+
+Repository 
+
+Requirements 
+
+> benedict.utils.type_util.is_jso n_serializable: Check if the input value is JSON serializable. It checks if the input value is of the JSON serializable types...
+
+Task Description Stage 1: Signal Grounding Stage 3: Budget Shaping Stage 2: Utility Linking 
+
+file ... 
+
+Signals 
+
+symbol 
+
+RRF Fusion 
+
+Task Anchors 
+
+file function   
+
+> Utility Linking
+> ependency evidence
+> Usage evidence
+> onfiguration evidence
+> Tiered Selection
+> Snippet Signature Summary
+> BM25F LSA PPR
+
+behavior  
+
+> Typed Repository Graph
+> 1Representation Ladder
+> 3
+> Tier 1
+> ：
+> target + direct deps
+> Tier 2
+> ：
+> usage + indirect deps
+> Tier 3
+> ：
+> config
+> 2
+> RRF
+
+Packed Agent Context 
+
+> 123456
+
+Task Anchors Target Context Configuration Evidence Usage Evidence Dependency Evidence 
+
+> ADUC
+> import/sym-ref caller config
+
+Final Output 
+
+> Evidence-aware Ordering
+
+Fig. 2. Overview of Rivet. Signal Grounding fuses BM25F, LSA, and PPR rankings to select task anchors; Utility Linking expands the anchors along import/symbol-reference, caller, and configuration edges; Budget Shaping packs the collected evidence by priority tier with a representation ladder. 
+
+start from where the task lands in the repository and collect the evidence connected to it, rather than rank snippets by similarity alone. This observation motivates the design of Rivet (Section 3). 
+
+3 Approach 
+
+Given a task requirement, a repository, and a context budget, Rivet serves as a context-construction component for a repository-level coding agent. It constructs the repository context that is injected into the agent before code generation. The goal is to preserve the repository evidence that the implementation depends on, including target-location information, helper definitions, caller us-ages, and configuration constraints. Rivet operates at two granularities: Signal Grounding ranks repository files to locate where the task lands, while Utility Linking and Budget Shaping operate on code snippets within and around the selected files. Signal Grounding identifies task-related code anchors using lexical matching, semantic similarity, and structural propagation signals. Util-ity Linking expands these anchors through dependency, usage, and configuration relations to collect the repository evidence needed by the required code. Budget Shaping retains the resulting evidence under the context budget by prioritizing essential evidence and using compact representa-tions when necessary. Figure 2 summarizes the pipeline. We next introduce the problem setting, the repository evidence graph, the query construction, and the three stages of Rivet. 
+
+3.1 Problem Formulation 
+
+Problem setting. A task is specified by a natural-language requirement 𝑞 . A repository consists of a set of files 𝐹 and is parsed into a set of code snippets 𝑈 = {𝑢 1, . . . , 𝑢 𝑁 }, including functions, methods, classes, import blocks, and configuration blocks, each of which belongs to one file in 
+
+𝐹 . Given 𝑞 , 𝑈 , and a context budget 𝐵 , Rivet selects and renders a repository context 𝐶 such that tok (𝐶 ) ≤ 𝐵 . The target location is not given to Rivet during context construction. Instead, Rivet Rivet: Utility-Preserving Context Control for Repository-Level Coding Agents 5
+
+identifies task-related code anchors from the repository through Signal Grounding. When the requirement explicitly mentions code entities, such as the qualified name of the target function, Rivet exploits these mentions through query construction and a code-mention prior, but it never receives the ground-truth location. 
+
+Repository evidence graph. We represent the repository as a directed, typed, weighted graph 
+
+𝐺 = (𝑉 , 𝐸, 𝜏, 𝜔 ) with 𝑉 = 𝑈 . Each node is a code snippet, and each edge 𝑒 = (𝑢 →𝑣 ) represents a repository relation with type 𝜏 (𝑒 ) and weight 𝜔 (𝑒 ). We consider four types of relations that expose repository evidence around candidate code anchors. import and symbol-ref edges connect a snippet to definitions, imports, and referenced symbols that it depends on, thereby exposing helper definitions and dependency evidence. caller edges connect a snippet to existing call sites or usages that indicate how it is invoked. config edges associate configuration or packaging information with relevant repository code [29]. The edge weight 𝜔 (𝑒 ) reflects how strongly the relation indicates evidence needed by the required code. All three stages of Rivet operate on this graph. 
+
+Query construction. Before Signal Grounding, Rivet converts the natural-language requirement 
+
+𝑞 into a weighted query term set 𝑄 = {( 𝑤, 𝛾 𝑤 )} . The terms are extracted from the requirement text and any explicit code-like mentions in 𝑞 , such as identifiers, file paths, function signatures, and package names, and are split on camel-case and snake-case boundaries. Terms from explicit code-like mentions receive higher weights than general natural-language terms. The same query terms are used for lexical and semantic scoring, so that both signals are computed from the same task representation. 
+
+3.2 Signal Grounding 
+
+Signal Grounding aims to identify task-related anchor files from the repository. In this stage, 𝑢 
+
+denotes a repository file, and the structural signal runs on the file-level import graph 𝐺 𝐹 , obtained by projecting the import edges of 𝐺 onto files, i.e., file 𝑢 links to file 𝑣 if a snippet in 𝑢 imports a definition from 𝑣 . These anchors serve as candidate locations for the required code and as starting points for collecting repository evidence in Utility Linking. To this end, Rivet combines three complementary grounding signals: lexical matching, semantic similarity, and structural propagation. The lexical signal captures explicit code-like mentions in the requirement, such as identifiers, file paths, and package names. The semantic signal captures files that are related to the task in meaning, even when their surface terms differ from the requirement. The structural signal propagates relevance over 𝐺 𝐹 to find files connected to high-relevance files through import relations. These signals address different failure cases of anchor localization. Lexical matching can miss renamed or project-specific helpers, semantic similarity can prefer textually related but unnecessary files, and structural propagation depends on reliable task-relevant seeds. Therefore, Rivet fuses the rankings from the three signals to select the final task-related code anchors. 
+
+Lexical signal. The lexical signal identifies files that explicitly match code-like mentions in the requirement, such as identifiers, file paths, function signatures, or package names. We score each repository file 𝑢 with a fielded BM25 [31] model over four fields F = {path , symbol , sigdoc , content },which respectively capture the file path, defined symbol names, signature and docstring lines, and the identifier stream. Field weighting and length normalization reduce the bias toward long files that contain many incidental term matches. The resulting lexical score is denoted as 𝑠 lex (𝑢 ).
+
+Semantic signal. The semantic signal identifies files that are related to the task in a latent term space, even when their surface terms differ. For example, a requirement may describe JSON serialization, while a reusable helper may use a project-specific name. To capture such cases without training a repository-specific retriever, we build a TF-IDF term–file matrix over file content and documentation and apply latent semantic analysis [9]. Each file and the task requirement are projected into the same latent space, and their cosine similarity is used as the semantic score 6 Pan et al. 
+
+𝑠 sem (𝑢 ). For repositories too small to admit a stable factorization, we fall back to TF-IDF cosine similarity in the original term space. 
+
+Structural signal. The structural signal identifies files that may be needed by the required code even when they are not textually similar to the requirement. We use the normalized sum of the lexical and semantic scores as seed relevance scores and diffuse them over the file-level import graph 𝐺 𝐹 with Personalized PageRank [13]. This propagation allows a file connected to a high-relevance file to inherit relevance even if it is lexically invisible to the requirement. The resulting structural score is denoted as 𝑠 str (𝑢 ).
+
+Anchor selection. The three signals induce rankings rank 𝑐 (𝑢 ) for 𝑐 ∈ { lex , sem , str }. We fuse these rankings with reciprocal-rank fusion [8]: 
+
+𝜌 0 (𝑢 ) =∑︁  
+
+> 𝑐 ∈ { lex ,sem ,str }
+
+1
+
+𝜅 + rank 𝑐 (𝑢 ) . (1) This fusion combines complementary grounding signals without requiring their scores to share the same scale. We further add a deterministic prior 𝜋 (𝑢 ) for files that match code-like mentions explicitly appearing in the requirement, such as identifiers, file paths, function signatures, or package names. The final grounding score is 𝜌 (𝑢 ) = 𝜌 0 (𝑢 ) + 𝜋 (𝑢 ), which is used for anchor selection and subsequent evidence propagation. Rivet keeps the top-𝑘 files as the task anchor set 
+
+𝐴 , and the code snippets in these files serve as the starting points of Utility Linking. These task anchors are then passed to Utility Linking, which expands them into the repository evidence needed by the required code. 
+
+3.3 Utility Linking 
+
+Signal Grounding identifies task-related code anchors, but anchors alone do not provide all reposi-tory evidence needed by the required code. Utility Linking therefore expands from these anchors to collect potentially useful repository evidence through static relations. It performs this expansion in two steps. First, starting from the anchor set 𝐴 , Rivet traverses the repository evidence graph 
+
+𝐺 and gathers snippets connected to the anchors through dependency, usage, and configuration relations. Second, Rivet assigns each gathered evidence snippet a relevance score that reflects how closely it is connected to the required code. 
+
+Evidence categories. Rivet collects three categories of repository evidence around task-related code anchors. ❶ Dependency evidence includes definitions, imports, and referenced symbols reached from an anchor through import and symbol-ref edges. This evidence helps the agent reuse project-specific definitions and resolve required dependencies. ❷ Usage evidence includes existing call sites or usages recovered from caller edges. This evidence indicates how an anchor or related snippet is invoked in the repository. ❸ Configuration evidence includes packaging, runtime, and configuration snippets connected through config edges. This evidence constrains how the required code should be integrated and executed in the target repository. Together with the task-related code anchors, these categories form the candidate repository evidence set used for context construction. Each evidence snippet is extracted at snippet granularity, such as a definition block with its signature and a bounded context, rather than as a whole file. 
+
+Evidence relevance. The collected evidence induces an evidence graph 𝐺 𝐸 , whose nodes are the task-related code anchors and the gathered evidence snippets, and whose edges inherit their relation types from 𝐺 . Rather than assigning fixed scores to different evidence categories, Rivet reuses the propagation mechanism in the Signal Grounding stage on 𝐺 𝐸 . The propagation is seeded by the anchor relevance and diffused with type weights, e.g., 𝜔 import > 𝜔 symbol-ref > 𝜔 caller > 𝜔 config .The resulting score 𝜓 (𝑧 ) measures how strongly an evidence snippet 𝑧 is connected to the required code. Evidence directly connected to an anchor receives a higher score, while incidentally connected Rivet: Utility-Preserving Context Control for Repository-Level Coding Agents 7
+
+evidence receives a lower score. This score is passed to Budget Shaping, which decides how to retain the collected evidence under the context budget. 
+
+3.4 Budget Shaping 
+
+Budget Shaping converts the collected repository evidence into a packed repository context under the context budget 𝐵 . Its goal is to retain the evidence needed by the required code, while using compact representations when the full evidence set exceeds the budget. Budget Shaping makes three decisions: which priority tier each evidence snippet belongs to, how compactly each snippet should be represented, and in what order snippets should be considered for the budget. 
+
+Evidence tiers and representation ladder. Each evidence snippet is assigned a priority tier according to its role in supporting the required code. Task-related code anchors and their direct dependencies are placed in the highest tier. Usage evidence and indirect dependencies are placed in the next tier. Configuration evidence is placed in the last tier. These tiers provide a heuristic ordering for budget allocation rather than a task-independent measure of evidence importance. Within each tier, an evidence snippet can be rendered at different levels of detail through a representation ladder ⟨full snippet , signature , compact summary ⟩. When the budget is tight, Rivet reduces the representation detail of a selected snippet before dropping it. For high-priority evidence, Rivet keeps at least its signature whenever possible. This design keeps more types of repository evidence under constrained budgets, instead of spending the budget on a few long snippets. 
+
+Evidence-aware ordering. Evidence snippets are considered tier by tier. Within each tier, Rivet orders snippets by combining two rankings. The first ranking is the anchor relevance rel (𝑧 ) = 𝜌 (𝑎 𝑧 ),i.e., the grounding score of the anchor 𝑎 𝑧 that introduces evidence snippet 𝑧 . The second ranking is the evidence relevance 𝜓 (𝑧 ), which reflects how strongly 𝑧 is connected to the required code in the evidence graph. We combine these rankings using reciprocal-rank fusion: key (𝑧 ) =
+
+
+
+tier (𝑧 ), −∑︁   
+
+> 𝑐 ∈ { rel ,𝜓 }
+
+1
+
+𝜅 + rank 𝑐 (𝑧 )
+
+
+
+. (2) The tier is used as the primary key, so that evidence directly needed by the required code is considered first. The fused ranking is used as the secondary key, so that the budget is spent on evidence that is both task-relevant and strongly connected to the required code. The selected and rendered snippets, together with the task requirement and task-related code anchors, form the packed repository context 𝐶 injected into the coding agent. 
+
+4 Experimental Setup 
+
+We evaluate Rivet by answering the following three research questions (RQs): 
+
+RQ1: How effective is Rivet under constrained context budgets? We compare Rivet with retrieval, compression, and structure-aware baselines on DevEval and RepoExec. This experiment evaluates whether preserving repository evidence improves repository-level code generation under the same backbone model, agent scaffold, and context budget. 
+
+RQ2: How does Rivet compare with larger context budgets and stronger backbone mod-els in terms of accuracy and inference cost? We compare Rivet with two common alternatives for improving accuracy, namely doubling the context budget and switching to a stronger backbone model under the same Mini-SWE-Agent scaffold, in terms of both Pass@1 and inference cost. 
+
+RQ3: How do Rivet’s stages and evidence types contribute to its effectiveness? We conduct two levels of ablation studies. First, we disable Signal Grounding, Utility Linking, and Budget Shaping to evaluate the contribution of each stage. Second, we independently disable 8 Pan et al. 
+
+Algorithm 1 Repository context construction in Rivet 
+
+Require: requirement 𝑞 , repository files 𝐹 with code snippets 𝑈 , budget 𝐵 
+
+Ensure: repository context 𝐶 with tok (𝐶 ) ≤ 𝐵  
+
+> 1:
+
+𝑄 ← ConstructQuery (𝑞 ) 
+
+> 2:
+
+𝐺 ← BuildEvidenceGraph (𝑈 ) 
+
+> 3:
+
+𝐺 𝐹 ← ProjectImports (𝐺, 𝐹 ) ⊲ file-level import graph  
+
+> 4:
+
+for each file 𝑓 ∈ 𝐹 do  
+
+> 5:
+
+𝑠 lex (𝑓 ) ← LexicalScore (𝑄, 𝑓 ) 
+
+> 6:
+
+𝑠 sem (𝑓 ) ← SemanticScore (𝑄, 𝑓 ) 
+
+> 7:
+
+end for  
+
+> 8:
+
+𝑠 str ← Propagate (Norm (𝑠 lex + 𝑠 sem ), 𝐺 𝐹 , 𝛼 ) 
+
+> 9:
+
+𝜋 𝑞 ← CodeMentionPrior (𝑞, 𝐹 ) 
+
+> 10:
+
+𝐴 ← TopK  RRF (𝑠 lex , 𝑠 sem , 𝑠 str ) + 𝜋 𝑞 , 𝑘  
+
+> 11:
+
+E ← LinkEvidence (𝐴, 𝐺 ) ⊲ dependency / usage / configuration  
+
+> 12:
+
+𝐺 𝐸 ← InduceEvidenceGraph (𝐴, E, 𝐺 ) 
+
+> 13:
+
+𝜓 ← Propagate (𝜌 |𝐴 , 𝐺 𝐸 , 𝛼 ) 
+
+> 14:
+
+𝐶 ← ShapeBudget (𝑞, 𝐴, E,𝜓, 𝐵 ) ⊲ tiers + representation ladder  
+
+> 15:
+
+return 𝐶 
+
+dependency-, usage-, and configuration-based expansion to examine the contribution of different repository relations within Utility Linking. 
+
+4.1 Benchmarks 
+
+Following prior work on repository-level code generation [14, 18], we conduct our main experi-ments on two executable repository-level coding benchmarks, DevEval and RepoExec. We choose them because they provide repository-level tasks with executable evaluation protocols, allowing us to measure whether the generated code works within the target repository. ❶ DevEval [20] 
+
+is a repository-level code generation benchmark built from real-world repositories, containing 1,825 function-level generation tasks. Each task provides a natural-language requirement and the corresponding original repository, and the model is expected to implement the required function in the target codebase. We use DevEval as the main benchmark because its tasks require repos-itory evidence such as target locations, project-specific definitions, dependencies, and interface constraints. ❷ RepoExec [12] is a repository-level code generation benchmark containing 355 function-level generation tasks with ground-truth annotations. Compared with DevEval, RepoExec places stronger emphasis on whether generated code can execute correctly within the repository context. We use RepoExec as an external validation benchmark to examine whether the gains of Rivet transfer to different repositories and test suites. During context construction, all methods use only the task requirement and the original repos-itory files. Reference implementations, reference dependencies, and benchmark test outcomes are reserved for evaluation and analysis, and are not used to construct the repository context. This protocol avoids information leakage and ensures that all methods are compared under the same available information. The only exception is Target-Local, which by design receives the benchmark-provided target location. Rivet: Utility-Preserving Context Control for Repository-Level Coding Agents 9
+
+4.2 Metrics 
+
+We use Pass@1 [6] as the primary evaluation metric. It measures the percentage of tasks for which the generated code passes the official tests. Given 𝑛 tasks, Pass@1 is defined as: Pass@1 = 1
+
+𝑛 
+
+> 𝑛
+
+∑︁ 
+
+> 𝑖 =1
+
+1 [Eval (𝑦 𝑖 ) = pass ] , (3) where 𝑦 𝑖 denotes the code generated for the 𝑖 -th task, and Eval (·) denotes the official benchmark evaluator. For repository-level code generation, Pass@1 directly reflects whether the generated code satisfies the task requirement within the target repository. To test whether the gains are statistically robust, we compare Rivet with the strongest non-Rivet baseline using paired bootstrap resampling over tasks and estimate 95% confidence intervals of the Pass@1 difference for each benchmark and context budget, pooling the four backbone models. 
+
+4.3 Baselines 
+
+We compare Rivet with representative baselines for repository-level code generation, including 
+
+retrieval-based, compression-based, and structure-aware methods . Target-Local is included as a special local-context baseline because it uses the benchmark-provided target location and evaluates whether local context around the target alone is sufficient. The remaining baselines construct or reduce repository context from the task requirement and repository files under the same context budget. 
+
+Local-context baseline. Target-Local provides the task requirement together with a fixed local context around the benchmark-provided target location, including surrounding code from the target file and entry-point hints. Unlike the other baselines, it does not evaluate automatic context discovery. Instead, it serves as a reference with access to the ground-truth target location, testing whether target-location context alone is sufficient. 
+
+Retrieval-based baseline. RAG [19] divides the repository into code snippets and retrieves snip-pets according to their similarity to the task requirement. It keeps the most relevant snippets under the context budget and concatenates them as the repository context. 
+
+Compression-based baselines. ❶ LLMLingua2 [27] takes the retrieved repository context as input, estimates the importance of tokens or short spans with its pretrained compressor, and removes low-importance content until the context budget is met. The remaining text is used as the repository context. ❷ LLM Summarize , following the baseline setting in [35], asks an LLM to rewrite the retrieved repository context into a shorter summary under the context budget. The summary is then used as the repository context. ❸ LongCodeZip [33] ranks function-level code snippets by their relevance to the task requirement and further shortens the retained snippets by selecting important code blocks under the context budget. The shortened code context is used as the repository context. ❹ SWE-Pruner [35] asks the agent to produce an explicit pruning goal, such as focusing on error handling or locating a relevant function. Guided by this goal, a lightweight neural skimmer selects relevant lines from raw agent observations, such as file-reading or search outputs. The remaining lines are used as the pruned agent observation. 
+
+Structure-aware baselines. ❶ InlineCoder [14] performs repository-level code generation with call-graph context inlining. It first generates a draft completion as an anchor for the target function, and then enriches the prompt with upstream callers and downstream callees. ❷ Hydra [18] treats code as structured programs rather than natural-language chunks, builds hierarchical indices over functions, classes, and variables, and combines dependency-aware retrieval with similarity-based retrieval to provide required dependencies and usage examples. 10 Pan et al. 
+
+4.4 Implementation Details 
+
+Following prior work [35], we use Mini-SWE-Agent as the unified agent scaffold for all methods. We evaluate four backbone models: DeepSeek-V3.2 , GPT-5-mini , Qwen3.5-397B-A17B , and 
+
+MiMo-V2.5 . We use temperature 0 for all models that support it and the default decoding setting for GPT-5 models. We set the context budgets to 4K and 8K tokens. To ensure a fair comparison, all methods use the same task requirement, repository files, backbone model, prompt template, context budget, decoding strategy, agent scaffold, and execution environment. The only difference is how each method constructs the repository context under the same budget. The generated code is executed and evaluated in a consistent Python 3.9 environment. The 4K and 8K budgets are chosen to evaluate repository context construction under practical cost constraints. The 4K budget represents a tight setting, where the agent cannot include many repository files and must prioritize essential repository evidence. The 8K budget provides a less restrictive setting for testing whether the benefit of Rivet remains when more repository context can be included. Together, these budgets allow us to examine whether Rivet improves accuracy by preserving repository evidence rather than by simply increasing the amount of repository text. 
+
+Hyperparameters of Rivet. We use the same hyperparameter values for all benchmarks, backbone models, and context budgets. In Signal Grounding, Rivet keeps the top-𝑘 =6 files as anchors, a small set that leaves most of the budget for the evidence linked from them. The fielded BM25 model uses the standard saturation parameter 𝑘 1=1.2 [31], with field weights (and length-normalization parameters 𝑏 ) of 3.0 (0.40), 2.5 (0.50), 1.5 (0.60), and 1.0 (0.75) for the path , symbol ,
+
+sigdoc , and content fields, so that the precise path and symbol fields dominate the noisier identifier stream. For the same reason, query terms from explicit code mentions receive weights of 2.0 (symbols) and 1.5 (file names), compared with 1.0 for other terms. Latent semantic analysis uses min (256 , |𝐹 |− 1) latent dimensions and falls back to TF-IDF cosine similarity for repositories with fewer than 20 files, where a truncated factorization is unstable. Personalized PageRank runs for 20 iterations with damping factors 𝛼 =0.6 in Signal Grounding and 𝛼 =0.7 in Utility Linking; both values are lower than the conventional 0.85, which keeps the propagated relevance close to the task-related seeds. Both reciprocal-rank fusions use 𝜅 =60, the value recommended by Cormack et al. [8], and the code-mention prior 𝜋 (𝑢 ) adds 0.05 to the fused score of explicitly mentioned files, which places them ahead of the remaining candidates. The edge weights follow the priority order of the evidence tiers: 𝜔 import =1.0 (0.7 for indirect imports), 𝜔 symbol-ref =0.8, 𝜔 caller =0.5, and 
+
+𝜔 config =0.3. Utility Linking retains at most 12 dependency, 10 usage, and 10 configuration snippets, and Budget Shaping caps each section of the packed context, e.g., at 1,400, 420, 240, and 140 tokens for the target context and the dependency, usage, and configuration evidence under the 4K budget, and at 2,500, 1,200, 800, and 500 tokens under the 8K budget. 
+
+5 Experimental Results 5.1 RQ1: Accuracy Comparison 
+
+Table 1 reports the Pass@1 results on DevEval and RepoExec under 4K and 8K context budgets. Rivet achieves the highest Pass@1 in all 16 settings. On average, it improves over the strongest baseline by 5.15 and 4.36 percentage points on DevEval and by 3.73 and 4.65 percentage points on RepoExec under the 4K and 8K budgets, respectively. The improvement ranges from 0.29 percentage points (GPT-5-mini on RepoExec at 4K, where LLM Summarize is the strongest baseline) to 10.14 percentage points (DeepSeek-V3.2 on RepoExec at 4K). Paired bootstrap tests confirm that these gains are statistically significant: for each benchmark and budget, the 95% confidence interval of the Pass@1 difference excludes zero. Rivet: Utility-Preserving Context Control for Repository-Level Coding Agents 11 
+
+> Table 1. Pass@1 comparison on DevEval and RepoExec under 4K and 8K context budgets.
+
+Model Method DevEval RepoExec 4K 8K 4K 8K DeepSeek-V3.2 
+
+Target-Local 43.29 44.16 33.24 34.37 RAG 49.64 49.92 36.90 35.77 LLMLingua2 36.33 36.93 32.68 32.68 LLM Summarize 30.90 30.58 28.73 27.89 LongCodeZip 46.19 46.96 38.87 36.62 SWE-Pruner 52.66 53.42 35.49 37.18 InlineCoder 51.12 54.74 38.87 42.54 Hydra 31.45 37.10 34.93 36.34 
+
+Rivet 59.89 59.56 49.01 51.27 GPT-5-mini 
+
+Target-Local 53.59 52.49 39.72 40.00 RAG 58.08 58.08 45.35 43.38 LLMLingua2 49.04 48.11 37.46 37.18 LLM Summarize 41.04 43.01 49.01 49.30 LongCodeZip 55.34 55.95 45.35 47.61 SWE-Pruner 60.00 59.62 46.48 47.04 InlineCoder 60.27 64.38 44.79 49.58 Hydra 38.36 46.79 40.85 41.97 
+
+Rivet 64.93 66.25 49.30 53.52 Qwen3.5-397B-A17B 
+
+Target-Local 44.60 46.25 39.44 37.75 RAG 53.42 52.27 41.13 42.82 LLMLingua2 43.07 40.82 36.62 36.90 LLM Summarize 36.05 35.84 31.83 33.80 LongCodeZip 50.85 49.26 47.61 45.07 SWE-Pruner 56.22 54.30 45.35 44.51 InlineCoder 47.84 57.53 45.35 48.45 Hydra 33.70 44.33 40.28 42.54 
+
+Rivet 59.89 62.79 49.01 52.11 MiMo-V2.5 
+
+Target-Local 40.27 44.88 37.18 38.87 RAG 48.55 49.15 43.10 43.10 LLMLingua2 29.26 35.95 29.58 34.37 LLM Summarize 28.22 31.18 31.83 31.27 LongCodeZip 42.85 46.03 43.10 46.20 SWE-Pruner 52.82 54.36 40.56 41.69 InlineCoder 41.86 49.15 42.25 48.17 Hydra 35.01 40.55 34.93 40.56 
+
+Rivet 57.86 59.84 46.20 50.42 
+
+Table 1 also reveals why the baselines fall short. First, the target location alone is not enough: Target-Local, which receives the ground-truth target location, trails Rivet by 9.02–17.59 percentage points in every setting, indicating that much of the gain comes from evidence beyond the target file. Second, shortening code as plain text discards evidence: LLMLingua2 and LLM Summarize fall below RAG in 30 of the 32 comparisons (the exceptions are LLM Summarize with GPT-5-mini 12 Pan et al. DeepSeek-V3.2 GPT-5-mini Qwen3.5 MiMo-V2.5                                 
+
+> 40 45 50 55 60 65 70
+> Pass@1
+> 52.7 60.3 56.2 52.8 54.7 64.4 57.5 54.4 59.9 64.9 59.9 57.9
+> DevEval
+> DeepSeek-V3.2 GPT-5-mini Qwen3.5 MiMo-V2.5
+> 30 35 40 45 50 55
+> Pass@1
+> 38.9 49.0 47.6 43.1 42.5 49.6 48.5 48.2 49.0 49.3 49.0 46.2
+> RepoExec
+> Best baseline (4K) Best baseline (8K) Rivet (4K)
+> DeepSeek-V3.2 GPT-5-mini Qwen3.5 MiMo-V2.5
+> 40 45 50 55 60 65 70
+> Pass@1
+> 52.7 60.3 56.2 52.8 54.7 64.4 57.5 54.4 59.9 64.9 59.9 57.9
+> DevEval
+> DeepSeek-V3.2 GPT-5-mini Qwen3.5 MiMo-V2.5
+> 30 35 40 45 50 55
+> Pass@1
+> 38.9 49.0 47.6 43.1 42.5 49.6 48.5 48.2 49.0 49.3 49.0 46.2
+> RepoExec
+> Best baseline (4K) Best baseline (8K) Rivet (4K) DeepSeek-V3.2 GPT-5-mini Qwen3.5 MiMo-V2.5
+> 40 45 50 55 60 65 70
+> Pass@1
+> 52.7 60.3 56.2 52.8 54.7 64.4 57.5 54.4 59.9 64.9 59.9 57.9
+> DevEval
+> DeepSeek-V3.2 GPT-5-mini Qwen3.5 MiMo-V2.5
+> 30 35 40 45 50 55
+> Pass@1
+> 38.9 49.0 47.6 43.1 42.5 49.6 48.5 48.2 49.0 49.3 49.0 46.2
+> RepoExec
+
+Fig. 3. Context-budget scaling. For each setting, we compare the strongest non-Rivet baseline at the 4K and 8K budgets with Rivet at the 4K budget. With twice the budget, the strongest baseline exceeds Rivet in only two of the eight settings, both on RepoExec. 
+
+on RepoExec), suggesting that token-level pruning and free-form rewriting remove identifiers and signatures that the generated code depends on, whereas LongCodeZip, which compresses at function granularity, narrows this gap and matches or exceeds RAG on RepoExec in all eight settings. Third, no baseline is consistently second best: the strongest baseline alternates among InlineCoder, SWE-Pruner, LongCodeZip, LLM Summarize, and RAG across settings, whereas Rivet ranks first in all 16 settings. 
+
+Answer to RQ1: Rivet achieves the highest Pass@1 in all 16 settings, improving over the strongest baseline by 3.73–5.15 percentage points on average. It outperforms Target-Local, which is given the ground-truth target location, by at least 9.02 percentage points, indicating that the evidence collected beyond the target file is a major source of the gain. 
+
+5.2 RQ2: Cost-Effectiveness Analysis 
+
+RQ2 examines whether Rivet provides a more cost-effective way to improve repository-level code generation than simply increasing the context budget or using a stronger backbone model. We study two scaling strategies. Context-budget scaling increases the context budget for the strongest non-Rivet baseline, allowing the agent to receive more repository text under the same backbone model. Backbone-model scaling replaces the backbone with a stronger model under the standard Mini-SWE-Agent scaffold. For cost, we report the monetary cost of all recorded LLM calls, including prompt and generation tokens. Repository parsing and graph construction in Rivet are deterministic and involve no LLM calls, so they add no inference cost. 
+
+Context-budget scaling. This analysis reuses the RQ1 results and asks whether giving the strongest non-Rivet baseline twice the context budget can match Rivet. For each backbone model and benchmark, we compare the strongest non-Rivet baseline under the 4K and 8K budgets with Rivet under the 4K budget, as shown in Figure 3. Averaged over the eight model–benchmark settings, doubling the budget raises the strongest baseline from 50.07 to 52.47 Pass@1, which is still below the 54.51 that Rivet achieves with the 4K budget. On DevEval, Rivet under the 4K budget outperforms the strongest 8K baseline for all four backbone models. On RepoExec, Rivet under the 4K budget outperforms the strongest 8K baseline for DeepSeek-V3.2 and Qwen3.5-397B-A17B, and trails it by only 0.28 and 1.97 percentage points for GPT-5-mini and MiMo-V2.5, respectively. These results suggest that, under these budgets, which evidence enters the context matters more than how much context the agent receives. Rivet: Utility-Preserving Context Control for Repository-Level Coding Agents 13 
+
+> Table 2. Backbone-model scaling. Infer. Cost is the total LLM inference cost (USD) over all tasks of a benchmark, and Cost/Pass divides it by the number of passed tasks. Rivet uses the 4K budget.
+
+Dataset Setting Pass@1 Infer. Cost Cost/Pass 
+
+DevEval DeepSeek-V3.2 + Rivet 59.89 $1.4473 $0.0013 DeepSeek-V4-Pro + Mini-SWE-Agent 51.18 $1.3936 $0.0015 RepoExec DeepSeek-V3.2 + Rivet 49.01 $0.2462 $0.0014 DeepSeek-V4-Pro + Mini-SWE-Agent 44.23 $0.2493 $0.0016 DevEval GPT-5-mini + Rivet 64.93 $2.0799 $0.0018 GPT-5 + Mini-SWE-Agent 58.90 $7.7889 $0.0072 RepoExec GPT-5-mini + Rivet 49.30 $0.2095 $0.0012 GPT-5 + Mini-SWE-Agent 47.32 $1.3527 $0.0081 
+
+Backbone-model scaling. This analysis examines whether using Rivet with a cheaper backbone can provide a better accuracy–cost tradeoff than switching to a stronger backbone under the standard Mini-SWE-Agent scaffold. We compare two representative pairs: DeepSeek-V3.2 + Rivet versus DeepSeek-V4-Pro + Mini-SWE-Agent, and GPT-5-mini + Rivet versus GPT-5 + Mini-SWE-Agent. For each pair, Table 2 reports Pass@1, measured LLM inference cost, and inference cost per passed task. Table 2 shows that Rivet on cheaper backbones achieves a better Pass@1–inference-cost tradeoff than using stronger backbones with the standard Mini-SWE-Agent scaffold. For the DeepSeek pair, DeepSeek-V3.2 + Rivet improves Pass@1 by 8.71 percentage points on DevEval and 4.78 percentage points on RepoExec, while keeping inference cost comparable and reducing the cost per passed task. For the GPT pair, GPT-5-mini + Rivet outperforms GPT-5 + Mini-SWE-Agent by 6.03 percentage points on DevEval and 1.98 percentage points on RepoExec, while reducing inference cost by 73.3% and 84.5%, respectively. In both pairs, improving the repository context is a more cost-effective way to raise Pass@1 than upgrading the backbone. 
+
+Answer to RQ2: With a 4K budget, Rivet outperforms the strongest baseline given an 8K budget in six of the eight settings (54.51 vs. 52.47 Pass@1 on average). GPT-5-mini with Rivet outperforms GPT-5 while reducing inference cost by 73.3%–84.5%, and DeepSeek-V3.2 with Rivet outperforms DeepSeek-V4-Pro at comparable cost. 
+
+5.3 RQ3: Ablation Study 
+
+To assess the contribution of each stage, we construct three controlled ablated variants of Rivet. Each variant disables one stage while keeping the remaining stages and experimental settings unchanged. 
+
+1) w/o Signal Grounding replaces task-aware grounding with similarity-based retrieval, which selects snippets only by their similarity to the task description. 2) w/o Utility Linking keeps the grounded snippets but removes relation-based expansion, so it does not follow imports, symbol references, caller usages, or configuration relations to collect repository evidence. 3) w/o Budget Shaping keeps grounding and linking but removes tiered packaging and representation shaping, greedily adding evidence in relevance order until the token budget is exhausted. Table 3 reports the ablation results under the 4K context budget. Across all backbone models and datasets, Rivet consistently outperforms the three ablated variants. Removing Signal Grounding causes the largest performance drop, with an average Pass@1 decrease of 21.72 percentage points. This variant even falls below RAG in all eight settings (e.g., 31.01 vs. 49.64 for DeepSeek-V3.2 on 14 Pan et al. 
+
+> Table 3. Ablation study under the 4K context budget.
+
+Model Variant DevEval RepoExec GPT-5-mini 
+
+w/o Signal Grounding 43.89 30.70 w/o Utility Linking 48.05 35.49 w/o Budget Shaping 63.78 44.79 Full Rivet 64.93 49.30 DeepSeek-V3.2 
+
+w/o Signal Grounding 31.01 25.63 w/o Utility Linking 38.36 29.58 w/o Budget Shaping 55.62 40.56 Full Rivet 59.89 49.01 Qwen3.5-397B-A17B 
+
+w/o Signal Grounding 38.08 30.14 w/o Utility Linking 42.58 35.77 w/o Budget Shaping 58.68 47.89 Full Rivet 59.89 49.01 MiMo-V2.5 
+
+w/o Signal Grounding 34.14 28.73 w/o Utility Linking 38.58 32.96 w/o Budget Shaping 56.93 44.79 Full Rivet 57.86 46.20 
+
+DevEval). This suggests that the later stages amplify, rather than correct, grounding errors: when the anchors are wrong, Utility Linking expands from the wrong locations and fills the budget with evidence connected to irrelevant code. Removing Utility Linking also substantially reduces performance, with an average Pass@1 decrease of 16.84 percentage points. Without Utility Linking, the packed context contains the anchor files but none of the dependency, usage, and configuration evidence linked from them. That this variant falls below even Target-Local in all eight settings indicates that locating the relevant files is not sufficient by itself; the gain of Rivet comes from the evidence collected from them. Removing Budget Shaping leads to a smaller but consistent average Pass@1 decrease of 2.88 percentage points (0.93–8.45 across settings). This result suggests that tiered packaging and representation shaping further help preserve useful repository evidence under the token budget. To further investigate the contribution of different repository evidence types, we conduct a fine-grained ablation study of Utility Linking on DevEval and RepoExec under a representative experimental setting, using DeepSeek-V3.2 with a 4K context budget. Specifically, we construct three variants by independently disabling dependency, usage, and configuration relation-based expansion, respectively. All variants share the same task anchors produced by the complete Signal Grounding stage, while keeping the remaining components and experimental settings unchanged. This design isolates the contribution of each relation type within Utility Linking without introducing changes in anchor localization. Table 4 presents the results. On RepoExec, disabling dependency-, usage-, or configuration-based expansion reduces Pass@1 by 8.16, 10.14, and 8.16 percentage points, respectively, with usage evidence showing the largest effect. On DevEval, the corresponding drops are small (0.27, 0.38, and 0.49 percentage points, i.e., 5 to 9 of the 1,825 tasks), although removing all relations (w/o Utility Linking) costs 21.53 percentage points. This contrast suggests that on DevEval Rivet: Utility-Preserving Context Control for Repository-Level Coding Agents 15 
+
+the three relation types largely reach the same evidence, so the remaining types compensate for a disabled one, whereas on RepoExec each type contributes evidence that the others do not cover. 
+
+> Table 4. Fine-grained ablation of Utility Linking on DeepSeek-V3.2 under the 4K context budget.
+
+Variant DevEval RepoExec 
+
+w/o Dependency 59.62 40.85 w/o Usage 59.51 38.87 w/o Configuration 59.40 40.85 Full Rivet 59.89 49.01 Answer to RQ3: All three stages contribute to Rivet. Removing Signal Grounding or Utility Linking reduces Pass@1 by 21.72 and 16.84 percentage points on average, and Budget Shaping adds a smaller but consistent 2.88 percentage points. Within Utility Linking, the three relation types are complementary on RepoExec, where removing any one of them costs 8.16–10.14 percentage points, but largely overlap on DevEval. 
+
+6 Discussion 6.1 How Does Rivet Preserve Repository Evidence? 
+
+To show where the gain of Rivet comes from, Figure 4 walks through the RepoExec task cookiecutter:: get\_user\_config under the 4K budget. The requirement specifies a configuration-precedence rule, but the repository evidence needed to implement this rule is distributed across helper functions, default configuration objects, caller usages, and project configuration files. Signal Grounding first anchors the task at cookiecutter/config.py , the file that contains 
+
+get_user_config . From this anchor, Utility Linking follows a call relation to the get_config() 
+
+helper, which parses, merges, and expands configuration values, even though the requirement never mentions it. It further collects the DEFAULT_CONFIG object and the repository-specific 
+
+ConfigDoesNotExist exception through symbol references, the caller in main.py through us-age relations, and the PyYAML dependency declared in setup.cfg and pyproject.toml through configuration relations. The baseline contexts each miss a different part of this evidence. RAG fills the budget with the docstring, README, and documentation that share words with the request, but includes neither get_config() nor the default object and exceptions. LLM Summarize rewrites 
+
+config.py into a short summary of intent and loses the precedence rule and the distinction be-tween returning a copy and returning the global default. InlineCoder keeps the target and its caller lines in main.py , but not the helper semantics. Budget Shaping then fits all four kinds of evidence into the 4K budget by rendering lower-priority evidence, such as the caller and configuration files, as signatures or summaries instead of full snippets. With this context, the generated body delegates to get_config() and returns copy(DEFAULT_CONFIG) , following the precedence that the requirement specifies. With the baseline contexts, the model instead re-parses YAML inside 
+
+get_user_config , returns the global DEFAULT_CONFIG , or collapses the environment-variable and default-path cases. This case reflects the pattern in RQ1: the baseline contexts are relevant to the requirement, yet the evidence that decides how to implement it lies in code that the requirement never mentions. 16 Pan et al. 4K budget Task. Complete get_user_config(config_file=None, default_config=False) in cookiecutter/config.py — return the user config as a dict.          
+
+> Required precedence: default_config ▸config_file ▸$COOKIECUTTER_CONFIG ▸~/.cookiecutterrc ▸DEFAULT_CONFIG
+
+Rivet context anchor → evidence expansion  Baseline contexts relevance / compression / structure 
+
+get_user_config 
+
+> target anchor
+> config.py
+
+get_config(path)  
+
+> dependency ·delegate boundary: YAML
+> parse, merge & path expand …
+
+DEFAULT_CONFIG + exceptions  
+
+> dependency ·default object & repo-specific ConfigDoesNotExist …
+
+main.py  
+
+> usage ·consumes cookiecutters_dir, replay_dir , abbreviations …
+
+setup.cfg / pyproject.toml               
+
+> configuration ·PyYAML dependency, package import boundary
+> calls
+> uses
+> caller
+> config
+> RAG
+> relevance
+> keeps the docstring,
+> README , and docs sharing
+> words with the request.
+> ✗no get_config() ,defaults, exceptions
+> LLM Summarize
+> compression
+> rewrites config.py into a
+> short summary of intent.
+> ✗loses precedence & copy-vs-global default
+> Structure-only
+> pruning
+> retains the target and its
+> main.py caller lines.
+> ✗helper semantics not kept as typed evidence
+> Consequence: the model re-parses YAML inside get_user_config , returns the global DEFAULT_CONFIG , or collapses the env-var and default-path cases.
+> With Rivet's evidence: the body delegates to get_config() and returns
+> copy(DEFAULT_CONFIG) , following the precedence the requirement specifies.
+
+!
+
+A relevance-only context fills the budget with text that mentions user config, but drops the get_config() boundary, the default object, and the project's configuration constraints. Rivet anchors the target and expands along dependency, usage, and configuration relations, so the same budget carries the evidence that actually constrains the implementation. 
+
+Fig. 4. Qualitative case for the RepoExec task cookiecutter::get_user_config under a 4K budget, con-trasting the repository evidence retained by Rivet with that of relevance, compression, and structure-only baselines. Table 5. Contribution of graph-based components on DeepSeek-V3.2 under the 4K budget. 
+
+Variant DevEval RepoExec 
+
+w/o Graph Ranking 59.62 41.41 w/o Structural Grounding 59.56 40.00 Dependency Edges Only 59.45 40.28 Full Rivet 59.89 49.01 
+
+6.2 How Do Graph Components Affect Rivet’s Performance? 
+
+Both the structural grounding signal and Utility Linking rely on statically extracted repository relations, which may miss dynamic behavior such as runtime imports or reflection [4]. Rivet does not rely on these relations alone: Signal Grounding fuses the structural signal with lexical and semantic signals, so missing edges can reduce the evidence that Utility Linking collects but cannot by themselves remove a file from the anchors. To examine this, we construct three variants on DeepSeek-V3.2 under the 4K budget. w/o Graph Ranking keeps evidence collection but removes the propagated relevance from Budget Shaping, ordering evidence by grounding relevance and tier alone. w/o Structural Grounding disables the structural channel in Signal Grounding while keeping the lexical and semantic signals. Dependency Edges Only restricts Utility Linking to import and symbol-reference relations, removing usage and configuration relations. As shown in Table 5, the graph components matter little on DevEval, where each variant loses at most 0.44 percentage points (8 of the 1,825 tasks), but substantially on RepoExec, where the drops range from 7.60 to 9.01 percentage points and removing the structural grounding signal has the largest effect. This pattern mirrors the fine-grained ablation in RQ3 and suggests that on RepoExec the graph contributes evidence that text similarity does not recover; restricting Utility Linking to import and symbol-reference relations alone already costs 8.73 percentage points. This ablation measures how much the graph contributes, not how robust Rivet is to wrong or missing edges; we leave a controlled study of edge noise to future work. Rivet: Utility-Preserving Context Control for Repository-Level Coding Agents 17 
+
+6.3 How Accurately Does Signal Grounding Localize Target Files? 
+
+Signal Grounding provides the starting anchors for subsequent evidence expansion. To directly assess its localization quality, we measure whether the ground-truth target file appears among the top-ranked anchor files. The ground-truth target file is used only for this analysis and never for context construction. We report Target@ 𝑘 , defined as the percentage of tasks whose target file appears within the top-𝑘 ranked files, together with mean reciprocal rank (MRR), which reflects the overall ranking position of the target file. Table 6 reports the results. On DevEval, Signal Grounding identifies the target file at rank 1 for 90.36% of the tasks and within the top 5 for 97.97%, with an MRR of 0.939. The corresponding results on RepoExec are 98.59%, 99.44%, and 0.989, respectively. These results show that Signal Grounding provides reliable starting points for Utility Linking. This accuracy is partly expected, since benchmark requirements often name the target function explicitly and Rivet exploits such mentions (Section 3.1). Localization alone, however, does not explain the gains of Rivet: Target-Local, which is given the ground-truth location, still trails Rivet by 9.02–17.59 percentage points (RQ1). 
+
+> Table 6. File-level target localization performance of Signal Grounding.
+
+Dataset # Tasks Target@1 Target@5 MRR 
+
+DevEval 1,825 90.36% 97.97% 0.939 RepoExec 355 98.59% 99.44% 0.989 
+
+7 Threats to Validity 
+
+Generalizability. Our experiments focus on Python repositories, and our implementation relies on Python-specific parsing, import resolution, and execution environments. Only these front-end components are language-specific: the grounding signals, graph propagation, and budget packing operate on files, snippets, and typed relations, and apply to other languages once a parser extracts these relations. Validating Rivet on other languages is left to future work. 
+
+Task representativeness. DevEval and RepoExec provide executable and reproducible evalua-tion, but both focus on function-level generation within existing repositories. They do not cover multi-file changes such as feature addition and bug fixing, where locating the code to change is itself part of the task. Future work should further evaluate Rivet on broader benchmarks for issue resolution and feature evolution, such as SWE-Bench [16], FEA-Bench [21], and FeatBench [5]. 
+
+Comparison fairness. The compared methods were designed for different context-construction settings, including retrieval, compression, and structure-aware selection. To reduce confounding factors, all methods use the same task requirement, repository files, backbone model, prompt template, context budget, decoding strategy, agent scaffold, and execution environment. This protocol makes context construction the main controlled variable, although method-specific tuning could further improve individual baselines. 
+
+Hyperparameters. Rivet has several hyperparameters (Section 4.4), which we keep fixed across all benchmarks, models, and budgets rather than tuning them per setting; we do not study their sensitivity, so other values may change the absolute results. 
+
+Metric validity and data leakage. We use Pass@1 on official benchmark tests as the primary metric because it directly measures executable task success. However, passing tests does not guar-antee full semantic correctness. Public benchmarks may also have appeared in the pretraining data of large language models. This risk may affect absolute scores, but all methods are evaluated with 18 Pan et al. 
+
+the same backbone models and protocol, which reduces its impact on relative comparisons. During context construction, we use only task requirements and repository files; reference implementations, reference dependencies, benchmark tests, and the ground-truth target location are used only for evaluation and analysis. 
+
+8 Related Work 
+
+Retrieval and Compression for Code Context. A line of work controls repository context by selecting or shortening code before prompting LLMs. Retrieval-based methods select files, functions, or code snippets according to lexical or semantic similarity to the task requirement [19, 23, 28, 39]. Code search tools retrieve code by textual or structural similarity to a query [17, 25], and repository-level completion methods adapt such retrieval to cross-file context, for example by iterating retrieval with generation [39], deciding when to retrieve [37], learning what to retrieve [36], or following data flow [7]. Prompt compression methods reduce token usage by pruning low-importance tokens or rewriting retrieved repository content [15, 27]. Code-specific compression methods further exploit code granularity by selecting functions or blocks under a context budget [33]. These methods make repository context more relevant or compact, but they mainly optimize task similarity or context length. As a result, the selected context may still lack the repository evidence that the implementation depends on [11]. Moreover, LLMs do not use long contexts uniformly [22], so a longer context does not necessarily carry more useful evidence. Rivet also selects and compresses context, but it decides what to keep by following repository relations from the task location rather than by similarity to the requirement, and it compresses by lowering the representation level of each snippet rather than by pruning tokens. 
+
+Structure-aware Repository Context Construction. Another line of work uses repository structure or agent states to guide context construction. Structure-aware methods, such as In-lineCoder and Hydra, exploit repository relations to retrieve or inline context connected to the task [14, 18, 24, 30]. These methods build on a long line of work that represents programs as graphs of data and control dependencies or calls [1, 26, 32]. Other methods refine the context during generation, by pruning agent observations according to the current coding goal, as in SWE-Pruner [35], or by iteratively retrieving project context with compiler feedback [3]. These methods improve over pure text-based retrieval by incorporating structural or interaction signals. Rivet differs from them in three respects. First, it collects dependency, usage, and configuration evidence from the same anchors, whereas InlineCoder inlines callers and callees and Hydra retrieves dependencies and usage examples. Second, it treats the budget as a packing problem and lowers the representation level of each snippet before dropping it, rather than truncating or pruning context. Third, it constructs the context deterministically without LLM calls, whereas InlineCoder requires a draft generation and SWE-Pruner relies on a learned skimmer. 
+
+9 Conclusion 
+
+In this paper, we characterized context utility dilution, a failure mode in which the context given to a repository-level coding agent appears relevant to the task but lacks the repository evidence that the implementation depends on. Our key observation is that much of this evidence is reachable from the code that the task touches through static repository relations. Based on this observation, we proposed Rivet, which locates task-related code anchors, follows dependency, usage, and configuration relations from them to collect evidence, and packs this evidence under the budget with a representation ladder. On DevEval and RepoExec with four backbone models, Rivet achieves the highest Pass@1 in all 16 settings and improves over the strongest baseline by 3.73–5.15 percentage points on average. With a 4K budget, it outperforms the strongest baseline given an 8K budget in six of the eight settings, and it enables GPT-5-mini to outperform GPT-5 at 73.3%–84.5% lower Rivet: Utility-Preserving Context Control for Repository-Level Coding Agents 19 
+
+inference cost. These results suggest that, under constrained budgets, which evidence enters the context matters more than how much context the agent receives. In future work, we plan to extend Rivet to other programming languages and to multi-file tasks such as issue resolution and feature implementation. 
+
+References 
+
+[1] Miltiadis Allamanis, Marc Brockschmidt, and Mahmoud Khademi. 2018. Learning to Represent Programs with Graphs. In The Sixth International Conference on Learning Representations (ICLR) .[2] Ramakrishna Bairi, Atharv Sonwane, Aditya Kanade, Vageesh D C, Arun Shankar Iyer, Suresh Parthasarathy, Sriram Rajamani, B. Ashok, and Shashank Shet. 2024. CodePlan: Repository-Level Coding using LLMs and Planning. 
+
+Proceedings of the ACM on Software Engineering 1, FSE (2024), 675–698. [3] Zhangqian Bi, Yao Wan, Zheng Wang, Hongyu Zhang, Batu Guan, Fangxin Lu, Zili Zhang, Yulei Sui, Hai Jin, and Xuanhua Shi. 2024. Iterative Refinement of Project-Level Code Context for Precise Code Generation with Compiler Feedback. In Findings of the Association for Computational Linguistics: ACL 2024 . 2336–2353. [4] Islem Bouzenia, Bajaj Piyush Krishan, and Michael Pradel. 2024. DyPyBench: A Benchmark of Executable Python Software. Proceedings of the ACM on Software Engineering 1, FSE (2024), 338–358. [5] Haorui Chen, Chengze Li, and Jia Li. 2025. FeatBench: Evaluating Coding Agents on Feature Implementation for Vibe Coding. arXiv preprint arXiv:2509.22237 (2025). [6] Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, Henrique Ponde de Oliveira Pinto, Jared Kaplan, Harri Edwards, Yuri Burda, Nicholas Joseph, Greg Brockman, et al. 2021. Evaluating Large Language Models Trained on Code. arXiv preprint arXiv:2107.03374 (2021). [7] Wei Cheng, Yuhan Wu, and Wei Hu. 2024. Dataflow-Guided Retrieval Augmentation for Repository-Level Code Completion. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) . 7957–7977. [8] Gordon V. Cormack, Charles L. A. Clarke, and Stefan Büttcher. 2009. Reciprocal Rank Fusion Outperforms Condorcet and Individual Rank Learning Methods. In Proceedings of the 32nd International ACM SIGIR Conference on Research and Development in Information Retrieval (SIGIR) . 758–759. [9] Scott Deerwester, Susan T. Dumais, George W. Furnas, Thomas K. Landauer, and Richard Harshman. 1990. Indexing by Latent Semantic Analysis. Journal of the American Society for Information Science 41, 6 (1990), 391–407. [10] Yangruibo Ding, Zijian Wang, Wasi Ahmad, Hantian Ding, Ming Tan, Nihal Jain, Murali Krishna Ramanathan, Ramesh Nallapati, Parminder Bhatia, Dan Roth, and Bing Xiang. 2023. CrossCodeEval: A Diverse and Multilingual Benchmark for Cross-File Code Completion. In Advances in Neural Information Processing Systems (Datasets and Benchmarks Track) , Vol. 36. [11] Wenchao Gu, Juntao Chen, Yanlin Wang, Tianyue Jiang, Xingzhe Li, Mingwei Liu, Xilin Liu, Yuchi Ma, and Zibin Zheng. 2025. What to Retrieve for Effective Retrieval-Augmented Code Generation? An Empirical Study and Beyond. 
+
+arXiv preprint arXiv:2503.20589 (2025). [12] Nam Le Hai, Dung Manh Nguyen, and Nghi D. Q. Bui. 2025. On the Impacts of Contexts on Repository-Level Code Generation. In Findings of the Association for Computational Linguistics: NAACL 2025 . 1496–1524. [13] Taher H. Haveliwala. 2002. Topic-Sensitive PageRank. In Proceedings of the 11th International Conference on World Wide Web (WWW) . 517–526. [14] Chao Hu, Wenhao Zeng, Yuling Shi, Beijun Shen, and Xiaodong Gu. 2026. In Line with Context: Repository-Level Code Generation via Context Inlining. Proceedings of the ACM on Software Engineering 3, FSE (2026), 1469–1491. [15] Huiqiang Jiang, Qianhui Wu, Chin-Yew Lin, Yuqing Yang, and Lili Qiu. 2023. LLMLingua: Compressing Prompts for Accelerated Inference of Large Language Models. In Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing (EMNLP) . 13358–13376. [16] Carlos E. Jimenez, John Yang, Alexander Wettig, Shunyu Yao, Kexin Pei, Ofir Press, and Karthik Narasimhan. 2024. SWE-bench: Can Language Models Resolve Real-World GitHub Issues?. In The Twelfth International Conference on Learning Representations (ICLR) .[17] Kisub Kim, Dongsun Kim, Tegawendé F. Bissyandé, Eunjong Choi, Li Li, Jacques Klein, and Yves Le Traon. 2018. FaCoY: A Code-to-Code Search Engine. In Proceedings of the 40th International Conference on Software Engineering (ICSE) . 946–957. [18] Minh Le-Anh, Huyen Nguyen, An Khanh Tran, Nam Le Hai, Linh Ngo Van, Nghi D. Q. Bui, and Bach Le. 2026. Do Not Treat Code as Natural Language: Implications for Repository-Level Code Generation and Beyond. Proceedings of the ACM on Software Engineering 3, FSE (2026), 366–389. [19] Patrick Lewis, Ethan Perez, Aleksandra Piktus, Fabio Petroni, Vladimir Karpukhin, Naman Goyal, Heinrich Küttler, Mike Lewis, Wen-tau Yih, Tim Rocktäschel, Sebastian Riedel, and Douwe Kiela. 2020. Retrieval-Augmented Generation 20 Pan et al. 
+
+for Knowledge-Intensive NLP Tasks. In Advances in Neural Information Processing Systems , Vol. 33. 9459–9474. [20] Jia Li, Ge Li, Yunfei Zhao, Yongmin Li, Huanyu Liu, Hao Zhu, Lecheng Wang, Kaibo Liu, Zheng Fang, Lanshen Wang, Jiazheng Ding, Xuanming Zhang, Yuqi Zhu, Yihong Dong, Zhi Jin, Binhua Li, Fei Huang, Yongbin Li, Bin Gu, and Mengfei Yang. 2024. DevEval: A Manually-Annotated Code Generation Benchmark Aligned with Real-World Code Repositories. In Findings of the Association for Computational Linguistics: ACL 2024 . 3603–3614. [21] Wei Li, Xin Zhang, Zhongxin Guo, Shaoguang Mao, Wen Luo, Guangyue Peng, Yangyu Huang, Houfeng Wang, and Scarlett Li. 2025. FEA-Bench: A Benchmark for Evaluating Repository-Level Code Generation for Feature Implementation. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) . 17160–17176. [22] Nelson F. Liu, Kevin Lin, John Hewitt, Ashwin Paranjape, Michele Bevilacqua, Fabio Petroni, and Percy Liang. 2024. Lost in the Middle: How Language Models Use Long Contexts. Transactions of the Association for Computational Linguistics 12 (2024), 157–173. [23] Tianyang Liu, Canwen Xu, and Julian McAuley. 2024. RepoBench: Benchmarking Repository-Level Code Auto-Completion Systems. In The Twelfth International Conference on Learning Representations (ICLR) .[24] Wei Liu, Ailun Yu, Daoguang Zan, Bo Shen, Wei Zhang, Haiyan Zhao, Zhi Jin, and Qianxiang Wang. 2024. GraphCoder: Enhancing Repository-Level Code Completion via Code Context Graph-Based Retrieval and Language Model. arXiv preprint arXiv:2406.07003 (2024). [25] Sifei Luan, Di Yang, Celeste Barnaby, Koushik Sen, and Satish Chandra. 2019. Aroma: Code Recommendation via Structural Code Search. Proceedings of the ACM on Programming Languages 3, OOPSLA (2019), 152:1–152:28. [26] Hoan Anh Nguyen, Tien N. Nguyen, Danny Dig, Son Nguyen, Hieu Tran, and Michael Hilton. 2019. Graph-Based Mining of In-the-Wild, Fine-Grained, Semantic Code Change Patterns. In Proceedings of the IEEE/ACM 41st International Conference on Software Engineering (ICSE) . 819–830. [27] Zhuoshi Pan, Qianhui Wu, Huiqiang Jiang, Menglin Xia, Xufang Luo, Jue Zhang, Qingwei Lin, Victor Rühle, Yuqing Yang, Chin-Yew Lin, H. Vicky Zhao, Lili Qiu, and Dongmei Zhang. 2024. LLMLingua-2: Data Distillation for Efficient and Faithful Task-Agnostic Prompt Compression. In Findings of the Association for Computational Linguistics: ACL 2024 . 963–981. [28] Md Rizwan Parvez, Wasi Ahmad, Saikat Chakraborty, Baishakhi Ray, and Kai-Wei Chang. 2021. Retrieval Augmented Code Generation and Summarization. In Findings of the Association for Computational Linguistics: EMNLP 2021 .2719–2734. [29] Yun Peng, Ruida Hu, Ruoke Wang, Cuiyun Gao, Shuqing Li, and Michael R. Lyu. 2024. Less is More? An Empirical Study on Configuration Issues in Python PyPI Ecosystem. In Proceedings of the IEEE/ACM 46th International Conference on Software Engineering (ICSE) . 1–12. [30] Huy N. Phan, Hoang N. Phan, Tien N. Nguyen, and Nghi D. Q. Bui. 2025. RepoHyper: Search-Expand-Refine on Semantic Graphs for Repository-Level Code Completion. In Proceedings of the IEEE/ACM Second International Conference on AI Foundation Models and Software Engineering (FORGE) . 14–25. [31] Stephen Robertson and Hugo Zaragoza. 2009. The Probabilistic Relevance Framework: BM25 and Beyond. Foundations and Trends in Information Retrieval 3, 4 (2009), 333–389. [32] Vitalis Salis, Thodoris Sotiropoulos, Panos Louridas, Diomidis Spinellis, and Dimitris Mitropoulos. 2021. PyCG: Practical Call Graph Generation in Python. In Proceedings of the IEEE/ACM 43rd International Conference on Software Engineering (ICSE) . 1646–1657. [33] Yuling Shi, Yichun Qian, Hongyu Zhang, Beijun Shen, and Xiaodong Gu. 2025. LongCodeZip: Compress Long Context for Code Language Models. In Proceedings of the 40th IEEE/ACM International Conference on Automated Software Engineering (ASE) . 141–153. [34] Huiyan Wang, Shuguan Liu, Lingyu Zhang, and Chang Xu. 2023. Automatically Resolving Dependency-Conflict Building Failures via Behavior-Consistent Loosening of Library Version Constraints. In Proceedings of the 31st ACM Joint European Software Engineering Conference and Symposium on the Foundations of Software Engineering (ESEC/FSE) .198–210. [35] Yuhang Wang, Yuling Shi, Mo Yang, Rongrui Zhang, Shilin He, Heng Lian, Yuting Chen, Siyu Ye, Kai Cai, and Xiaodong Gu. 2026. SWE-Pruner: Self-Adaptive Context Pruning for Coding Agents. arXiv preprint arXiv:2601.16746 (2026). [36] Yanlin Wang, Yanli Wang, Daya Guo, Jiachi Chen, Ruikai Zhang, Yuchi Ma, and Zibin Zheng. 2025. RLCoder: Reinforcement Learning for Repository-Level Code Completion. In Proceedings of the IEEE/ACM 47th International Conference on Software Engineering (ICSE) . 1140–1152. [37] Di Wu, Wasi Uddin Ahmad, Dejiao Zhang, Murali Krishna Ramanathan, and Xiaofei Ma. 2024. Repoformer: Selective Retrieval for Repository-Level Code Completion. In Proceedings of the 41st International Conference on Machine Learning (ICML) (Proceedings of Machine Learning Research, Vol. 235) . 53270–53290. [38] John Yang, Carlos E. Jimenez, Alexander Wettig, Kilian Lieret, Shunyu Yao, Karthik Narasimhan, and Ofir Press. 2024. SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering. In Advances in Neural Information Rivet: Utility-Preserving Context Control for Repository-Level Coding Agents 21 
+
+Processing Systems , Vol. 37. 50528–50652. [39] Fengji Zhang, Bei Chen, Yue Zhang, Jacky Keung, Jin Liu, Daoguang Zan, Yi Mao, Jian-Guang Lou, and Weizhu Chen. 2023. RepoCoder: Repository-Level Code Completion Through Iterative Retrieval and Generation. In Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing (EMNLP) . 2471–2484. [40] Yuntong Zhang, Haifeng Ruan, Zhiyu Fan, and Abhik Roychoudhury. 2024. AutoCodeRover: Autonomous Program Improvement. In Proceedings of the 33rd ACM SIGSOFT International Symposium on Software Testing and Analysis (ISSTA) . 1592–1604.

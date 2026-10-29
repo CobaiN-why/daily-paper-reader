@@ -1,0 +1,560 @@
+Title: From Faulty Claims to Incorrect Patches: An Empirical Study of Task-Grounded Reasoning in Coding Agents
+
+URL Source: https://arxiv.org/pdf/2610.32338v1
+
+Published Time: Mon, 26 Oct 2026 00:44:24 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+# From Faulty Claims to Incorrect Patches: An Empirical Study of Task-Grounded Reasoning in Coding Agents 
+
+YOU WANG, Zhejiang University, China 
+
+JINJUN HUANG, Zhejiang University, China 
+
+ZHONGHAO JIANG, Zhejiang University, China 
+
+JIALUN CAO, The Hong Kong University of Science and Technology, Hong Kong 
+
+JIACHI CHEN, Zhejiang University, China 
+
+ZHONGXIN LIU ✉, Zhejiang University, China Large language model (LLM)-based coding agents increasingly resolve real-world software engineering tasks, yet they still fail on many of them. Prior trajectory studies characterize these failures through task-agnostic patterns of agent behavior, such as repeated actions. However, incorrect patches can also stem from task-specific errors: an agent may follow a sound workflow yet act on a faulty understanding of the existing code, the task requirements, or a candidate fix. Reasoning models, which power most state-of-the-art coding agents, reveal their understanding through their native chain-of-thought (CoT). The CoT thus serves as an artifact for analyzing whether agents understand the task correctly, by checking whether its claims about the task are consistent with the facts. Yet it remains unclear how many such checkable claims the CoT contains, how many of them are faulty, and whether faulty claims actually cause incorrect patches. We present the first empirical study of such claims, which we term task-grounded reasoning, analyzing 400 trajectories of four open-weight reasoning models on SWE-bench Pro. We extract atomic claims from the CoT with an LLM, assess them against evidence gathered by an LLM agent, and manually trace the defects of incorrect patches back to faulty claims, confirming each link with a claim-corrected replay. Our results show that task-grounded reasoning covers only 18.5% of the CoT tokens, yet yields 191 atomic claims per trajectory. At least 9.6% of these claims are faulty. Faulty claims also occur in 96.7% of the resolved trajectories, so their mere presence is a weak signal of failure. Yet two thirds of the 188 incorrect patches trace back to faulty claims. Correcting such a claim makes the agent fix the linked defect in 89.0% of the cases, and correcting all such claims resolves 11.7% of the failed tasks. Our findings show that the CoT carries task-specific signals for diagnosing and repairing agent failures, but exploiting them requires pinpointing the few faulty claims that actually cause patch defects. 
+
+ACM Reference Format: 
+
+You Wang, Jinjun Huang, Zhonghao Jiang, Jialun Cao, Jiachi Chen, and Zhongxin Liu. 2026. From Faulty Claims to Incorrect Patches: An Empirical Study of Task-Grounded Reasoning in Coding Agents. 1, 1 (October 2026), 21 pages. https://doi.org/10.1145/nnnnnnn.nnnnnnn 
+
+Authors’ Contact Information: You Wang, Zhejiang University, College of Computer Science and Technology and the State Key Laboratory of Blockchain and Data Security, Hangzhou, China, prinzywang@zju.edu.cn; Jinjun Huang, Zhejiang University, College of Computer Science and Technology and the State Key Laboratory of Blockchain and Data Security, Hangzhou, China, huanghuanghuang@zju.edu.cn; Zhonghao Jiang, Zhejiang University, College of Computer Science and Technology and the State Key Laboratory of Blockchain and Data Security, Hangzhou, China, zhonghao.j@zju.edu.cn; Jialun Cao, The Hong Kong University of Science and Technology, Department of Computer Science and Engineering, Hong Kong, Hong Kong, jialuncao@ust.hk; Jiachi Chen, Zhejiang University, College of Computer Science and Technology and the State Key Laboratory of Blockchain and Data Security, Hangzhou, China, chenjiachi@zju.edu.cn; Zhongxin Liu, Zhejiang University, College of Computer Science and Technology and the State Key Laboratory of Blockchain and Data Security, Hangzhou, China, liu_zx@zju.edu.cn. Permission to make digital or hard copies of all or part of this work for personal or classroom use is granted without fee provided that copies are not made or distributed for profit or commercial advantage and that copies bear this notice and the full citation on the first page. Copyrights for components of this work owned by others than the author(s) must be honored. Abstracting with credit is permitted. To copy otherwise, or republish, to post on servers or to redistribute to lists, requires prior specific permission and/or a fee. Request permissions from permissions@acm.org. © 2026 Copyright held by the owner/author(s). Publication rights licensed to ACM. ACM XXXX-XXXX/2026/10-ART https://doi.org/10.1145/nnnnnnn.nnnnnnn , Vol. 1, No. 1, Article . Publication date: October 2026. arXiv:2610.32338v1 [cs.SE] 23 Oct 2026 2 You Wang, Jinjun Huang, Zhonghao Jiang, Jialun Cao, Jiachi Chen, and Zhongxin Liu Traj-step-level analysis:                                
+
+> no failure pattern ✓reproduces the issue ✓edits the code ✓tests the fix Let me first reproduce the issue. The importer returns null for any card with VERSION:4.0 .
+> node repro.js →null
+> The mapping for ITEMn.EMAIL
+> already exists. So I only need to edit the ver-sion check.
+> sed -i ’...’ VCardImporter.ts
+> Version 4.0 must map EMAIL and
+> TEL as 3.0 does. Now let me run my tests.
+> node test.js →all pass
+> Task: import vCard 4.0 contacts, mapping fields such as EMAIL as for vCard 3.0.
+> CoT-claim-level analysis:
+> a faulty claim
+> task-grounded: supported faulty other reasoning action →output
+> Code: only ITEM1.EMAIL and
+> ITEM2.EMAIL are mapped.
+> Incorrect patch: e-mails in
+> ITEM3.EMAIL are dropped.
+> refutes leads to
+
+Fig. 1. No task-agnostic failure pattern occurs, yet a faulty claim in the CoT leads to an incorrect patch. 
+
+1 Introduction 
+
+Coding agents are increasingly capable of resolving real-world software engineering tasks[16, 41, 47] and now solve a large share of the issues in issue-solving benchmarks [10, 15, 17]. Yet they still fail on many of them, often silently, submitting plausible-looking patches that pass their own validation but do not implement the intended behavior [42]. Improving agents therefore requires understanding not only how often they fail, but how their issue resolution goes wrong. To understand how agents fail, prior studies analyze their trajectories through properties such as action patterns and the semantic coherence among thoughts, actions, and observations [6, 25], identifying failure patterns such as repeated actions or untested fixes. Such patterns are task-agnostic : they describe how an agent behaves, independent of what the task requires. Yet an agent may follow an exemplary workflow free of such patterns and still produce an incorrect patch by acting on a faulty task understanding , such as an incorrect belief about how the existing code behaves, what the task requires, or how the requirements can be realized. Detecting such failures requires checking this understanding against the task itself. An agent’s task understanding is not directly observable, but reasoning models, which power most state-of-the-art coding agents [1, 28], expose an observable proxy: their native chain of thought (CoT). Unlike the brief thoughts that agent frameworks record alongside actions [9, 44], the CoT contains extensive analysis of how the agent interprets the issue, what it believes the code does, and why it chooses a particular fix. Prior work shows that models tend to externalize their reasoning in the CoT on tasks that require multi-step reasoning [18], and that the CoT reveals substantially more about agent behavior than actions alone [4, 13]. The CoT records what the agent explicitly states about the task, making it a natural artifact for studying task understanding. To study task understanding, we focus on the claims the CoT makes about the task: how the original implementation behaves, where it falls short of the task requirements, what the task specifically requires, and how a fix can meet those requirements. We refer to such content as 
+
+task-grounded reasoning . Its defining property is that it is checkable : whether a claim holds can be determined from available and authoritative evidence, such as the task statement, the repository at its base commit, and the documentation of the libraries it uses. Identifying errors in this reasoning can thus be framed as fact verification [32, 38]: we decompose task-grounded reasoning into atomic 
+
+reasoning units , each stating one claim, and call a unit refuted by evidence a faulty claim . For example, the agent in Figure 1 exhibits none of the task-agnostic failure patterns, yet submits an incorrect patch because its CoT claims that the code already maps every ITEMn.EMAIL field, whereas the code maps only the first two. Faulty claims thus enable task-specific diagnosis: a faulty claim pinpoints what the agent understands incorrectly, even when its behavior shows no sign of failure. However, whether faulty claims can help explain why agents produce incorrect patches remains an open question. First, it is unclear how much of the CoT meets the definition of task-grounded 
+
+, Vol. 1, No. 1, Article . Publication date: October 2026. From Faulty Claims to Incorrect Patches: An Empirical Study of Task-Grounded Reasoning in Coding Agents 3
+
+reasoning and how often faulty claims occur in it, which determines whether the CoT offers a basis for diagnosis at all. Second, even if they do occur, it is unclear whether they are actually linked to a patch’s defects, since CoT is not necessarily a faithful account of what a model computes [3, 39]. Answering these questions reveals whether the extensive reasoning that agents produce can help explain and repair their failures. This paper presents the first empirical study of task-grounded reasoning in coding agents. We analyze 400 trajectories of four open-weight reasoning models from two model families, running in mini-swe-agent on 100 instances of SWE-bench Pro, and address three research questions: 
+
+• RQ1: How much of the reasoning of coding agents is task-grounded, and which aspects of the task do its claims describe? 
+
+• RQ2: How common are faulty claims, what do they get wrong, and how do they relate to the outcome of a task? 
+
+• RQ3: How many incorrect patches trace back to faulty claims, and does correcting these claims repair the patches? For RQ1, an LLM extracts the reasoning units from the CoT of each step and classifies them into four types. For RQ2, an LLM-based assessment agent gathers evidence from the original repository and library documentation to judge each unit as supported, refuted, or unresolved. The refuted units are the faulty claims. We manually check samples of both steps to estimate their accuracy. For RQ3, we locate the concrete defects of each incorrect patch via corrective edits that make it pass the validation tests while meeting the task requirements, search for faulty claims in the reasoning that these defects trace back to, and replay the trajectory with such a claim corrected right before submission to check whether the agent fixes the linked defect. Our study leads to the following key findings: 
+
+• Task-grounded reasoning covers only 18.5% of the CoT tokens, yet amounts to 191 checkable claims per trajectory. Newer models make about twice as many claims as their predecessors. 
+
+• At least 9.6% of the claims are faulty, and 97.8% of the trajectories contain at least one. Agents understand the task better than the code: 5.5% of the claims about the requirements are faulty, versus 13.5% about the original implementation and 14.7% about fix mechanisms. Rather than referring to nonexistent APIs or code, most faulty claims misstate how existing code behaves. 
+
+• The number of faulty claims is a weak indicator of failure: 96.7% of the resolved trajectories also contain faulty claims, which often do no harm because the agent recovers from them or its patch does not depend on them. Yet some faulty claims leave defects that the validation tests miss, yielding plausible but incorrect patches. 
+
+• Two-thirds of the incorrect patches (127 of 188) trace back to faulty claims, yet these claims account for only about one in 26 faulty claims in the failed trajectories. Correcting such a claim causes the agent to fix the linked defect in 89.0% of cases with a small revision, though only 11.5% resolve the task, as other defects remain or the tests miss the fixed behavior. These findings show that faulty claims are a substantial cause of incorrect patches, but their mere presence is a weak signal of failure. Precise diagnosis of failed trajectories thus calls for failure attribution tools that establish accurate causal links between faulty claims and patch defects. In summary, this paper contributes the following: 
+
+• Methodology. A claim-level methodology that combines LLM-based extraction and assessment of task-grounded reasoning with a manual tracing of patch defects to faulty claims, whose links are confirmed by claim-corrected trajectory replays. 
+
+• Empirical study. The first empirical study of task-grounded reasoning and its faulty claims across four reasoning models, from their prevalence to the patch defects they cause. 
+
+• Implications. Insights for using the reasoning of coding agents to diagnose, prioritize, and repair their failures, both at runtime and during training.                      
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026. 4You Wang, Jinjun Huang, Zhonghao Jiang, Jialun Cao, Jiachi Chen, and Zhongxin Liu
+> Table 1. Overview of the collected trajectories.
+> Model Release Date Resolved Total Steps Total Reasoning Tokens
+> DeepSeek-V3.2 2025-12-01 43/100 (43.0%) 8,834 1,219,334 DeepSeek-V4.1-Flash 2026-09-10 64/100 (64.0%) 6,825 4,616,470 Qwen3.6-27B 2026-04-22 44/100 (44.0%) 5,440 887,232 Qwen3.8-27B 2026-08-14 61/100 (61.0%) 6,902 3,190,453
+
+2 Methodology 2.1 Data Collection 
+
+We run mini-swe-agent [47] with four open-weight reasoning models, DeepSeek-V3.2 [20], DeepSeek-V4.1-Flash [45], Qwen3.6-27B [34], and Qwen3.8-27B [35], on SWE-bench Pro [10], and record the native CoT of each step along with its action and observation. Unlike prior trajectory studies, which compare different agents [6], we fix the scaffold and vary the model, since the CoT is pro-duced by the model and differences in reasoning are expected to arise mainly between models. We consider only open-weight models because commercial models typically do not expose their native CoT [2, 30]. We set the thinking budget of all models to 16,384 tokens per step to allow sufficient reasoning before each action. We sample 100 instances on which all four models terminate normally and submit a patch. This yields 400 trajectories with 28,001 steps in total (Table 1). 
+
+2.2 Task-Grounded Reasoning and Faulty Claims 
+
+Our analysis targets the native CoT that the model generates at each step of a trajectory. In this section, we first define which part of the CoT we study and the unit in which we analyze it, then classify these units into four types, and finally define the faulty claims among them. 
+
+Definition 2.1 (Task-grounded reasoning). Task-grounded reasoning is the part of the CoT that makes task-relevant claims whose truth can be objectively determined by evidence from authorita-tive sources such as the task statement, the original repository, and external knowledge (e.g., the API of a library). In addition to task-grounded reasoning, the CoT also plans edits, navigates the repository, and tracks the agent’s progress. Such content does not make checkable claims about the task and is therefore outside the scope of our study. We operationalize this definition as follows: a claim is task-grounded if it concerns the task to be solved and can be judged true or false without reference to the edits the agent has made. This criterion concerns whether a claim is checkable, not whether it is correct, so mistaken beliefs about the repository, misreadings of the task, and tentative conclusions all qualify. It excludes content without a substantive claim, such as editing intentions, open questions, navigation, and test or submission status. It also excludes claims about the agent’s own implementation, whose truth depends on the agent’s edits. 
+
+Definition 2.2 (Task-grounded reasoning unit). A task-grounded reasoning unit is the smallest self-contained proposition in task-grounded reasoning that can be independently judged true or false, retaining the details that the CoT attaches to it, such as its subject, conditions, and scope. For brevity, we refer to task-grounded reasoning units as reasoning units in the remainder of the paper. A reasoning unit need not coincide with a sentence: one sentence may contain several propositions, and one proposition may span several clauses. We classify each reasoning unit into one of four types according to its role in solving the task, as summarized in Table 2. Type O describes how the original implementation behaves, such as  
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026. From Faulty Claims to Incorrect Patches: An Empirical Study of Task-Grounded Reasoning in Coding Agents 5
+
+Table 2. Types of reasoning units.                 
+
+> Type Definition / Example
+> Original implementation (O)
+> Definition: A claim about how the original implementation, including the libraries it uses, behaves or is structured.
+> Example: “argparse ’s type parameter expects a callable that converts a string into a value of the desired type.” Implementation Gap (G)
+> Definition: A claim about where the original implementation falls short of the task requirements, such as missing functionality or the code responsible for a bug.
+> Example: “The current run method discards the wrapped function’s result, although it must return that result for both synchronous and asynchronous calls.” Semantic constraint (S)
+> Definition: A claim about what the task requires, such as the expected behavior, inputs and outputs, interfaces, or compatibility.
+> Example: “CommandParser must raise EmptyCommandError when no command is provided.” Fix mechanism (F)
+> Definition: A claim that a concrete mechanism, such as an algorithm or a data representation, satisfies a requirement or closes a gap.
+> Example: “Iterating through matching patterns in reverse insertion order gives precedence to the most recently added value.”
+
+what a function returns or how a module handles a given input. Type G describes where the original implementation falls short of the task requirements, such as which upstream functionality a requested feature still lacks or which code causes a reported bug; G claims are thus closely tied to locating the code to change. Type S describes what the task requires, such as expected behavior, interfaces, or compatibility constraints that a correct solution must satisfy. Type F claims that a concrete mechanism, such as an algorithm or a data representation, satisfies a requirement or closes a gap. Unlike an editing intention, which only states what the agent will do, an F claim asserts what a mechanism achieves, and can thus be checked against the requirement it addresses. The task-grounded reasoning in the CoT is not always correct. We define: 
+
+Definition 2.3 (Task-grounded faulty claim). A task-grounded faulty claim is a reasoning unit that is contradicted by evidence from the authoritative sources that determine the truth of task-grounded reasoning, concerning the same subject under the same conditions and scope. For brevity, we refer to task-grounded faulty claims as faulty claims . A claim is faulty only if the evidence contradicts it. A claim that the available sources neither confirm nor refute is not considered faulty. Faulty claims can occur in all four types, for example, an incorrect statement about the structure or behavior of the repository code or a library it uses, an incorrect localization or explanation of a bug, a misunderstanding of the specific behavior that the task requires, or a mechanism that does not achieve what it is claimed to achieve. 
+
+2.3 Extracting and Classifying Task-Grounded Reasoning 
+
+To address RQ1, we extract the reasoning units from the CoT for each step across the 400 trajectories and classify each unit into one of the four types. Because manually annotating all 28,001 steps is infeasible, we automate extraction and classification with an LLM and then manually check a sample of its output. We use GPT-5.6-Luna[29], with the reasoning effort set to xhigh , and process each step in a separate request. The prompt contains the definitions of Section 2.2 and two classification examples for each type. Besides the complete CoT of the step, each request contains the task statement and  
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026. 6You Wang, Jinjun Huang, Zhonghao Jiang, Jialun Cao, Jiachi Chen, and Zhongxin Liu
+
+the observations received since the previous step, which help the LLM resolve references to code and behavior. We do not provide the oracle patch or the test results, so that the LLM does not label claims in hindsight. Within a single request, the LLM identifies the task-grounded claims in the CoT, extracts them as units, and assigns each unit a type. For each unit, the LLM outputs a normalized statement of the claim, a verbatim quote from the CoT that supports it, its type, and any files it refers to. We check each quote against the CoT; if a quote does not match, we send the request again, up to one more time. To validate the automated results, two authors first independently annotate the same 10 steps and then discuss their disagreements to align their understanding of the definitions and types. Each of them then checks 150 randomly sampled steps with at least one extracted unit, 300 distinct steps in total, for units that do not meet the definition of a reasoning unit and units with incorrect types. We report the results of this check alongside those of RQ1. 
+
+2.4 Identifying Faulty Claims 
+
+To address RQ2, we assess each reasoning unit extracted in RQ1 and identify the faulty claims within it. Unlike classification, this assessment requires comparison with evidence that the CoT does not contain. We therefore automate the assessment with an LLM agent that gathers the evidence itself. To distinguish it from the coding agents under study, we call it the assessment agent .We build the assessment agent upon mini-swe-agent, using GPT-5.6-Luna as the underlying model, with the reasoning effort set to max . Each run assesses all units of one type from one step. For each unit, the agent receives its normalized claim, its quote, and the files it refers to, together with the task statement and the complete CoT for the step, which help the agent interpret the claims. The agent works in a fresh container with the original repository at the base commit of the task. It does not receive the observations of the trajectory, the generated patch, the oracle patch, or the test results, so that its judgment rests on the evidence it gathers rather than on the coding agent’s edits or the outcome of the trajectory. Four tools are available: a shell for inspecting the repository and running tests, a fetcher for the official documentation and upstream source of libraries, a citation tool that records the exact source excerpts the assessment relies on, and a submission tool. Besides the definition of faulty claims, the prompt gives instructions specific to each type: 
+
+• O: The agent traces the claimed structure or behavior through the relevant code. 
+
+• G: The agent compares the relevant original implementation with the requirement and checks whether it falls short where and how the claim states. 
+
+• S: The agent reconstructs the requirement from the task statement and looks for an input where the claimed requirement and the actual one yield different outcomes. 
+
+• F: The agent checks whether the mechanism achieves its claimed effect by looking for a coun-terexample under the conditions of the claim. For each unit, the agent compares the claim with the evidence it has gathered and, following the three verdicts of fact verification in FEVER [38], judges the claim as supported , refuted , or 
+
+unresolved (NotEnoughInfo in FEVER) if the evidence neither confirms nor refutes it. A unit is a faulty claim only if it is refuted. Every judgment comes with an explanation, and refuted and supported judgments must also cite evidence. We check that the submission contains exactly one assessment per unit and that every cited excerpt has been recorded; otherwise, the agent receives feedback and resubmits within the same run. To validate the automated results, we randomly sample 10 of the 100 instances and take the trajectories of all four models on them, 40 trajectories in total. Two authors first independently annotate the faulty claims in the same two trajectories and then discuss their disagreements to align their understanding of the definition of faulty claims and the error types. Each of them then checks all faulty claims identified in the trajectories of 5 instances for whether they are indeed  
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026. From Faulty Claims to Incorrect Patches: An Empirical Study of Task-Grounded Reasoning in Coding Agents 7
+
+Table 3. Error types of faulty claims.                                     
+
+> Error Type Definition / Example
+> Misreference
+> Definition: The claim refers to an object that does not exist or is not the intended one, such as a wrong identifier, file, endpoint, or code location.
+> Example: “The go-redis/v9 Options struct includes MaxConnIdleTime for configur-ing the maximum idle time for connections.” The field is named ConnMaxIdleTime .Misstatement
+> Definition: The claim refers to the right object in the right situation but misstates what the object does or must do.
+> Example: “The at() result for an index of NaN is 0.” NaN is converted to index 0, so
+> at() returns the first element. Omission
+> Definition: The claim holds for the cases it covers but leaves out other applicable cases, facts, or required work.
+> Example: “The cockroachdb implementation uses crdb only for Lock .”
+> SetVersion also calls crdb.ExecuteTx .Overgeneralization
+> Definition: The claim holds only under some conditions but is stated for a broader scope.
+> Example: “All quirks in _Quirk use the generated name and check quirk.name not in skip .” The Google Docs quirk sets the explicit name ua-googledocs instead.
+
+faulty. They further classify each confirmed faulty claim into one of the four error types in Table 3 according to how it is wrong. We do not check for missed faulty claims, because confirming every reasoning unit would require prohibitive manual effort. The precision measured in this check thus yields a lower-bound estimate of the number of faulty claims. We report the results of this check alongside those of RQ2. 
+
+2.5 Tracing Patch Defects to Faulty Claims 
+
+To address RQ3, we start with the incorrect patches in the unresolved trajectories, identify their concrete defects, and trace each defect back to faulty claims in the reasoning. We then correct these claims during the trajectory and check whether the patch improves accordingly. We divide the unresolved trajectories between two authors, who analyze them as follows. 
+
+Locating patch defects. For each unresolved trajectory, each of the two authors examines the incorrect patch and the report of the failed tests, and constructs an edit that, applied on top of the incorrect patch, makes it pass all validation tests while meeting the specific requirements of the task statement. We call this edit the corrective patch ; it captures why the incorrect patch fails. 
+
+Identifying key faulty claims. Guided by the corrective patch, each author reads through the complete CoT of the trajectory and identifies the reasoning units in it that are faulty claims related to a defect in the patch. A faulty claim is related to a defect if, had the claim been corrected, the agent would have had a chance to generate a patch without that defect. We call such claims key faulty claims . Because the tasks in SWE-bench Pro are complex, the generated patches often span hundreds of lines [10], and an incorrect patch may contain multiple defects. A key faulty claim is thus usually related to only some of them and accounts for only part of the corrective patch. We record this part as the targeted fix of the claim. We search all reasoning units rather than only the faulty claims identified in RQ2 because the automated assessment may miss faulty claims, and this step aims for the highest possible recall. Manual effort remains affordable because we only look for faulty claims related to patch defects, rather than all faulty claims in the trajectory. This also allows us to report the recall of the automated assessment in RQ2 on the key faulty claims. 
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026.
+
+8 You Wang, Jinjun Huang, Zhonghao Jiang, Jialun Cao, Jiachi Chen, and Zhongxin Liu DeepSeek V3.2 DeepSeek V4.1-Flash Qwen3.6 27B Qwen3.8 27B Overall mean    
+
+> 020 40 60 80 100
+> Mean steps
+> 88.34
+> 26.83
+> 30.4% 68.25
+> 37.80
+> 55.4% 54.40
+> 17.15
+> 31.5% 69.02
+> 32.20
+> 46.7% 70.00
+> 28.50
+> 40.7%
+> (a) Steps per trajectory
+> With TGR Other steps
+> DeepSeek V3.2 DeepSeek V4.1-Flash Qwen3.6 27B Qwen3.8 27B Overall mean
+> 010k 20k 30k 40k 50k
+> Mean tokens
+> 12,193
+> 2,592
+> 21.3% 46,165
+> 6,685
+> 14.5% 8,872
+> 2,811
+> 31.7% 31,905
+> 6,283
+> 19.7% 24,784
+> 4,593
+> 18.5%
+> (b) CoT tokens per trajectory
+> TGR quotes Remaining CoT
+
+Fig. 2. Mean steps (a) and CoT tokens (b) per trajectory for each model and over all 400 trajectories, with the part containing task-grounded reasoning; percentages give its share of the bar. 
+
+Correcting key faulty claims. To confirm the link between a key faulty claim and the defect, we replay the unresolved trajectory up to the point right before its submission, send a user message that corrects the claim, and ask the agent to revise its patch accordingly and submit it again. We then compute the difference between the new patch and the original one. Each of the two authors who identified the claim compares this difference with the targeted fix and assesses whether it contains a change that fixes the same defect as the targeted fix, possibly implemented differently. If so, we consider the correction of the claim to fix the corresponding defect. Unlike prior work that replays a trajectory from the step where an error occurs [19, 40], we replay it up to the submission. The step of a faulty claim usually precedes the submission, often before the original patch is complete, so replaying from there may yield a final patch that differs too much from the original one to be compared with the targeted fix. Besides checking the targeted fixes, we run the validation tests on each new patch and report how many unresolved trajectories pass more validation tests or become resolved. We also perform one replay per trajectory that corrects all its key faulty claims in a single user message; for this replay, we report only these test outcomes. 
+
+3 Results 
+
+This section presents the results for the three research questions. We abbreviate Qwen3.6-27B and Qwen3.8-27B as Qwen3.6 and Qwen3.8, and task-grounded reasoning as TGR in figures. 
+
+3.1 RQ1: Task-Grounded Reasoning in the CoT 
+
+We first study how much of the CoT is task-grounded reasoning and which types of claims it contains. From the 400 trajectories, the extraction of Section 2.3 yields 76,537 reasoning units. On the 10 steps (143 units) that both authors annotate independently, their agreement is high (Cohen’s 
+
+𝜅 = 0.937). Of the 2,149 units in the 300 manually checked steps, 2,006 (93.3%) are correct; 62 (2.9%) are not reasoning units, and 81 (3.8%) have an incorrect type. To measure how much of the CoT text is task-grounded, we tokenize the CoT with the o200k_base tokenizer [31] and count a token as task-grounded if it is covered by the quote of at least one unit. 
+
+3.1.1 Prevalence of Task-Grounded Reasoning. 
+
+Task-grounded reasoning makes up less than a fifth of the CoT. Figure 2 shows the number of trajectory steps that contain task-grounded reasoning and the number of CoT tokens they cover. On average, a trajectory has 70.0 steps, 28.5 (40.7%) of which contain at least one reasoning unit, and 24,784 CoT tokens, of which the quotes of reasoning units cover 4,593 (18.5%). The agent thus 
+
+, Vol. 1, No. 1, Article . Publication date: October 2026. From Faulty Claims to Incorrect Patches: An Empirical Study of Task-Grounded Reasoning in Coding Agents 9DeepSeek V3.2 DeepSeek V4.1-Flash Qwen3.6 27B Qwen3.8 27B Overall mean                  
+
+> 050 100 150 200 250 300 350
+> Mean units
+> 59.3 44.0% 125.8 44.2% 35.0 29.2% 115.6 51.2% 83.9 43.9%
+> 3.3 2.4% 5.2 1.8% 5.5 4.6% 3.5 1.6% 4.4 2.3%
+> 37.7 27.9% 86.3 30.3% 59.2 49.4% 60.8 26.9% 61.0 31.9% 34.6 25.7% 67.4 23.7%
+> 20.2 16.9%
+> 46.0 20.4% 42.1 22.0%
+> 134.9 284.6 120.0 225.9 191.3
+> 5.03 7.53 7.00 7.01 6.71
+> Units per TGR-containing step
+> (a) Units per trajectory
+> 10 20 30 40 50 60 70 80 90
+> Relative position in trajectory (%)
+> 010 20 30 40
+> CoT quote token coverage (%)
+> (b) Coverage along the trajectory
+> O · Original implementation G · Implementation gap S · Semantic constraint F · Fix mechanism
+
+Fig. 3. Mean reasoning units per trajectory by type (a) and token coverage of each type along the trajectory, divided into ten bins by relative step position and averaged over the four models (b). 
+
+makes checkable claims about the task in two out of five steps, but these claims make up less than a fifth of what it writes; the rest of the CoT plans edits, navigates the repository, and tracks progress. Yet this small fraction contains 191.3 reasoning units per trajectory, 6.7 per step with task-grounded reasoning. 
+
+Newer models think longer, but task-grounded reasoning grows less. Within each model family, the newer model, which also resolves more tasks (Table 1), thinks much longer: DeepSeek-V4.1-Flash writes 3.79 times as many CoT tokens as DeepSeek-V3.2, and Qwen3.8 3.60 times as many as Qwen3.6. Task-grounded reasoning grows far less, by a factor of 2.58 and 2.24 in tokens and 2.11 and 1.88 in units, respectively. Put differently, only 12.0% of the additional CoT tokens of DeepSeek-V4.1-Flash and 15.1% of those of Qwen3.8 are task-grounded. The longer reasoning of the newer models therefore contains more claims about the task, but it is mostly devoted to other content, and task-grounded reasoning becomes sparser within it. 
+
+Finding 1: Task-grounded reasoning covers only 18.5% of the CoT tokens, yet amounts to 191 checkable claims per trajectory. Newer models think 3.6–3.8 × longer but make only about twice as many claims, so CoT length overstates how much an agent reasons about the task. 
+
+3.1.2 Types of Reasoning Units. 
+
+Task-grounded reasoning mostly describes the code and the requirements. Figure 3(a) breaks the reasoning units down by type. Across all trajectories, O accounts for 43.9% of the units, S for 31.9%, F for 22.0%, and G for only 2.3%. About three-quarters of the claims thus describe either how the original implementation behaves or what the task requires, whereas G claims are rare. This is expected, because a gap is the conclusion of comparing the original implementation with the requirements: a task typically has only a few such conclusions, whereas reaching and acting on each of them draws on many facts about the code and many details of the required behavior. 
+
+Newer models spend their additional claims differently. The composition of the claims also shows what the additional reasoning of the newer models is about. Qwen3.8 makes 105.9 more units per trajectory than Qwen3.6, 80.6 of which are O and 25.8 F, whereas the number of S units remains virtually unchanged (59.2 vs. 60.8). The drop in the S share from 49.4% to 26.9% does not mean that Qwen3.8 states fewer requirements; it states as many, but reasons about how the existing code behaves more than three times as much. DeepSeek-V4.1-Flash, in contrast, produces 149.8 more 
+
+, Vol. 1, No. 1, Article . Publication date: October 2026. 10 You Wang, Jinjun Huang, Zhonghao Jiang, Jialun Cao, Jiachi Chen, and Zhongxin Liu 
+
+units per trajectory than DeepSeek-V3.2, and the increase is distributed across O (+66.5), S (+48.6), and F (+32.8). Each of these types grows about twofold, so the composition of DeepSeek-V4.1-Flash’s claims hardly differs from that of DeepSeek-V3.2 (e.g., 44.2% vs. 44.0% O). 
+
+Mechanisms come early, requirements return at the end. Figure 3(b) shows how the types are distributed along a trajectory. Task-grounded reasoning is front-loaded: its token coverage peaks at 29.3% in the second tenth of the trajectory and declines to 11.9% in the last. Surprisingly, F claims are concentrated at the beginning rather than the end of a trajectory: in every model, 61.3–77.0% of the F units lie in the first half of the trajectory, compared with 51.9–65.2% of the units of all types, and 30–49 of the 100 trajectories already contain an F claim in their first tenth. Rather than working out a mechanism after exploring the code, agents sometimes take it from the task statement. For example, in navidrome-0488fb9 , Qwen3.6 states in step 1 of 63, before running any command, that it will “update Key() method to include the square parameter to prevent cache collisions”, closely following the requirement that cache keys include the new parameter. The rest of the trajectory is then spent implementing and checking such mechanisms. O claims, in contrast, stay at about 8–10% of the CoT tokens until 80% of the trajectory, as agents keep inspecting the code, and S claims, although they also decline, make up half of the task-grounded tokens in the last tenth (6.0% of 11.9%), when agents check their solution against the requirements before submitting it.  
+
+> Finding 2: O and S make up three-quarters of the claims, while G, the conclusion drawn from them, only 2.3%. Qwen3.8 spends 76% of its additional units on the original implementation, whereas DeepSeek-V4.1-Flash makes about twice as many claims across all types. Surprisingly, mechanisms are proposed early, sometimes taken from the task statement before the code is explored, whereas requirements make up half of the task-grounded reasoning at the end.
+
+3.2 RQ2: Faulty Claims in Task-Grounded Reasoning 
+
+We next study how many reasoning units are faulty claims, what these claims get wrong, and how they relate to the outcome of a trajectory. The assessment agent of Section 2.4 judges all 76,537 units: it supports 62,587 (81.8%), refutes 8,540 (11.2%), and neither supports nor refutes the remaining 5,410 (7.1%). We refer to the refuted units as the faulty claims and define the error rate of a group of units as the number of faulty claims divided by the number of units in the group. On the 45 faulty claims in the two trajectories that both authors annotate independently, their agreement is high (Cohen’s 𝜅 = 0.877). Of the 896 faulty claims identified by the assessment agent across the 40 sampled trajectories, our manual check (Section 2.4) confirms 773, yielding a precision of 86.3%. 
+
+3.2.1 Prevalence of Faulty Claims. 
+
+At least one in ten claims is faulty. The assessment agent refutes 8,540 of the 76,537 reasoning units (11.2%, Figure 4(a)). Discounting this rate by the precision of the manual check yields an estimated error rate of 9.6%; as we do not check for missed faulty claims, this is a lower-bound estimate. Faulty claims occur in 391 of the 400 trajectories (97.8%): every trajectory of DeepSeek-V3.2 contains at least one, and even Qwen3.6, the model with the fewest faulty claims, has them in 93 of its 100 trajectories. A trajectory contains 21.4 faulty claims on average (median 14). Faulty claims are therefore not confined to a few derailed runs, but a regular part of how the agents reason about a task. The manual check in Figure 4(b) shows that this prevalence does not stem from false positives of the assessment agent: each of the 40 sampled trajectories contains confirmed faulty claims, which make up 9.4% of their 8,215 units, close to the estimated 9.6%. 
+
+Stronger models do not make fewer faulty claims. The newer model of each family resolves considerably more tasks (Table 1), yet it makes more faulty claims than its predecessor. DeepSeek-V4.1-Flash has a lower error rate than DeepSeek-V3.2 (10.1% vs. 13.3%), but because it makes 2.11 
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026.
+
+From Faulty Claims to Incorrect Patches: An Empirical Study of Task-Grounded Reasoning in Coding Agents 11 V3.2 Flash Qwen3.6 Qwen3.8      
+
+> 05000 10000 15000 20000 25000 30000
+> Reasoning units (100 trajectories / model)
+> 13,486
+> 1,789 13.27%
+> 28,465
+> 2,865 10.06%
+> 11,998
+> 1,179 9.83%
+> 22,588
+> 2,707 11.98%
+> (a) Full population
+> Flagged faulty Not flagged
+> V3.2 Flash Qwen3.6 Qwen3.8
+> 050 100 150 200 250 300 350
+> Initially flagged claims (10 trajectories / model)
+> 200
+> 178 89.00%
+> 300
+> 241 80.33%
+> 124
+> 117 94.35%
+> 272
+> 237 87.13%
+> (b) Sample review
+> Confirmed Overturned
+
+Fig. 4. Faulty claims among all reasoning units (a) and their manual check in the 10 sampled trajectories per model (b). Percentages give the error rate (a) and the precision (b). V3.2 and Flash denote DeepSeek-V3.2 and DeepSeek-V4.1-Flash. DeepSeek V3.2 DeepSeek V4.1-Flash Qwen3.6 27B Qwen3.8 27B         
+
+> 0500 1000 1500 2000 2500 3000
+> Flagged faulty claims
+> 816 45.6% 1505 52.5% 448 38.0% 1749 64.6%
+> 38 2.1% 62 2.2% 81 6.9% 36 1.3%
+> 307 17.2% 431 15.0% 300 25.4% 294 10.9% 628 35.1% 867 30.3% 350 29.7% 628 23.2%
+> 1789 2865 1179 2707
+> (a) What the faulty claims concern
+> OGSF
+> DeepSeek V3.2 DeepSeek V4.1-Flash Qwen3.6 27B Qwen3.8 27B
+> 050 100 150 200 250
+> Confirmed faulty claims (sample)
+> 13 7.3% 28 11.6%
+> 12 10.3% 34 14.3% 99 55.6% 117 48.5% 59 50.4% 137 57.8%
+> 20 11.2%
+> 30 12.4%
+> 54.3%
+> 28 11.8% 46 25.8% 66 27.4% 41 35.0% 38 16.0%
+> 178 241 117 237
+> (b) Error forms (reviewed sample)
+> Misreference Misstatement Omission Overgeneralization
+> Misref. Misstmt. Omission Overgen.
+> O (n=446) G (n=28) S (n=110) F (n=189)
+> 72 16% 263 59% 24 5% 87 20% 14% 21 75% 14% 518% 44% 34 31% 23 21% 49 45% 10 5% 94 50% 35 19% 50 26%
+> (c) Error forms by reasoning type
+
+Fig. 5. Faulty claims by type among all reasoning units (a), confirmed faulty claims by error type in the sampled trajectories (b), and error types of the confirmed faulty claims of each type (c). Percentages are relative to the confirmed faulty claims of a model (b) or of a type (c). 
+
+times as many claims (Section 3.1), it ends up with 60% more faulty claims (2,865 vs. 1,789). Qwen3.8 does not even have a lower error rate: it makes 1.88 times as many claims as Qwen3.6 but 2.30 times as many faulty claims, and its error rate rises from 9.8% to 12.0%. The longer reasoning of the newer models observed in RQ1 thus contains not only more claims about the task, but also more wrong ones. More faulty claims, however, do not necessarily indicate less reliable reasoning. Rather, the newer models may reason more deeply about the task, e.g., about how the code behaves on more complex inputs, and such questions are harder to answer correctly. Qwen3.8, for example, spends most of its additional claims on the original implementation (Section 3.1), one of the most error-prone types (Section 3.2.2). This shift alone accounts for most of the rise in its error rate from 9.8% to 12.0%: even if each type were as often wrong as for Qwen3.6, Qwen3.8 would reach 11.7%. 
+
+Finding 3: At least about one in ten reasoning units (an estimated 9.6%) is a faulty claim, 97.8% of the trajectories contain at least one, and the manual check confirms 86.3% of the sampled faulty claims. The newer models resolve more tasks but make 60% (DeepSeek) and 130% (Qwen) more faulty claims than their predecessors, possibly because they reason more deeply and thus about harder questions, rather than because their reasoning is less reliable. 
+
+, Vol. 1, No. 1, Article . Publication date: October 2026. 12 You Wang, Jinjun Huang, Zhonghao Jiang, Jialun Cao, Jiachi Chen, and Zhongxin Liu 
+
+3.2.2 What Faulty Claims Get Wrong. 
+
+Agents understand the task better than the code. Figure 5(a) shows that four in five faulty claims concern the original implementation (O) or a fix mechanism (F). This is not only because the agents make many such claims: O and F claims are also more than twice as likely to be wrong as S claims (13.5% and 14.7% vs. 5.5%). S claims have the lowest error rate in every model (4.8–8.1%, vs. at least 10.2% for the other types) and are thus the most reliable type. The difference lies in where the answer comes from. An S claim can usually be read off the task statement, which in SWE-bench Pro spells out the required behavior in detail. An O claim, in contrast, must be inferred from code that the agent has read only in part, and an F claim predicts the behavior of code that does not even exist yet. The agents thus rarely misunderstand what they are asked to do, but often misunderstand how the code works and what their changes will do. 
+
+Agents misunderstand real objects rather than invent them. Figure 5(b) shows how the confirmed faulty claims are wrong. Misstatements are by far the most common error type (53.3%), followed by Overgeneralizations (24.7%), whereas Misreferences (11.3%) and Omissions (10.7%) are rare. Misstatement is the largest error type for every model. Only about one in nine faulty claims thus refers to a wrong or nonexistent object, the kind of error commonly associated with hallucination in code generation [21]. Working in the repository, the agents can look up identifiers and mostly name the right functions, fields, and files; what they get wrong is how these objects behave and interact. Such errors are harder to spot than a wrong name: every object that the claim mentions exists, so the claim looks plausible, and only tracing the code reveals that it is wrong. 
+
+Requirements are wrong in scope, code in behavior. Figure 5(c) shows how a claim is wrong depends on what it is about. By far the most common combination is a claim about the original implementation that misstates what the code does: it accounts for 59.0% of the O errors and for a third of all confirmed faulty claims. Such a claim can silently undermine a patch that is otherwise correct. In flipt-492cc0b , DeepSeek-V3.2 adds a validate method to the Redis configuration and claims that “the config loading will call validate on RedisCacheConfig because it has a validate method”. The loader, however, only validates the top-level configuration sections, so the method is never called, and the patch accepts the invalid Redis settings that the task requires it to reject. Faulty requirements, in contrast, are mostly wrong in scope: two-thirds of the S errors are Overgeneralizations or Omissions, i.e., the agent understands what a requirement demands, but applies it to more or fewer cases than the task intends. Faulty mechanisms show both kinds of error in about equal parts.  
+
+> Finding 4: Agents understand the task better than the code: 13.5% of the O and 14.7% of the F claims are faulty, whereas only 5.5% of the S claims are faulty. Only 11.3% of the confirmed faulty claims refer to a wrong object; most get real objects wrong. The most common error, a third of all confirmed faulty claims, misstates how the original implementation behaves. Faulty requirements are mostly wrong in scope.
+
+3.2.3 Faulty Claims and Task Outcomes. 
+
+Unresolved trajectories contain more faulty claims, but only a slightly higher error rate. Figure 6(a) shows that in all four models, unresolved trajectories contain more faulty claims than resolved ones (25.2 vs. 17.9 on average), mostly because they contain more claims overall: for DeepSeek-V4.1-Flash, for example, they contain 1.97 times as many faulty claims, but also 1.62 times as many units. Each claim is thus only slightly more likely to be wrong in an unresolved trajectory (Figure 6(b)): the error rate is higher in every model, but only by 0.9–2.1 percentage points, and on the 38 tasks that some models resolve and others do not, by 1.9 percentage points on average, which is not statistically significant (95% bootstrap interval −0.2 to 4 .0). The number of faulty claims in a trajectory is therefore a weak indicator of failure, as it largely reflects how much the agent reasons.  
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026. From Faulty Claims to Incorrect Patches: An Empirical Study of Task-Grounded Reasoning in Coding Agents 13 V3.2 (43/57) Flash (64/36) Qwen3.6 (44/56) Qwen3.8 (61/39) 020 40 60 80 100 120
+> Faulty claims per trajectory
+> (a) Error count
+> Resolved Unresolved
+> V3.2 (43/57) Flash (64/36) Qwen3.6 (44/56) Qwen3.8 (61/39) 0510 15 20 25 30 35 40
+> Faulty claims / units (%)
+> (b) Error density
+
+Fig. 6. Faulty claims (a) and error rate (b) per trajectory in resolved and unresolved trajectories. Diamonds give the mean (a) and the error rate over all units of the group (b); numbers below the models give the resolved/unresolved trajectories. 
+
+Not all faulty claims lead to incorrect patches. Faulty claims are common even in resolved tra-jectories: 205 of the 212 (96.7%) contain at least one, and the two trajectories with the most faulty claims in our data (128 each) both resolve their tasks. We identify two reasons why a faulty claim may not lead to an incorrect patch: 
+
+(1) The agent recovers from the claim. Evidence that the agent obtains later, from the repository or from execution, may contradict the claim before the patch builds on it. In element-web-a692fe2 ,DeepSeek-V3.2 claims that cli.getCapabilities() is “likely what we need to check server-side policy”, but reading the existing tests in the next step, it finds the dedicated method and uses that instead. In qutebrowser-46e6839 , Qwen3.8 wrongly assumes that Qt’s QVersionNumber pads missing segments with zeros, so that 5.4 equals 5.4.0 , but when a check of its own fails, it corrects the assumption. Recovery prevents the defect, but may cost several steps. 
+
+(2) The patch does not depend on the claim. A claim may be wrong only about code that the patch does not rely on. In qutebrowser-5e0d6dc , DeepSeek-V4.1-Flash claims that “all quirks in _Quirk 
+
+use generated name”, which the existing Google Docs quirk contradicts. The new quirk it adds does use a generated name, however, so the patch handles it correctly. 
+
+Resolved patches may still be incorrect. Conversely, a resolved trajectory does not guarantee that its faulty claims are harmless. A faulty claim may introduce a defect that the validation tests do not cover, so that the agent submits a plausible patch, i.e., one that passes the tests but is incorrect [42]. In qutebrowser-a84ecfb , Qwen3.8 reasons that “the requirements only ask that 
+
+CommandParser accepts the argument” and leaves its command suggestions disabled by default; the missing behavior is covered only by an end-to-end test that the evaluation harness does not run. In qutebrowser-5e0d6dc , DeepSeek-V4.1-Flash keeps an assignment in its Array.prototype.at 
+
+polyfill that makes the method visible to for...in loops over arrays, because “tests won’t check”. In both cases, the agent narrows the task to what it expects to be tested, and the faulty claim behind the defect is stated explicitly in the reasoning, although the test results do not reveal it. 
+
+Finding 5: The number of faulty claims is a weak indicator of failure: unresolved trajectories contain more faulty claims mainly because they contain more claims, not because their claims are more often wrong. 96.7% of the resolved trajectories also contain faulty claims, which often do no harm because the agent later recovers from them or the patch does not rely on them. Yet some faulty claims leave defects that the evaluation tests miss, yielding plausible but incorrect patches.  
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026. 14 You Wang, Jinjun Huang, Zhonghao Jiang, Jialun Cao, Jiachi Chen, and Zhongxin Liu
+
+Table 4. Outcomes of correcting key faulty claims, per unresolved trajectory with all its key faulty claims corrected (left) and per key faulty claim corrected separately (right). Percentages are relative to the first column of each half. V3.2 and Flash denote DeepSeek-V3.2 and DeepSeek-V4.1-Flash.                                                  
+
+> Unresolved trajectories Key faulty claims Model Total w/ key claim More tests passed Resolved Total Defect fixed More tests passed Resolved
+> V3.2 57 44 (77.2%) 13 (22.8%) 9 (15.8%) 61 47 (77.0%) 11 (18.0%) 8 (13.1%) Flash 36 24 (66.7%) 5 (13.9%) 4 (11.1%) 34 34 (100%) 5 (14.7%) 4 (11.8%) Qwen3.6 56 32 (57.1%) 12 (21.4%) 6 (10.7%) 47 41 (87.2%) 11 (23.4%) 6 (12.8%) Qwen3.8 39 27 (69.2%) 7 (17.9%) 3 (7.7%) 40 40 (100%) 7 (17.5%) 3 (7.5%) Total 188 127 (67.6%) 37 (19.7%) 22 (11.7%) 182 162 (89.0%) 34 (18.7%) 21 (11.5%)
+
+3.3 RQ3: From Faulty Claims to Patch Defects 
+
+Finally, we study how many patches that fail the validation tests trace back to faulty claims and whether correcting these claims repairs the patches. Following Section 2.5, we analyze the 188 unresolved trajectories, whose failing tests let us locate the defects of their patches, and replay them with their key faulty claims corrected. 
+
+3.3.1 Prevalence of Key Faulty Claims. 
+
+Two thirds of the failing patches trace back to key faulty claims. Table 4 shows that 127 of the 188 unresolved trajectories (67.6%) contain at least one key faulty claim, i.e., a faulty claim whose correction gives the agent a chance to avoid a defect in its patch. The share ranges from 57.1% for Qwen3.6 to 77.2% for DeepSeek-V3.2. Most of these trajectories contain a single key faulty claim (80), while 47 contain two to four, for a total of 182 key faulty claims. In the remaining 61 unresolved trajectories, we find no faulty claim directly linked to a patch defect, although such claims may still contribute to the failure indirectly. 
+
+Few faulty claims are directly linked to patch defects. Although a large proportion of the failing patches trace back to faulty claims, only a small fraction of the faulty claims directly lead to a defect. The assessment agent of RQ2 identifies 4,741 faulty claims in the unresolved trajectories, 25.2 per trajectory, but only 182 are key, about one per trajectory. The manually checked sample of RQ2 shows the same ratio: of the 452 confirmed faulty claims in its 20 unresolved trajectories, only 17 (3.8%) are key. The assessment agent refutes 17 of the 20 key faulty claims in these trajectories, so it detects most of them, but buries each among about 26 other faulty claims that are not directly linked to a defect. To verify an agent’s reasoning, detecting faulty claims is only half the problem; the other half is deciding which of them deserve the agent’s attention. 
+
+Faulty claims about the code, the requirements, and the fix all contribute to patch defects. Of the key faulty claims, 69 (37.9%) are O claims, 61 (33.5%) S, 50 (27.5%) F, and only 2 G (Figure 7(a)). O claims assume facts about the code and its dependencies that do not hold, e.g., that an API or a dependency version provides a feature, or that the existing code already handles part of the task. In navidrome-d21932b , for instance, DeepSeek-V3.2 assumes that the check isWritable 
+
+guards all playlist updates, but it guards only changes to the tracks, so the patch still lets other users overwrite the metadata of a public playlist. Many F claims take a mechanism that covers part of the required behavior as sufficient. In teleport-87a5935 , DeepSeek-V4.1-Flash detects an unreachable SQL Server by the substring “connection refused” and concludes that “the string check is sufficient”, but the driver reports timeouts as “unable to open tcp connection with host”, which the check misses. Although RQ2 found S claims to be the most reliable type, misread requirements lie behind a third of the defects that we trace to faulty claims. In NodeBB-0e07f3c , for example, DeepSeek-V4.1-Flash must reserve system tags for privileged users and decides in step 28: “Should                         
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026. From Faulty Claims to Incorrect Patches: An Empirical Study of Task-Grounded Reasoning in Coding Agents 15 OGSF
+> 010 20 30 40 50 60 70 Key faulty claims
+> 5749 8
+> n=69 n=2 845 5
+> n=61
+> 734 6
+> n=50
+> (a) By type 0% 25% 50% 75% 100%
+> All One per trajectory Several per trajectory
+> 21 13 129 19 n=182 12 654 8n=80 9775 11 n=102
+> (b) By key faulty claims in the trajectory
+> Resolved More tests passed Defect fixed only Defect not fixed
+
+Fig. 7. Outcome of correcting a single key faulty claim, as counts by the type of the claim (a) and as shares by the number of key faulty claims in its trajectory (b). Each tier excludes the tiers before it. 
+
+system tags be case-sensitive? Probably exact.” The repository, however, lowercases and trims every tag before storing it, so an ordinary user can still create the reserved tag locked by entering 
+
+LOCKED . A tentative guess about the requirement thus becomes a permission bypass in the patch. 
+
+Finding 6: Two-thirds of the failing patches (127/188) trace back to at least one key faulty claim, yet only about one in 26 faulty claims in unresolved trajectories is key. Key faulty claims concern the original implementation (37.9%), the requirements (33.5%), and the fix mechanism (27.5%); requirements thus account for a third, although agents get them wrong less often than any other type of claim. 
+
+3.3.2 Correcting Key Faulty Claims. 
+
+An example. Figure 8 traces one key faulty claim from the trajectory to the resolved task. In 
+
+ansible-a1569ea , DeepSeek-V4.1-Flash overgeneralizes that every failed iptables rule check must be followed by a chain-existence check, when this is only necessary for user-defined chains. The assessment agent of RQ2 refutes it with evidence from two sources: the iptables manual, whose filter table lists INPUT , FORWARD , and OUTPUT as built-in chains, and a test in an isolated kernel showing that -C alone suffices for a rule in OUTPUT . Our correction, sent right before submission, explains the distinction. The agent then revises its patch to skip the redundant check for built-in chains and resolves the task. 
+
+Test results undercount the repaired defects. Figure 7(b) summarizes the outcomes of correcting each of the 182 key faulty claims separately. In 162 of these replays (89.0%), the revised patch contains the targeted fix of the corrected claim, i.e., it fixes the defect linked to the claim. Yet only 34 (18.7%) pass more validation tests, and 21 (11.5%) resolve the task. In the other 129 replays that fix the defect, the fix does not show up in the test results. One reason is that the tests do not exercise the fixed behavior, as for the permission bypass in NodeBB-0e07f3c . Another reason is that other defects remain in the patch. In the 47 trajectories with several key faulty claims, 91 of the 102 single corrections fix the linked defect, but only 9 (8.8%) resolve the task, compared with 12 of 80 (15.0%) in trajectories with a single key faulty claim. This also shows that when all key faulty claims of these trajectories are corrected in one message, 19 of the 47 trajectories (40.4%) then pass more tests and 10 (21.3%) are resolved, whereas single corrections do so in only 16 and 9 of themin these trajectories are corrected in a single message, 19 of the 47 trajectories (40.4%) pass more tests and 10 (21.3%) are resolved, whereas single corrections do so for only 16 and 9 trajectories. That single corrections already resolve some of these trajectories suggests, again, that the tests miss the defects of their other key faulty claims. 
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026.
+
+16 You Wang, Jinjun Huang, Zhonghao Jiang, Jialun Cao, Jiachi Chen, and Zhongxin Liu Task: the Ansible iptables module should create chains as iptables -N does. The validation tests mock iptables 
+
+and check the exact sequence of calls, where -C checks whether a rule exists and -L whether a chain exists. 
+
+Original trajectory (76 steps) Replay with the corrected claim 
+
+Key faulty claim (step 49, type F) 
+
+“So we MUST check chain presence to see if chain exists; if exists, append rule. Therefore call -C then -L [. . . ]. Minimum two calls.” 
+
+Correction (right before the submission) 
+
+“For a known built-in chain in a valid table, a failed -C check establishes that the rule is absent without requiring -L ; retain chain-presence checks where an unknown custom chain must be validated or created.” Refuting evidence 
+
+Official iptables manual (TABLES): “[ filter ] contains the built-in chains INPUT , FORWARD , and OUTPUT ”. 
+
+Test in an isolated kernel: a rule in OUTPUT is checked by -C alone. 
+
+Why it is faulty: -L is needed only for user-defined chains. The agent even notes that “built-in chains [are] always present”, but only concludes that -L is harmless. 
+
+First step of the replay 
+
+“The feedback indicates built-in chains should not trigger an extra -L after a failed rule-presence check. [. . . ]” 
+
+Defect in the submitted patch   
+
+> rule_is_present = check_rule_present(...) # -C chain_is_present = rule_is_present or check_chain_present(...) # -L
+
+An extra -L follows every failed -C , also for built-in chains. The existing tests expect the same sequence, and the agent’s 14 own tests use only the custom chain FOOBAR , so all pass. 
+
+Revised patch (25 changed lines)      
+
+> +BUILTIN_CHAINS = {’filter’: [’INPUT’, +’FORWARD’, ’OUTPUT’], ...} chain_is_present = rule_is_present if not chain_is_present and should_be_present: +chain_is_builtin = args[’chain’] in +BUILTIN_CHAINS[args[’table’]] +chain_is_present = chain_is_builtin or +check_chain_present(...)
+
+Validation tests: 23/27 pass 
+
+Four tests observe one iptables call too many: 
+
+> test_append_rule
+
+: 3 calls instead of 2 
+
+> test_append_rule_check_mode
+
+: 2 calls instead of 1 
+
+> test_insert_rule_change_false
+
+: 2 calls instead of 1 
+
+> test_insert_rule
+
+: runs out of mocked responses 
+
+Validation tests: 27/27 pass (+4) 
+
+All four failing tests now pass, and no test is lost: the task is resolved .
+
+> refutes leads to correct
+
+Fig. 8. A key faulty claim of DeepSeek-V4.1-Flash in ansible-a1569ea (left) and the replay with the corrected claim (right). Code is abridged. 
+
+Agents act on corrections with small, focused edits. To produce the targeted fix, the agents do not rewrite their patches: after the correction, they take a median of 17 further steps, and the revised patch differs from the original one in a median of 13 lines, whereas the original patches change a median of 101 lines. The key faulty claims thus do not merely co-occur with the defects; they cause them, since the updated patch changes where and how the corrected claim says it should. The newer models follow corrections more reliably: DeepSeek-V4.1-Flash and Qwen3.8 produce the targeted fix in every replay, DeepSeek-V3.2 in 77.0% and Qwen3.6 in 87.2%. In about half of the 20 replays without the targeted fix, the agent leaves the defective code untouched, and in three of them, all by DeepSeek-V3.2, it resubmits the original patch unchanged. In the others, it acts on the correction but implements it incorrectly. In openlibrary-09865f5 , for instance, Qwen3.6 is told that the Infogami Thing class is serialized with its dict() method rather than a nonexistent to_dict() ; it replaces the call to to_dict() with dict(obj) , swapping one wrong API for another. 
+
+What remains unresolved. Of the 188 unresolved trajectories, 127 (67.6%) contain at least one key faulty claim. Correcting all their key faulty claims makes 37 of the 188 trajectories (19.7%) pass more validation tests and resolves 22 (11.7%) more (Table 4). Over the 100 tasks, this would raise the resolution rate from 53.0% to 58.5% on average across the four models. Most failing trajectories thus remain unresolved even after all their key faulty claims are corrected. One reason is that key faulty claims account for only part of the defects: in the 127 unresolved trajectories with such claims, their 
+
+, Vol. 1, No. 1, Article . Publication date: October 2026. From Faulty Claims to Incorrect Patches: An Empirical Study of Task-Grounded Reasoning in Coding Agents 17 
+
+targeted fixes make up only 40.1% of the lines changed by the corrective patch on average. The other 61 unresolved trajectories contain no key faulty claim at all. Some defects have no counterpart in the reasoning and arise only when the agent edits the code. In navidrome-66b74c81 , Qwen3.6 adds a new file to its patch by writing the diff by hand, but the hunk header declares 77 lines while the hunk contains 81, so the submitted file is truncated and the build fails, although the file compiled in the agent’s environment. In other cases, the agent reasons correctly but implements its conclusion incompletely. In openlibrary-25858f9f , DeepSeek-V3.2 moves the Solr helpers of 
+
+update_work.py into a new module and lists solr_update among the functions to move; it deletes the function from the old module and imports it from the new one, but never adds it there, so both test modules fail to import. Such defects leave no faulty claim in the reasoning. Nevertheless, key faulty claims appear to be a worthwhile target: they lie behind two-thirds of the failing patches, and a single message that corrects one of them fixes the linked defect in 89.0% of the replays with a small revision. Faulty claims thus explain a substantial part of agent failures, though not all; other defects appear to be introduced during editing, whether the reasoning overlooks them or is correct.  
+
+> Finding 7: Correcting a key faulty claim in a single message before submission makes the agent fix the linked defect in 89.0% of the cases with a median revision of 13 lines, confirming the causal link. Yet only 18.7% of the corrections pass more validation tests and 11.5% resolve the task, as other defects remain or the tests miss the fixed behavior. Correcting all such claims resolves 22 of the 188 unresolved trajectories: their targeted fixes make up only 40.1% of the lines changed by the corrective patch on average, and the remaining defects likely stem from edits that go beyond or depart from the reasoning.
+
+4 Discussion 4.1 Implications 
+
+Implications for Researchers. (1) Reasoning carries task-specific signals of failure. Where it is accessible, as for open-weight models, the native CoT can serve as an artifact for diagnosing, monitoring, and repairing coding agents. It could also supervise training: verified claims could provide process rewards denser than test outcomes. Exploiting the CoT also requires more than detecting faulty claims: since most never reach the patch, reporting all of them buries the few that matter. Signals for prioritization include whether the final patch still builds on a claim and whether later evidence revises it. Our key faulty claims, linked to their defects, can serve as ground truth for such prioritization. (2) Cover what the reasoning leaves out. In a third of the failing patches, no defect can be traced back to a faulty claim in the CoT. Some of their defects lie in edits that the reasoning never discusses, and some in edits that contradict its reasoning. Verifying stated claims cannot catch such defects. Future work can check the consistency between reasoning and edits, extending thought–action alignment [6] from single actions to the patch: tracing each hunk back to the reasoning that motivates it flags undisclosed edits, and tracing each conclusion forward to the patch flags edits that contradict or omit it. (3) Faulty claims profile model weaknesses. 
+
+Resolution rates show that an agent fails, but not which of its beliefs are wrong. Faulty claims reveal a consistent profile across models: agents most often misstate how existing code behaves or what their changes will do, and misread requirements less often, yet mostly in scope and behind a third of the key faulty claims. Post-training could thus target repository-level code comprehension, e.g., predicting the behavior of partially read code and the effect of an edit, and the scope of requirements, rather than only hallucinated APIs. 
+
+Implications for Practitioners. (1) Verify the claims a patch relies on. When using models whose CoT is visible, practitioners can verify the claims behind the hunks of a patch. This verification need not happen inside the agent: it can serve as a checkpoint before submission that returns  
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026. 18 You Wang, Jinjun Huang, Zhonghao Jiang, Jialun Cao, Jiachi Chen, and Zhongxin Liu
+
+a correction for each refuted claim to the agent, or as a post-processing step after submission, when users review a patch or when tools detect overfitting patches. Most faulty claims refer to the right objects but misstate their behavior or scope, so looking up identifiers is not enough. Instead, the verification should check that the code behaves as the agent describes it (e.g., with execution probes), that a proposed fix achieves the required behavior (e.g., with targeted tests), and that a stated requirement matches the task statement. (2) Capture anti-patterns in the reasoning. 
+
+Some statements in the reasoning reveal where a patch may go wrong. Hedged claims such as “Probably exact” mark what the agent is uncertain about but never checks, and statements such as “tests won’t check” reveal shortcuts that narrow the task to what the agent expects to be tested. Capturing such anti-patterns can flag patches for closer inspection, even when they pass all tests. 
+
+4.2 Limitations and Threats to Validity 
+
+Our study has several limitations. First, we do not check the recall of the assessment agent, since manually confirming all 76,537 reasoning units is prohibitive; the error rates of faulty claims are thus lower bounds. Yet the assessment agent refutes 150 of the 182 key faulty claims (82.4%) identified in RQ3, so it likely misses few of the faulty claims that matter for the patch. Second, due to the manual effort, we validate the automated extraction and assessment only on random samples of 300 steps and 40 trajectories. However, these samples cover all four models and exceed the sizes required for a 99% confidence level with a 5% margin of error, with 2,149 of the 76,537 units (660 required) and 896 of the 8,540 faulty claims (618 required). Third, we study only open-weight models in a single scaffold and benchmark, which may limit generalizability. However, commercial models typically hide their native CoT, whereas the CoT of open-weight models is accessible and can inform their training. Our models also span two families and two generations, and fixing the scaffold isolates the differences between models. Finally, we study neither how faulty claims depend on each other nor why the models make them. We focus on key faulty claims that are directly linked to patch defects and treat the models as black boxes, characterizing what faulty claims get wrong and how they affect the patch; both questions are left for future work. 
+
+5 Related Work 
+
+Empirical studies of agent trajectories. Bouzenia and Pradel [6] found that failed trajectories of software engineering agents exhibit anti-patterns such as repeated actions and untested fixes, and misalignment between thoughts and actions. Majgaonkar et al. [25] found that failed trajectories are longer and often still locate the right files. Other studies model trajectories as graphs of actions to reveal strategies and inefficiencies [22], identify behaviors that predict success [26], detect structural anti-patterns such as search loops [37], reveal passing trajectories of poor process quality [36], and trace agent workflows from localization to patch validation [7]. Closer to our work, Liu et al. [23] attributed most failures of agentic issue-solving tools to flawed reasoning, and Zhao et al. [49] found that most failures of CLI coding agents stem from epistemic errors such as acting on false premises. Beyond agents, studies of reasoning models in single-turn code generation categorize the behaviors in their reasoning [14] or rate the quality of reasoning steps [46]. Unlike these studies, which characterize how agents act, annotate a root cause per trajectory or step, or assess reasoning without checking its correctness, we verify whether individual claims in the reasoning of coding agents are correct and confirm their effect on the patch. 
+
+Failure localization in agent trajectories. Automated failure attribution aims to pinpoint the agent and the step responsible for a failed task. Zhang et al. [48] formulated this problem for LLM multi-agent systems, defining the decisive error as the earliest step whose correction turns the failure into success, and found that LLMs localize fewer than 15% of such steps. Subsequent techniques improve attribution with spectrum-based fault localization over repeated executions [12], hierarchical causal  
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026. From Faulty Claims to Incorrect Patches: An Empirical Study of Task-Grounded Reasoning in Coding Agents 19
+
+graphs [43], and constraints synthesized from tool schemas and domain policies [5]. DoVer [24] and AgentDebug [50] further intervene at the suspected step and re-execute the agent to validate the attribution or recover from the failure. MAST [8], TRAIL [11], and TrajDebug [33] provide failure taxonomies and annotated traces, partly from coding agents. For coding agents, CodeTracer [19] reconstructs hierarchical traces to localize the earliest failure-critical step, TrajAudit [40] guides an investigator agent with test-failure output to the decisive error step, and Wink [27] detects misbehaviors such as specification drift and injects course-correction guidance at runtime. These techniques localize failures to agents or steps, whereas we locate them in individual claims of the native CoT, which reveal what the agent misunderstands about the task. 
+
+6 Conclusion 
+
+This paper presents the first empirical study of task-grounded reasoning in coding agents, i.e., checkable claims in their native CoT about how the existing code behaves, where it falls short of the task, what the task requires, and how a fix meets those requirements. Analyzing 400 trajectories of four open-weight reasoning models on SWE-bench Pro, we find that task-grounded reasoning covers only 18.5% of CoT tokens, yet yields 191 claims per trajectory, at least 9.6% of which are faulty. Claims about code are more often faulty than those about requirements, and most faulty ones misstate how existing code behaves rather than referring to nonexistent code. Most resolved trajectories also contain faulty claims, so their mere presence is a weak signal of failure. Yet two-thirds of incorrect patches trace back to them, and correcting such a claim before submission makes the agent fix the linked defect in 89.0% of cases. Thus, the CoT carries task-specific signals for diagnosing and repairing agent failures, but exploiting them requires pinpointing the few faulty claims that patches depend on. Future work includes failure attribution that links faulty claims to patch defects, consistency checks between reasoning and edits, and verified claims as process rewards for training. 
+
+7 Data Availability 
+
+Our code and data are available: https://doi.org/10.5281/zenodo.23093905. 
+
+References           
+
+> [1] Anthropic. 2025. Claude Code. https://www.anthropic.com/news/claude-3-7-sonnet [2] Anthropic. 2026. Claude Fable 5 and Claude Mythos 5. https://www.anthropic.com/news/claude-fable-5-mythos-5 [3] Iván Arcuschin, Jett Janiak, Robert Krzyzanowski, Senthooran Rajamanoharan, Neel Nanda, and Arthur Conmy. 2026. Chain-of-Thought Reasoning In The Wild Is Not Always Faithful. In Proceedings of the 43rd International Conference on Machine Learning (ICML) . arXiv:2503.08679. [4] Bowen Baker, Joost Huizinga, Leo Gao, Zehao Dou, Melody Y. Guan, Aleksander Madry, Wojciech Zaremba, Jakub Pachocki, and David Farhi. 2025. Monitoring Reasoning Models for Misbehavior and the Risks of Promoting Obfuscation. arXiv:2503.11926 [cs.AI] [5] Shraddha Barke, Arnav Goyal, Alind Khare, Avaljot Singh, Suman Nath, and Chetan Bansal. 2026. AgentRx: Diagnosing AI Agent Failures from Execution Trajectories. arXiv preprint arXiv:2602.02475 (2026). [6] Islem Bouzenia and Michael Pradel. 2025. Understanding Software Engineering Agents: A Study of Thought-Action-Result Trajectories. In Proceedings of the 40th IEEE/ACM International Conference on Automated Software Engineering (ASE) . arXiv:2506.18824. [7] Ira Ceka, Hailie Mitchell, Saurabh Pujar, Luca Buratti, Shyam Ramji, Junfeng Yang, Gail Kaiser, and Baishakhi Ray. 2026. Understanding Automated Program Repair Agents Through the Lens of Traceability: An Empirical Study. In
+> Proceedings of the ACM SIGSOFT International Symposium on Software Testing and Analysis (ISSTA) . arXiv:2506.08311. [8] Mert Cemri, Melissa Z. Pan, Shuyi Yang, Lakshya A. Agrawal, Bhavya Chopra, Rishabh Tiwari, Kurt Keutzer, Aditya Parameswaran, Dan Klein, Kannan Ramchandran, Matei Zaharia, Joseph E. Gonzalez, and Ion Stoica. 2025. Why Do Multi-Agent LLM Systems Fail? arXiv preprint arXiv:2503.13657 (2025). [9] Zhi Chen, Wei Ma, and Lingxiao Jiang. 2026. Beyond final code: A process-oriented error analysis of software development agents in real-world github scenarios. In Proceedings of the 2026 IEEE/ACM 48th International Conference
+> , Vol. 1, No. 1, Article . Publication date: October 2026.
+
+20 You Wang, Jinjun Huang, Zhonghao Jiang, Jialun Cao, Jiachi Chen, and Zhongxin Liu 
+
+on Software Engineering . 1532–1544. [10] Xiang Deng, Jeff Da, Edwin Pan, Yannis Yiming He, Charles Ide, Kanak Garg, Niklas Lauffer, Andrew Park, Nitin Pasari, Chetan Rane, et al. 2025. Swe-bench pro: Can ai agents solve long-horizon software engineering tasks? arXiv preprint arXiv:2509.16941 (2025). [11] Darshan Deshpande, Varun Gangal, Hersh Mehta, Jitin Krishnan, Anand Kannappan, and Rebecca Qian. 2025. TRAIL: Trace Reasoning and Agentic Issue Localization. arXiv preprint arXiv:2505.08638 (2025). [12] Yu Ge, Linna Xie, Zhong Li, Yu Pei, and Tian Zhang. 2026. Spectrum-Based Failure Attribution for Multi-agent Systems. 
+
+Proceedings of the ACM on Software Engineering 3, FSE, Article FSE085 (2026), 1888–1909 pages. doi:10.1145/3797113 [13] Melody Y. Guan, Miles Wang, Micah Carroll, Zehao Dou, Annie Y. Wei, Marcus Williams, Benjamin Arnav, Joost Huizinga, Ian Kivlichan, Mia Glaese, Jakub Pachocki, and Bowen Baker. 2025. Monitoring Monitorability. arXiv:2512.18311 [cs.AI] [14] Kevin Halim, Sin G. Teo, Ruitao Feng, Zhenpeng Chen, Yang Gu, Chong Wang, and Yang Liu. 2025. A Study on Thinking Patterns of Large Reasoning Models in Code Generation. arXiv preprint arXiv:2509.13758 (2025). [15] Wenqi Huang, Charley Lee, Leonard Tng, and Serena Ge. 2026. DeepSWE: Measuring Frontier Coding Agents on Original, Long-Horizon Engineering Tasks. arXiv preprint arXiv:2607.07946 (2026). [16] Zhonghao Jiang, David Lo, and Zhongxin Liu. 2025. Agentic software issue resolution with large language models: A survey. arXiv preprint arXiv:2512.22256 (2025). [17] Carlos E Jimenez, John Yang, Alexander Wettig, Shunyu Yao, Kexin Pei, Ofir Press, and Karthik Narasimhan. 2024. Swe-bench: Can language models resolve real-world github issues?. In International Conference on Learning Representations ,Vol. 2024. 54107–54157. [18] Tomek Korbak, Mikita Balesni, Elizabeth Barnes, Yoshua Bengio, et al. 2025. Chain of Thought Monitorability: A New and Fragile Opportunity for AI Safety. arXiv:2507.11473 [cs.AI] [19] Han Li, Yifan Yao, Letian Zhu, Rili Feng, Hongyi Ye, Jiaming Wang, Yancheng He, Pengyu Zou, Lehan Zhang, Xinping Lei, Haoyang Huang, Ken Deng, Ming Sun, Zhaoxiang Zhang, He Ye, and Jiaheng Liu. 2026. CodeTracer: Towards Traceable Agent States. arXiv:2604.11641 [cs.SE] [20] Aixin Liu, Aoxue Mei, Bangcai Lin, Bing Xue, Bingxuan Wang, Bingzheng Xu, Bochao Wu, Bowei Zhang, Chaofan Lin, Chen Dong, et al. 2025. Deepseek-v3. 2: Pushing the frontier of open large language models. arXiv preprint arXiv:2512.02556 (2025). [21] Fang Liu, Yang Liu, Lin Shi, Houkun Huang, Ruifeng Wang, Zhen Yang, Li Zhang, Zhongqi Li, and Yuchi Ma. 2024. Exploring and evaluating hallucinations in llm-powered code generation. arXiv e-prints (2024), arXiv–2404. [22] Shuyang Liu, Yang Chen, Rahul Krishna, Saurabh Sinha, Jatin Ganhotra, and Reyhaneh Jabbarvand. 2026. Process-Centric Analysis of Agentic Software Systems. Proceedings of the ACM on Programming Languages 10, OOPSLA1, Article 163 (2026), 1961–1988 pages. doi:10.1145/3798271 [23] Simiao Liu, Fang Liu, Liehao Li, Xin Tan, Yinghao Zhu, Xiaoli Lian, and Li Zhang. 2025. An Empirical Study on Failures in Automated Issue Solving. arXiv preprint arXiv:2509.13941 (2025). [24] Ming Ma, Jue Zhang, Fangkai Yang, Yu Kang, Qingwei Lin, Saravan Rajmohan, and Dongmei Zhang. 2026. DoVer: Intervention-Driven Auto Debugging for LLM Multi-Agent Systems. In International Conference on Learning Represen-tations (ICLR) .[25] Oorja Majgaonkar, Zhiwei Fei, Xiang Li, Federica Sarro, and He Ye. 2026. Understanding Code Agent Behaviour: An Empirical Study of Success and Failure Trajectories. In Proceedings of the IEEE/ACM International Conference on Software Engineering (ICSE) . arXiv:2511.00197. [26] Tural Mehtiyev and Wesley K. G. Assunção. 2026. Beyond Resolution Rates: Behavioral Drivers of Coding Agent Success and Failure. arXiv preprint arXiv:2604.02547 (2026). [27] Rahul Nanda, Chandra Maddila, Smriti Jha, Euna Mehnaz Khan, Matteo Paltenghi, and Satish Chandra. 2026. Wink: Recovering from Misbehaviors in Coding Agents. arXiv preprint arXiv:2602.17037 (2026). [28] OpenAI. 2025. Introducing Codex. https://openai.com/index/introducing-codex/ [29] OpenAI. 2026. GPT-5.6 Luna. https://developers.openai.com/api/docs/models/gpt-5.6-luna [30] OpenAI. 2026. GPT-6 Astra: A New Generation of Intelligence. https://developers.openai.com/api/docs/models/gpt-6-astra [31] OpenAI. 2026. tiktoken. https://github.com/openai/tiktoken [32] Artidoro Pagnoni, Vidhisha Balachandran, and Yulia Tsvetkov. 2021. Understanding Factuality in Abstractive Summa-rization with FRANK: A Benchmark for Factuality Metrics. In Proceedings of the 2021 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (NAACL-HLT) . Association for Computational Linguistics, 4812–4829. [33] Yunjia Qi, Zehua Yin, Xintong Shi, Hao Peng, Songyuanyi Lu, Yixian Liu, Richeng Xuan, Yuhong Liu, Zhichao Hu, Xiaozhi Wang, Lei Hou, Bin Xu, and Juanzi Li. 2026. TrajDebug: Tracing Error Lifecycle to Identify Critical Failures in Long-Horizon Agent Trajectories. arXiv preprint arXiv:2608.06346 (2026). , Vol. 1, No. 1, Article . Publication date: October 2026. From Faulty Claims to Incorrect Patches: An Empirical Study of Task-Grounded Reasoning in Coding Agents 21 
+
+[34] Qwen Team. 2026. Qwen3.6-27B: Flagship-Level Coding in a 27B Dense Model. https://qwen.ai/blog?id=qwen3.6-27b [35] Qwen Team. 2026. Qwen3.8-Max: A New Bar for Coding and Cowork. https://qwen.ai/blog?id=qwen3.8 [36] Priyam Sahoo, Gaurav Mittal, Xiaomin Li, Shengjie Ma, Benjamin Steenhoek, Pingping Lin, and Yu Hu. 2026. AgentLens: Revealing The Lucky Pass Problem in SWE-Agent Evaluation. arXiv preprint arXiv:2605.12925 (2026). [37] Rui Shu, Chun Yong Chong, Xin Zhou, Yun Peng, Zihan Wu, Xu Han, Zeyang Zhuang, Guowen Yuan, and Yuan Wang. 2026. What Resolve Rate Hides: Trajectory Structure Diagnostics for Coding Agents. arXiv preprint arXiv:2607.06184 
+
+(2026). [38] James Thorne, Andreas Vlachos, Christos Christodoulopoulos, and Arpit Mittal. 2018. FEVER: a Large-scale Dataset for Fact Extraction and VERification. In Proceedings of the 2018 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (NAACL-HLT) . Association for Computational Linguistics, New Orleans, Louisiana, 809–819. [39] Miles Turpin, Julian Michael, Ethan Perez, and Samuel R. Bowman. 2023. Language Models Don’t Always Say What They Think: Unfaithful Explanations in Chain-of-Thought Prompting. In Advances in Neural Information Processing Systems (NeurIPS) .[40] Minxing Wang, Xiaofei Xie, and Yintong Huo. 2026. Trajaudit: Automated failure diagnosis for agentic coding systems. 
+
+arXiv preprint arXiv:2605.26563 (2026). [41] Xingyao Wang, Boxuan Li, Yufan Song, Frank F. Xu, Xiangru Tang, Mingchen Zhuge, Jiayi Pan, Yueqi Song, Bowen Li, Jaskirat Singh, Hoang H. Tran, Fuqiang Li, Ren Ma, Mingzhang Zheng, Bill Qian, Yanjun Shao, Niklas Muennighoff, Yizhe Zhang, Binyuan Hui, Junyang Lin, Robert Brennan, Hao Peng, Heng Ji, and Graham Neubig. 2025. OpenHands: An Open Platform for AI Software Developers as Generalist Agents. arXiv:2407.16741 [cs.SE] https://arxiv.org/abs/2407.16741 [42] You Wang, Michael Pradel, and Zhongxin Liu. 2026. Are “solved issues” in SWE-bench really solved correctly? An empirical study. In Proceedings of the 2026 IEEE/ACM 48th International Conference on Software Engineering . 169–181. [43] Yawen Wang, Wenjie Wu, Junjie Wang, and Qing Wang. 2026. From Flat Logs to Causal Graphs: Hierarchical Failure Attribution for LLM-based Multi-Agent Systems. arXiv preprint arXiv:2602.23701 (2026). [44] Yuan-An Xiao, Pengfei Gao, Chao Peng, and Yingfei Xiong. 2026. Reducing cost of llm agents with trajectory reduction. 
+
+Proceedings of the ACM on Software Engineering 3, FSE (2026), 1241–1263. [45] Anyi Xu, B Li, Bangcai Lin, Bing Xue, BingCheng Xian, Bingzheng Xu, Bochao Wu, Bowei Zhang, Boyi Deng, CC Yu, et al. 2026. Deepseek-v4. 1-flash: Pushing the limits of kv cache compression. arXiv preprint arXiv:2609.19969 (2026). [46] Haoran Xue, Gias Uddin, and Song Wang. 2026. An Empirical Study of Reasoning Steps in Thinking Code LLMs. In 
+
+Proceedings of the 3rd ACM International Conference on AI-Powered Software (AIware) . 151–159. doi:10.1145/3805760. 3814905 [47] John Yang, Carlos E. Jimenez, Alexander Wettig, Kilian Lieret, Shunyu Yao, Karthik Narasimhan, and Ofir Press. 2024. SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering. arXiv:2405.15793 [cs.SE] https://arxiv.org/abs/2405.15793 [48] Shaokun Zhang, Ming Yin, Jieyu Zhang, Jiale Liu, Zhiguang Han, Jingyang Zhang, Beibin Li, Chi Wang, Huazheng Wang, Yiran Chen, and Qingyun Wu. 2025. Which Agent Causes Task Failures and When? On Automated Failure Attribution of LLM Multi-Agent Systems. In Proceedings of the 42nd International Conference on Machine Learning (ICML) .[49] Xiangxin Zhao, Han Li, Shuaiting Li, Tianyi Zhao, Earl T. Barr, Federica Sarro, and He Ye. 2026. Failure as a Process: An Anatomy of CLI Coding Agent Trajectories. arXiv preprint arXiv:2607.09510 (2026). [50] Kunlun Zhu, Zijia Liu, Bingxuan Li, Muxin Tian, Yingxuan Yang, Jiaxun Zhang, Pengrui Han, Qipeng Xie, Fuyang Cui, Weijia Zhang, Xiaoteng Ma, Xiaodong Yu, Gowtham Ramesh, Jialian Wu, Zicheng Liu, Pan Lu, James Zou, and Jiaxuan You. 2025. Where LLM Agents Fail and How They can Learn From Failures. arXiv preprint arXiv:2509.25370 (2025). , Vol. 1, No. 1, Article . Publication date: October 2026.

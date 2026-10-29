@@ -1,0 +1,585 @@
+Title: StateMirror: Pre-Execution Detection of Hallucinated Tool Calls in Coding Agents
+
+URL Source: https://arxiv.org/pdf/2610.32648v1
+
+Published Time: Mon, 26 Oct 2026 01:04:39 GMT
+
+Number of Pages: 22
+
+Markdown Content:
+# StateMirror: Pre-Execution Detection of Hallucinated Tool Calls in Coding Agents 
+
+SHIWEN SHAN, School of Software Engineering, Sun Yat-sen University, China 
+
+YINTONG HUO, Singapore Management University, Singapore 
+
+ZHIYING WU, School of Software Engineering, Sun Yat-sen University, China 
+
+YUXIN SU, School of Software Engineering, Sun Yat-sen University, China Large language model (LLM)-based coding agents may propose invalid actions that are not applicable in the execution environment, such as accessing non-existent paths or missing packages. We term this mismatch 
+
+hallucinated tool use . A preliminary study of 4,398 agent trajectories reveals that these hallucinations are pervasive and costly, requiring a median of 3 additional interaction steps and 22.4K tokens to recover. Existing frameworks rely on reactive, post-execution feedback, wasting runtime resources. Nevertheless, since an agent’s execution environment is grounded in concrete codebase and harness components, many action prerequisites can be extracted and validated prior to execution. To this end, we introduce StateMirror , a lightweight pre-execution detector. StateMirror intercepts actions at the harness boundary, extracts state predicates via AST and command analysis, and deterministically validates them against the live repository. By pinpointing exact environment mismatches before execution, 
+
+StateMirror preempts invalid actions and subsequent recovery cycles. Evaluation on 2,508 actions shows 
+
+StateMirror achieves 0.940 precision and 0.817 F1 in detecting such hallucinations, surpassing the strongest LLM judge by 35.3% in F1 while reducing median detection latency from 17.73 s to 1.50 ms with zero token consumption. For practical mitigation, StateMirror ’s pre-execution feedback enables agents to rectify over 95% of hallucinated tool calls. During live mitigation on 79 tasks, StateMirror reduces agent execution time by 15.8% and token consumption by 11.8% while maintaining task resolution. 
+
+1 Introduction 
+
+Modern coding agents solve software engineering tasks by iteratively interacting with their envi-ronments [2, 44]. These agents typically follow the reasoning-and-acting (ReAct) paradigm [50], using tool calls to inspect repository contents, modify files, and run tests. However, these actions often lack grounding in the workspace, leading to failures such as referencing invalid filesystem paths, missing modules, or undefined symbols. We define this failure mode as hallucinated tool use , occurring when an agent’s proposed action violates preconditions imposed by the actual environment [10, 24]. Unlike reasoning flaws or semantic code bugs that execute successfully but fail the task, hallucinated tool use embeds invalid references (e.g., non-existent entities) into tool calls, making them fundamentally unexecutable as intended. Figure 1 illustrates two hallucinated tool uses: (a) assumes an unexported symbol within a target namespace, (b) misinterprets the filesystem layout. To understand the impact of hallucinated tool use, we conduct a preliminary study analyzing 4,398 SWE-agent trajectories on SWE-bench-Extra [26, 48], identifying 9,595 hallucinated tool calls across 120,801 total calls. Our study reveals three key findings. First, hallucinated tool use is 
+
+pervasive , occurring in 46.6% of failed and 32.3% of resolved trajectories. Second, recovering from these hallucinations is costly . When a hallucinated tool call fails (e.g., with a ModuleNotFoundError ), the agent may take several steps before reaching a grounded retry, incurring a median recovery 
+
+> Authors’ Contact Information: Shiwen Shan, School of Software Engineering, Sun Yat-sen University, Zhuhai City, China, shanshw@mail2.sysu.edu.cn; Yintong Huo, Singapore Management University, Singapore, ythuo@smu.edu.sg; Zhiying Wu, School of Software Engineering, Sun Yat-sen University, Zhuhai City, China, wuzhy286@mail.sysu.edu.cn; Yuxin Su, School of Software Engineering, Sun Yat-sen University, Zhuhai City, China, suyx35@mail.sysu.edu.cn. 2026. ACM XXXX-XXXX/2026/10-ART https://doi.org/10.1145/nnnnnnn.nnnnnnn , Vol. 1, No. 1, Article . Publication date: October 2026. arXiv:2610.32648v1 [cs.SE] 23 Oct 2026
+
+2 Shiwen Shan, Yintong Huo, Zhiying Wu, and Yuxin Su (a) Missing export         
+
+> from environ import env
+> $python reproduce_bug.py
+> Submitted action requires
+> symbol_defined( "environ", "env")
+> expected TRUE
+> Current Environment holds
+> environ/__init__.py
+> exports Env
+> env is absent
+> Undefined Symbol
+> (b) Layout confusion
+> from textual.src.textual.pilot import click
+> $python reproduce_bug.py
+> Submitted action requires
+> is_package( "textual.src")
+> expected TRUE
+> Current Environment holds
+> src/textual/pilot.py
+> is top-level source layout textual/src is absent
+> Invalid Import Path
+> predicate extracted from action repository evidence
+> Proposed action Proposed action
+
+Fig. 1. Examples of hallucinated tool calls. (a) The action imports env , but the module exports only Env . (b) The action imports textual.src , but the layout is src/textual .
+
+cost of 3 steps and 22.4K tokens. Furthermore, 30.3% of these hallucinations never reach a successful grounded retry. Third, their root causes are concentrated : filesystem mismatches (such as missing files or paths) account for 43.3% of the cases, and namespace mismatches (such as missing modules or undefined symbols) account for 41.9%. This concentration of verifiable error types indicates that most hallucinations can be validated before the step proceeds, thereby avoiding costly post-failure recovery. However, existing approaches are not designed for such pre-execution grounding. They primarily target high-level inference flaws and often overlook tool hallucinations caused by inconsistencies with the execution environment. Some methods detect reasoning failures only through post-execution feedback [7, 9, 36], incurring runtime overhead after the erroneous action has already been executed. Others rely on LLM-based judges over execution histories [52], which introduce additional inference cost and may suffer from reasoning biases [56]. To address this gap, we present StateMirror , a lightweight detector that catches proposed hallucinated tool use before it proceeds. Because tool preconditions are grounded in verifiable environment artifacts, such as the repository codebase and runtime harness, we can validate them statically without executing the action. Specifically, StateMirror intercepts actions at the harness boundary and verifies their preconditions through a two-step process. First, a predicate extractor statically parses the proposed action to derive typed state predicates, such as importable 
+
+or symbol_defined . Second, a read-only prober deterministically checks these predicates against the live execution environment. If any predicate is violated, StateMirror returns a typed warning detailing the exact mismatch. Operating deterministically without LLM invocation, StateMirror 
+
+consumes no tokens, incurs minimal latency, and preempts costly post-execution recovery cycles. We evaluate StateMirror on a benchmark of 2,508 expert-labeled actions from 1,197 public failed trajectories of four agent frameworks with different harness designs: SWE-agent, OpenHands, Sonar, and Honeycomb. Following the annotation workflow of our preliminary study, we retrieve candidate actions via failure keywords and tracebacks, replay prior edits to reconstruct the exact pre-action workspace, and have annotators label each action independently. StateMirror achieves a hallucination detection precision of 0.940 and an F1 score of 0.817, exceeding the strongest LLM judge by 0.213 F1 and a scaffold linter by 0.772 F1. Furthermore, StateMirror is also fast and cheap to run, completing each detection in a median of 1.50 ms with no token cost. To show the practicality, we evaluate StateMirror on both immediate action repair and end-to-end task intervention. For action repair, StateMirror ’s diagnostic result enables agents to rectify 95.0% of hallucinated tool calls under controlled revision and 97.8% during live SWE-agent 
+
+, Vol. 1, No. 1, Article . Publication date: October 2026. StateMirror: Pre-Execution Detection of Hallucinated Tool Calls in Coding Agents 3
+
+execution. In end-to-end intervention across 79 hallucination-affected tasks, StateMirror reduces execution time by 15.8% and token consumption by 11.8%, while maintaining task resolution. 
+
+Contributions. This paper makes three contributions: 
+
+• Problem Formulation. We formalize the concept of hallucinated tool use, and empirically analyze 4,398 agent trajectories, characterizing its prevalence, costly recovery loops, and error patterns. 
+
+• Approach. We present StateMirror , a deterministic pre-execution detector that derives state predicates and validates them against the execution environment. 
+
+• Evaluation. We show that StateMirror achieves 0.940 precision in hallucination detection at millisecond-level latency. Furthermore, its pre-execution feedback rectifies 95% of invalid tool calls, reducing end-to-end task time by 15.8% and token costs by 11.8%. 
+
+2 Background 2.1 ReAct-style Coding Agents 
+
+Interactive coding agents complete software engineering tasks by combining reasoning and tool use. This process typically follows the ReAct paradigm [50]. In this loop, the agent generates a structured action, the environment executes it, and the harness returns an observation. Various agent runtimes and repair systems operate within this paradigm by translating model outputs into environment commands [2, 48, 54]. Additionally, prior studies investigate different formats for these actions, such as direct code execution or standardized JSON schemas [43, 49]. While earlier models focus on simple API invocation [30, 31, 34], software-engineering agents automate complex tasks like test generation and behavior recovery [17, 33]. However, integrating and running these agents in real-world systems remains highly challenging [6, 22]. Our work focuses specifically on the tool-use loop of these coding agents. We analyze the proposed tool calls and their arguments rather than the internal reasoning of the model. 
+
+2.2 Preconditions and Runtime Checking 
+
+In axiomatic semantics of programs, pre- and post-condition reasoning is concerned with checking that on any program input satisfying the precondition 𝑃 , the program output should satisfy the postcondition 𝑄 . For example, the precondition 𝑃 may be that an input file exists or that some variable value is positive, and the postcondition 𝑄 may specify the verification condition that we want to be satisfied. Pre- and post-condition checking underlies many program verification techniques, including static analysis tools such as Dafny [18] or Frama [8] or dynamic analysis techniques such as runtime monitoring [19]. 
+
+3 Preliminary Study 
+
+We conduct a preliminary study of hallucinated tool calls in coding-agent trajectories, manually characterizing their prevalence, recovery costs, and root causes. 
+
+3.1 Problem Statement 
+
+To formalize the interaction between agent actions and the execution environment, we define a state 𝑠 as the state of the workspace and harness context immediately prior to an action’s execution. This state encompasses concrete, verifiable environment properties, including the file tree, active working directory, available packages, and exported symbols. Let 𝑎 denote a proposed structured action, and let 𝜙 (𝑎 ) represent the set of predicates that action 𝑎 implicitly assumes to hold. We define the hallucinated tool use set 𝐻 (𝑎, 𝑠 ) (or simply the hallucination set) as the set of such predicates that are false in the current environment: 
+
+𝐻 (𝑎, 𝑠 ) = {𝑝 | 𝑝 ∈ 𝜙 (𝑎 ),𝜓 (𝑝, 𝑠 ) = false }.       
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026. 4Shiwen Shan, Yintong Huo, Zhiying Wu, and Yuxin Su Full corpus Same-issue comparison (807 issues, paired runs) 010 20 30 40 50
+> Share of trajectories (%)  46.6%
+> 1660/3560
+> 32.3%
+> 271/838
+> 38.5%
+> 311/807 33.0%
+> 266/807
+> Failed Resolved 0246
+> Mean hallucinated calls  5.3
+> n = 1,660
+> 3.1
+> n = 271
+> (a) Trajectories with ≥1 hallucinated call (b) Calls per affected trajectory
+> Failed trajectories Resolved trajectories
+
+Fig. 2. RQ1: Prevalence of hallucinated tool calls in failed and resolved agent trajectories. 
+
+Here, 𝜓 (𝑝, 𝑠 ) is a probe function that evaluates the truth value of predicate 𝑝 within state 𝑠 . We classify a proposed action 𝑎 as a hallucinated tool call in state 𝑠 if 𝐻 (𝑎, 𝑠 ) ≠ ∅.
+
+3.2 Study Setup 
+
+We conduct a pilot study to investigate the hallucinated tool use problem, followed by three research questions (RQs): (1) RQ1: Does hallucinated tool use exist in real coding-agent trajectories, and what is its prevalence? (2) RQ2: What is the recovery cost of hallucinated tool calls in terms of agent steps and tokens? (3) RQ3: What is the distribution of different types of hallucinated tool use? 
+
+3.2.1 Dataset and Ground Truth. We analyze hallucinated tool use through a systematic three-stage workflow consisting of automated screening, human adjudication, and cost replay. We identify and validate hallucinated tool calls in two stages. First, during automated screening, we analyze a public corpus of 80,036 SWE-agent runs [25] on SWE-bench-Extra [26], which spans a broader set of Python repositories than the original SWE-bench [15]. To compare behaviors across different outcomes, we retain one trajectory per issue and outcome, yielding 3,560 failed trajectories (with 107,308 actions) from 1,274 repositories and 838 resolved trajectories (with 13,493 actions) from 491 repositories. From these trajectories, we identify candidate mismatches through two channels: (1) execution failures filtered by deterministic rules and (2) editor command errors rejected directly by the harness. Second, in the human adjudication stage, two co-authors independently annotate these candidates by inspecting the exact workspace state and full trajectory history of each action, resolving disagreements through a third annotator. In total, this process confirms 9,595 hallucinated tool calls in total (4,715 from execution failures and 4,880 from harness rejections), establishing a ground-truth dataset of hallucinated tool calls. 
+
+3.3 Empirical Findings 
+
+We present the empirical results of our study for each research question. 
+
+3.3.1 RQ1: Existence and Prevalence. We first measure the prevalence of hallucinated tool uses in real trajectories, defined as the proportion of trajectories that contain at least one hallucinated tool call, separately for failed and resolved runs. As shown in Figure 2(a), 46.6% of failed trajectories contain at least one hallucinated tool call, compared with 32.3% of resolved trajectories; overall, 1,931 of the 4,398 trajectories (43.9%)  
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026. StateMirror: Pre-Execution Detection of Hallucinated Tool Calls in Coding Agents 5
+
+are affected. This trend also holds for issues that contain both failed and resolved runs. Among trajectories with hallucinated tool use, failed runs contain 5.3 such calls on average, compared with 3.1 in resolved runs (Figure 2(b)). The high prevalence across both failed and resolved runs shows that hallucinated tool use is not limited to unsuccessful trajectories and can arise regardless of the final task outcome. Moreover, hal-lucinated tool calls can recur within a trajectory, indicating that insufficient environment grounding may persist across agent execution. This creates a clear need to verify tool-use assumptions against the concrete environment before execution. 
+
+> Finding #1: Existence and Prevalence
+> Hallucinated tool use is prevalent, affecting 46.6% of failed trajectories and 32.3% of resolved trajec-tories. Affected trajectories can also contain repeated hallucinated calls, indicating that insufficient environment grounding can persist during agent execution.
+
+3.3.2 RQ2: Recovery Cost of Hallucinated Tool Use. To quantify the execution cost of hallucinated tool calls, we trace the 1,931 trajectories containing at least one confirmed hallucination. We define a hallucination episode as the sequence of actions starting from an initial hallucinated tool call and spanning all subsequent attempts until recovery . Recovery occurs when the agent successfully executes the intended command without error, correctly referencing the target entity (e.g., a module, symbol, or path extracted from the execution feedback). We measure the episode cost in agent steps and tokens, using the cl100k tokenizer [27]. In total, we analyze 1,606 episodes originating from commands with an identifiable target entity. We exclude harness-channel hallucinations because agents rarely re-run the same editor command after a harness error. Hallucinated tool calls impose substantial recovery costs. A recovered episode consumes a median of 3 agent steps and 22.4K tokens before a grounded retry. Across the 1,120 recovered episodes, these attempts consume 39.3M tokens in total. In addition, 30.3% of episodes are never retried after the error; in these cases, agents proceed for a median of 18 subsequent steps and eventually fail the task. Thus, hallucinated tool calls add execution overhead, consuming agent steps and tokens and slowing task completion. 
+
+> Finding #2: Recovery Cost of Hallucinated Tool Use
+> Recovered hallucination episodes consume a median of 3 agent steps and 22.4K tokens before a grounded retry. Moreover, 30.3% of episodes are never retried, showing that hallucinated tool use can impose persistent execution costs.
+
+3.3.3 RQ3: Type Distribution. We next examine the types of assumptions violated by the 9,595 confirmed hallucinated tool calls. To derive the categories, two of the co-authors follow an open card-sorting procedure [37, 58]: during adjudication, whenever an annotator marks a call as a hallucinated tool call, they also label the category of assumption it violates, introducing a new category when no existing one fits. The two annotators then iteratively compare, merge, and refine their categories into a shared set, as summarized in Table 1. Over all 9,595 calls, the two annotators reach a Cohen’s 𝜅 of 0.869 (95.6% raw agreement), and the third co-author resolves the remaining disagreements. The distribution is highly concentrated in a small number of categories. As shown in Table 1, filesystem and Python namespace assumptions account for more than 85% of all confirmed halluci-nated tool calls. They also affect a large fraction of trajectories, appearing in 58.2% and 52.7% of them, respectively. Harness assumptions are much less common overall and are concentrated in a small number of trajectories. Other command and runtime assumptions occur only rarely.  
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026. 6Shiwen Shan, Yintong Huo, Zhiying Wu, and Yuxin Su
+
+Table 1. RQ3: Distribution of hallucinated tool use categories. Channel is the screening channel that found the category: Exec. for execution failures, Harness for editor-command error messages. 
+
+Class / category Channel Failed Resolved Share Traj. Filesystem and cwd state 3,762 395 43.33% 1,123 
+
+File, path, or cwd target Exec. 613 75 7.17% 249 Editor path operand Harness 3,149 320 36.15% 946 
+
+Python namespace and package layout 3,616 407 41.93% 1,017 
+
+Import or package availability Exec. 2,101 245 24.45% 689 Runtime symbol or API assumption Exec. 1,515 162 17.48% 471 
+
+Harness and tool schemas 1,378 33 14.71% 225 
+
+Tool-call schema Harness 1,206 14 12.71% 101 Editor state (open file, line range) Harness 172 19 1.99% 131 
+
+Command, test, and runtime state 4 0 0.04% 1
+
+Dependency or runtime version Exec. 4 0 0.04% 1
+
+Total 8,760 835 100.00% 1,931 
+
+This concentration has an important implication. Most hallucinated tool calls arise from a small set of concrete properties of the execution environment, such as whether a file exists or whether a Python symbol is available. These properties can be represented as explicit predicates and checked against the execution environment before execution. The limited diversity of violated assumptions therefore makes systematic pre-execution detection practical. 
+
+Finding #3: Type Distribution 
+
+More than 85% of confirmed hallucinated tool calls involve filesystem or Python namespace assump-tions. Their concentration in a small set of concrete environment properties makes pre-execution detection practical. 
+
+4 Methodology 4.1 Overview 
+
+StateMirror is a lightweight detector designed to assess action feasibility before execution. As shown in Figure 3, StateMirror includes four stages: normalization, predicate extraction, environ-ment probing, and reporting. The extractor depends on action syntax, and the prober depends on the workspace and runtime artifacts available at check time. Both components can be extended for new tools or environments without changing these stages. 
+
+4.2 Normalization 
+
+To handle different forms of agent actions, such as shell commands and structured tool calls, 
+
+StateMirror normalizes each proposed action into a unified representation for subsequent analysis. This representation captures the action type, current working directory, tool parameters, shell command, and associated Python code. For shell commands that invoke Python scripts (e.g., python reproduce.py ), StateMirror reads the script from the current workspace and includes its source code in the normalized representation when available. This allows subsequent predicate extraction to analyze the code that the harness would execute. 
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026.
+
+StateMirror: Pre-Execution Detection of Hallucinated Tool Calls in Coding Agents 7Input StateMirror Output Proposed action       
+
+> python reproduce.py
+> Working Environment
+> Repository working directory Runtime / tool schema
+> Extraction
+> Read invoked script
+> reproduce.py from dvc import DVC
+> Extracted predicates
+> importable(dvc) symbol_defined(dvc, DVC) ... ...
+> Normalization
+> Tool shell Command python reproduce.py Working directory /repo Parameters ...
+> Probing
+> importable(dvc) TRUE
+> symbol_defined(dvc, DVC) FALSE
+> ... ...
+> Hallucination Reporting
+> symbol_defined(dvc, DVC)
+> False-predicate set
+> Kind: symbol_defined Args: [“dvc”, ”DVC”] Evidence: 'DVC' NOT defined or re-exported in existing module 'dvc'
+
+Fig. 3. Overview of StateMirror . Predicates extracted from the proposed action are checked against the live environment before execution. Only those whose probes return false are reported as hallucinated tool use. 
+
+4.3 Extraction & Probing 
+
+Hallucinated tool use occurs when a proposed action assumes environmental conditions that do not hold in the actual execution environment. To detect such mismatches, StateMirror extracts the implicit assumptions from proposed actions as explicit predicates and verifies them against the current environment by probing into the environment. 
+
+4.3.1 Extraction. Given a normalized action, StateMirror extracts typed predicates that represent the environmental conditions required for its execution. Depending on the action type, the extractor analyzes shell commands, structured tool parameters, and Python code. For Python code, it parses the source into an abstract syntax tree (AST) on demand to identify relevant operations and their dependencies. Each extracted predicate specifies a concrete requirement, such as the availability of a Python module, the existence of a filesystem path, or the validity of a tool argument. When a required value cannot be determined statically, the corresponding predicate is omitted. 
+
+4.3.2 Probing. For each extracted predicate, StateMirror performs read-only checks against the current execution environment. Depending on the predicate type, these checks inspect the reposi-tory structure, Python module definitions, filesystem metadata, runtime information, or harness schemas. A predicate is considered violated when the corresponding environmental requirement is confirmed to be false. When a check cannot reliably determine whether a requirement holds, 
+
+StateMirror conservatively allows the predicate to pass and records the uncertainty in the probe evidence. 
+
+4.3.3 Predicate Families. Motivated by Finding #3, we organize the extracted predicates into four families: Python namespace and package layout, filesystem and working directory, command and runtime state, and harness and tool schemas. As shown in Figure 4, these families capture the main types of environmental assumptions identified in our preliminary study. Each family defines specific predicates and corresponding checks to verify these assumptions against the execution environment. StateMirror also supports extensions to new tools and environments by introducing additional predicates and their corresponding extractors and probers. 
+
+• Family I: Python Namespace and Package Layout. This family verifies assumptions about Python modules, packages, and exported symbols. Verifying these assumptions is important because missing modules or symbols can cause reproduction scripts and test helpers to fail during execution [17]. 
+
+, Vol. 1, No. 1, Article . Publication date: October 2026. 8 Shiwen Shan, Yintong Huo, Zhiying Wu, and Yuxin Su Predicate family Proposed Action Predicates Working Environment Hallucinated Tool Use         
+
+> (a)
+> Python namespace & package layout
+> Import
+> from dvc import DVC
+> Committed predicates
+> importable(dvc) symbol_defined(dvc, DVC)
+> Repo + module AST
+> package resolves DVC export absent
+> FALSE PREDICATE
+> symbol_defined(dvc, DVC)
+> extract probe compare
+> (b)
+> Filesystem & cwd state
+> Shell command
+> $ python reproduce.py cwd: /repo
+> Cwd predicates
+> file_exists(/repo/reproduce.py) parent_dir_exists(/repo)
+> Read-only path lookup parent exists script absent at cwd
+> FALSE PREDICATE
+> file_exists(/repo/reproduce.py)
+> extract probe compare
+> (c)
+> Command & test runtime state
+> Test
+> $ pytest test_sqlparse.py:: test_tokenize -q
+> Command predicate
+> pytest_target_exists( test_sqlparse.py, test_tokenize)
+> File lookup + static AST
+> test file exists test node absent
+> FALSE PREDICATE
+> pytest_target_exists(..., test_tokenize)
+> extract probe compare
+> (d)
+> Harness & tool affordances
+> Editor command
+> search_file "ClassDef" 100 1200
+> Harness predicate
+> tool_path_arg_exists( 100, file)
+> Signature + path lookup search term present no file "100" at cwd
+> FALSE PREDICATE
+> tool_path_arg_exists(100, file)
+> extract probe compare
+
+Fig. 4. Four predicate families. Each panel starts from the proposed action, extracts the required predicates, checks them against the live environment using deterministic probes, and reports any contradiction before execution. The examples illustrate assumptions regarding (a) namespace and package layout, (b) filesystem and working directory, (c) command, test, and runtime environment, and (d) harness and tool schemas. 
+
+Since a module may exist without exposing a requested symbol, StateMirror examines both module availability and namespace contents, including symbols exposed through package re-exports. To identify these requirements, StateMirror parses the AST of the Python code included in the normalized action and extracts predicates such as importable , symbol_defined , and is_package .It then verifies these predicates against the repository structure, standard library, and installed packages by inspecting module definitions and common re-export patterns (e.g., __init__.py ). To limit probing overhead, StateMirror restricts dependency analysis to imports directly referenced in the proposed action or its invoked scripts. Predicates involving names that cannot be resolved statically are omitted. Figure 4(a) illustrates an example involving a missing Python symbol. The agent proposes a script containing from dvc import DVC . From its AST, StateMirror extracts importable(dvc) 
+
+and symbol_defined(dvc, DVC) . The prober confirms that the dvc package exists but finds no definition or re-export of DVC in dvc/__init__.py . It therefore evaluates symbol_defined(dvc, DVC) as false. This violated predicate identifies a hallucinated tool call that would otherwise result in an ImportError .
+
+• Family II: Filesystem and Current-Working-Directory State. This family verifies assump-tions about filesystem paths and the current working directory (cwd). Such verification is important because agents may repeatedly attempt to access nonexistent paths, wasting execution steps and computational resources on unsuccessful operations and subsequent recovery. To identify these mismatches, StateMirror considers both the current cwd and the type of file operation (e.g., reading, writing, or executing a file). Specifically, relative paths are resolved against the current cwd, while different operations impose different requirements. For example, reading or executing a file requires the target to exist, whereas creating a file generally requires an existing parent directory. Accordingly, StateMirror extracts path arguments from shell commands, Python file operations, and editor actions, generating operation-specific predicates such as file_exists 
+
+and parent_dir_exists . The prober then checks whether the target files or directories exist at the resolved paths. When a path cannot be determined statically, the corresponding predicate is omitted. 
+
+, Vol. 1, No. 1, Article . Publication date: October 2026. StateMirror: Pre-Execution Detection of Hallucinated Tool Calls in Coding Agents 9
+
+Figure 4(b) illustrates a missing script in the current working directory. The agent proposes 
+
+python reproduce.py with /repo as its cwd. StateMirror resolves the script path and extracts 
+
+file_exists(/repo/reproduce.py) and parent_dir_exists(/repo) . The prober confirms that 
+
+/repo exists but finds no reproduce.py at the expected location. Consequently, the first extracted predicate evaluates to false, identifying a hallucinated tool call that would otherwise fail with a 
+
+FileNotFoundError .
+
+• Family III: Command, Test, and Runtime State. This family verifies assumptions about command availability, test targets, and runtime requirements. Checking these assumptions before execution can prevent unnecessary command attempts and test runs, reducing the time and resources spent on diagnosing and correcting invalid actions. To detect these mismatches, StateMirror analyzes shell commands and command-related tool parameters to extract executable names, pytest targets, and explicit runtime-version re-quirements. It represents these requirements using predicates such as executable_available ,
+
+pytest_target_exists , and runtime_version_satisfies . The prober then checks executable availability and runtime-version information in the current environment. For pytest targets, it examines the target file and its static AST nodes to check whether the requested test exists. Figure 4(c) illustrates a missing pytest target case. The agent proposes an action, pytest test_sqlparse.py::test_tokenize -q , to verify a fix. From the command, StateMirror ex-tracts pytest_target_exists(test_sqlparse.py, test_tokenize) . The prober confirms that 
+
+test_sqlparse.py exists and inspects its AST for the requested test node. Since no matching function or method is found, the predicate evaluates to false. StateMirror thus identifies the invalid test target before the command is executed. 
+
+• Family IV: Harness and Tool Schemas. This family verifies assumptions about tool argument schemas and the current harness state. Invalid tool arguments or unmet harness requirements may cause tool calls to be rejected, resulting in additional agent steps and recovery costs. To identify these mismatches, StateMirror examines tool argument constraints (e.g., argu-ment counts, types, and formats) and conditions maintained by the harness (e.g., whether a file is currently open and whether a specified line number is valid). Accordingly, StateMirror 
+
+extracts schema predicates, such as tool_args_valid , and condition-dependent predicates, in-cluding tool_path_arg_exists , editor_file_open , editor_line_in_range , and path_absent .The prober then checks these predicates against tool signatures, the filesystem, and information provided by the harness. For file editing tools, StateMirror identifies the currently open file from the preceding tool response. When the required information is unavailable, the corresponding predicate is omitted. Figure 4(d) illustrates a tool argument mismatch. The agent issues search_file "ClassDef" 100 1200 , intending to search lines 100–1200. However, the tool signature search_file <term> [<file>] interprets 100 as the file argument. Accordingly, StateMirror extracts the predicate 
+
+tool_path_arg_exists(100, file) . The prober finds no file named 100 in the current working directory, causing the predicate to evaluate to false. This result identifies a hallucinated tool call that the harness would otherwise reject due to an invalid file argument. 
+
+4.4 Hallucination Reporting 
+
+After probing, StateMirror collects predicates whose probes return into a false-predicate set. If the set is non-empty, the proposed action is identified as a hallucinated tool call. Each violated predicate is reported as a typed warning that describes the mismatch between the proposed action and the actual environment.                             
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026. 10 Shiwen Shan, Yintong Huo, Zhiying Wu, and Yuxin Su
+> Table 2. Composition of the action-level evaluation benchmark. The benchmark contains 2,508 actions across 1,197 trajectories (1,401 positives and 1,107 negatives).
+> (a) Benchmark by agent source Source Traj. Actions Pos. Neg.
+> SWE-agent 325 758 500 258 Honeycomb 416 853 570 283 Sonar 316 490 205 285 OpenHands 140 407 126 281 Total 1,197 2,508 1,401 1,107
+> (b) Positives by hallucination family Family Positives
+> Import 785 File/path 311 Symbol/export 243 Tool/harness schema 49 Environment 13 Total 1,401
+
+5 Evaluation 
+
+We evaluate the performance of StateMirror by answering the following RQs: 
+
+• RQ4: How accurately does StateMirror detect hallucinated tool calls? 
+
+• RQ5: What latency and token cost does StateMirror introduce? 
+
+• RQ6: How do different predicate families contribute to the overall detection accuracy? 
+
+• RQ7: How does bounded multi-hop scope affect the effectiveness and latency? 
+
+• RQ8: How effectively does StateMirror mitigate hallucinated tool calls within agent work-flows? 
+
+5.1 Environment and Implementation 
+
+We implement StateMirror as a Python toolkit (5.8K lines of code) that normalizes actions and checks predicates using deterministic, read-only probes. It operates without executing actions or consuming LLM tokens. For runtime evaluation, we integrate it with SWE-agent [48]. All experiments run on an Apple M4 Max machine with 36 GB RAM using Docker, executing tasks within their official SWE-bench containers. For offline evaluation, we reconstruct the pre-action workspace by replaying preceding edits and withhold all execution outcomes. We access all LLMs through the OpenRouter API [29], set the temperature to 0, and use direct import checking by default. 
+
+5.2 Dataset 
+
+The preliminary study establishes a human-adjudicated workflow for recognizing pre-execution hallucinated tool calls in SWE-agent failures. We extend this workflow to publicly available failed trajectories from SWE-agent [48], OpenHands [44], Sonar [35], and Honeycomb [11], constructing a benchmark with expert-labeled positives and negatives. Unlike the preliminary study, we build the benchmark exclusively from failed trajectories. Because a hallucinated tool call is defined by the mismatch between the action and its pre-action workspace rather than the final task outcome, its label remains independent of task resolution. We focus on failed runs because execution-failure evidence naturally concentrates there, and our public data sources (OpenHands, Sonar, and Honeycomb) primarily provide failed trajectories. To ensure comprehensive evaluation, RQ4 also separately reports the performance on resolved-run instances collected during the preliminary study. Specifically, we harvest 2,687 candidate failure actions across the four agent sources through automated keyword and traceback retrieval. Human annotators independently inspect each candi-date to identify hallucinated tool calls, resolving discrepancies through consensus adjudication. To                                                                             
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026. StateMirror: Pre-Execution Detection of Hallucinated Tool Calls in Coding Agents 11
+> Table 3. RQ4: Static detection performance across 2,508 benchmark actions. Bold and underline indicate the best and second-best results, respectively.
+> Method TP FP FN TN P𝚫 R𝚫 F1 𝚫 Acc 𝚫
+> Scaffold linter 35 131 1366 976 0.211 +345.5% 0.025 +2788.0% 0.045 +1715.6% 0.403 +103.2% LLM judges Qwen3.7 Plus 749 330 652 777 0.694 +35.4% 0.535 +35.0% 0.604 +35.3% 0.608 +34.7% Codex 5.6 Sol 759 427 642 680 0.640 +46.9% 0.542 +33.2% 0.587 +39.2% 0.574 +42.7% Kimi K3 624 185 777 922 0.771 +21.9% 0.445 +62.2% 0.565 +44.6% 0.616 +33.0% Action-only 1371 995 30 112 0.579 +62.3% 0.979 -26.3% 0.728 +12.2% 0.591 +38.6%
+> StateMirror (Ours) 1011 64 390 1043 0.940 —0.722 —0.817 —0.819 —
+
+ensure state integrity, we replay prior prefix edits from the base repository commit to reconstruct the workspace immediately before each action. We filter out 12 cases with unrecoverable execution environments and 167 candidate actions whose stated predicates hold in the reconstructed state, ensuring each retained positive represents a genuine pre-action hallucinated tool call. Table 2 summarizes the resulting benchmark, which comprises 2,508 actions across 1,197 trajec-tories. As shown in the table, positive hallucinations span five families across the four evaluated agent sources. To prevent evaluation bias, we retain all identified hallucinated tool calls regardless of whether they fall within StateMirror ’s current predicate vocabulary, treating unsupported categories strictly as false negatives. 
+
+5.3 Metrics 
+
+We evaluate StateMirror using the following metrics: 
+
+• Detection Effectiveness: Precision, recall, F1-score, and Accuracy against ground-truth labels to evaluate hallucination detection performance. 
+
+• Computational Efficiency: Execution latency (mean, median, p95, p99, and max) and token consumption to quantify pre-execution detection overhead. 
+
+• Mitigation Performance: We measure two aspects: (1) action repair rate, which is the proportion of warned actions successfully replaced by the agent to clear the gap, and (2) intervention efficiency, which measures the savings in agent time, steps, and tokens per task achieved by blocking actions that would otherwise fail on execution. We also report the task resolve rate to verify that these savings preserve task success. 
+
+5.4 Baselines 
+
+To benchmark the detection performance and efficiency of StateMirror , we compare it against three baseline families representing alternative pre-execution detection paradigms: 
+
+• LLM Judges: State-of-the-art reasoning models (Qwen3.7 Plus [32], Kimi K3 [39], and Codex 5.6 Sol [28]) configured to predict hallucinated tool calls via zero-shot prompting in the LLM-as-a-judge setting [56]. They receive the pre-action repository context, prefix-edit summaries, and submitted actions, but no execution outcomes. 
+
+• Action-only: An ungrounded baseline that flags all extracted predicates from the action as hallucinations without checking the workspace, isolating the necessity of repository-level probing. 
+
+• Scaffold Linter: A static linting baseline that inspects generated code for local construction-level errors (e.g., undefined names) but does not resolve imports against the workspace.  
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026. 12 Shiwen Shan, Yintong Huo, Zhiying Wu, and Yuxin Su
+
+Table 4. RQ4: Failure analysis partitioning the 1,401 positive actions and 390 misses across agent sources, predicate families, and error layers.                                                  
+
+> By agent source
+> Source FP FN F1 Honeycomb 6209 0.771 OpenHands 18 38 0.759 Sonar 972 0.767 SWE-agent 31 71 0.894 Total 64 390 0.817
+> By positive family
+> Family 𝑁 +FN RImport 785 233 0.703 File/path 311 82 0.736 Symbol/export 243 48 0.802 Tool/harness schema 49 15 0.694 Environment 13 12 0.077 Total 1,401 390 0.722
+> False-negative layer
+> Layer Count Code extraction 106 Command extraction 95 Selected-file reconstruction 87 Weakly typed target 51 Dependency closure 21 Indirect/reconstruction 14 State probe/guard 13 Pytest collection closure 3Total 390
+
+5.5 RQ4: Effectiveness Analysis 
+
+Table 3 compares StateMirror against baseline approaches. We observe that conventional ap-proaches struggle with the trade-off between coverage and grounding. The action-only baseline achieves decent recall but produces high false positives because it inspects proposed commands only; without checking the underlying repository, it flags valid actions simply because they look unusual. The scaffold linter yields a modest 0.045 F1 score because it only checks command syntax failures. Hallucinated tool calls are often syntactically valid but reference nonexistent runtime entities. Although LLM judges outperform static linting, they struggle to infer full repository state from condensed context snapshots, with the strongest model (Qwen3.7 Plus) reaching only 0.604 F1. In contrast, StateMirror achieves 0.940 precision, 0.817 F1, and 0.819 accuracy, outperforming Qwen3.7 Plus by 35.3% in F1 and the most accurate baseline (Kimi K3, 0.616) by 33.0% in accuracy. These results demonstrate that effective hallucination detection requires deterministic probing against the live environment. We further analyze the failure cases of StateMirror , as detailed in Table 4. The 390 false negatives are heavily concentrated in the pre-execution action extraction layer rather than state probing logic, with code extraction, command extraction, and selected-file reconstruction accounting for 73.8% (288/390) of misses. These misses primarily stem from implicit preconditions omitted by the action extractors, including library-call arguments, CLI options, and unmaterialized test files, which account for Honeycomb’s higher FN count (209 misses). Across predicate families, symbol predicates achieve the highest recall (0.802), while import (0.703) and file/path (0.736) capture the vast majority of positive hallucinated tool calls. Conversely, false positives remain low across all sources (64 total, spanning 6 to 31 per source), predominantly caused by files generated at run time by the action or an earlier step, path-like string literals, and transient environment state absent during offline static reconstruction. 
+
+5.5.1 Hallucinated tool calls from resolved runs. While our primary evaluation relies on the main benchmark of failed trajectories, evaluating StateMirror on successful runs is crucial to assess its generalizability. We therefore apply StateMirror to the resolved stratum from our preliminary study. This dataset contains 823 expert-confirmed hallucinated tool calls as positives and 43 rejected candidates as hard negatives. On this stratum, StateMirror achieves 0.989 precision, 0.532 recall, and 0.692 F1, detecting at least one hallucinated tool call in 81.5% of the trajectories. The lower recall compared to the main benchmark is primarily due to dynamic runtime attribute errors and temporary files created during execution, which fall outside our static predicate vocabulary. When excluding these dynamic cases, StateMirror detects the remaining static, in-vocabulary                                             
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026. StateMirror: Pre-Execution Detection of Hallucinated Tool Calls in Coding Agents 13
+> Table 5. RQ5: Statistics of pre-execution latency and token consumption. Tokens denote aggregate input and output tokens across all evaluated actions.
+> Method Mean Median p95 p99 Max Tokens
+> Scaffold linter 0.043 ms 0.004 ms 0.220 ms 0.963 ms 10.28 ms 0Action-only 25.25 ms 0.75 ms 16.57 ms 310.03 ms 2.67 s 0
+> StateMirror (Ours) 63.22 ms 1.50 ms 306.66 ms 1.09 s 11.73 s 0Qwen3.7 Plus 25.89 s 17.73 s 54.01 s 199.81 s 325.90 s 4.87M Kimi K3 25.20 s 16.80 s 62.85 s 188.98 s 668.56 s 4.84M Codex 5.6 Sol 15.87 s 14.51 s 28.45 s 34.05 s 54.23 s 48.15M
+
+screened hallucinations with 79.1% recall (254/321). Similarly, it achieves 92.1% recall (164/178) on harness-error calls when excluding run-time file creation retries.   
+
+> Answer to RQ4: StateMirror achieves 0.940 precision, 0.722 recall, and an F1-score of 0.817, outper-forming the strongest LLM judge by 35.3% and the scaffold linter by 1,715.6% in F1.
+
+5.6 RQ5: Cost Analysis 
+
+A pre-execution detector must maintain strict efficiency because it evaluates every submitted action, whereas only a fraction actually contain hallucinated tool calls. If this per-action overhead approaches the cost of a runtime error, the intervention provides no net benefit. We therefore evaluate the latency and token cost each method imposes per submitted action. Table 5 compares the runtime latency and token overhead across approaches. StateMirror 
+
+incurs a median latency of only 1.50 ms (306.66 ms at p95) with zero token cost for detection. This demonstrates that workspace probing provides a fast and necessary grounding for effective pre-execution detection. LLM judges, however, incur substantial inference latency and token usage on every audited action. Their median latencies range from 14.51 s to 17.73 s, which is over four orders of magnitude slower than StateMirror . Furthermore, evaluating the benchmark with LLM judges consumes between 1.9K and 19.2K tokens per action, regardless of whether the action contains a hallucinated tool call. This continuous overhead makes LLM-based auditing impractical in interactive trajectories.   
+
+> Answer to RQ5: StateMirror operates token-free with a median latency of 1.50 ms, reducing detec-tion latency from seconds to milliseconds compared with LLM judges.
+
+5.7 RQ6: Ablation Analysis 
+
+To evaluate the individual contributions of different predicate families, we perform both cumulative addition and leave-one-out ablation studies of StateMirror . Starting from core namespace and symbol checks, we incrementally introduce and systematically isolate each predicate family to quantify its marginal impact on precision, recall, F1-score and accuracy. Table 6 summarizes the ablation results. Namespace and package-layout predicates (Family I) provide the high-precision foundation, identifying 752 true positives with 0.972 precision and 0.691 F1; correspondingly, omitting this family in the leave-one-out setting causes the sharpest degradation, collapsing F1 to 0.323. Filesystem and cwd predicates (Family II) produce the primary recall expansion, recovering 224 additional true positives and raising recall from 0.537 to 0.697 (0.801 F1), while removing them reduces F1 to 0.711. Harness and tool-schema predicates (Family IV) contribute 34 additional true positives at the cost of three false positives, elevating overall F1 to  
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026. 14 Shiwen Shan, Yintong Huo, Zhiying Wu, and Yuxin Su
+
+Table 6. RQ6: Statistics of cumulative and leave-one-out ablations over the four predicate families (I–IV). 
+
+Variant TP FP FN TN P R F1 Acc 
+
+Full 1011 64 390 1043 0.940 0.722 0.817 0.819 
+
+Cumulative addition 
+
+I: Namespace/package 752 22 649 1085 0.972 0.537 0.691 0.732 + II: Filesystem/cwd 976 61 425 1046 0.941 0.697 0.801 0.806 + III: Command/test/runtime 977 61 424 1046 0.941 0.697 0.801 0.807 + IV: Harness/tool schema 1011 64 390 1043 0.940 0.722 0.817 0.819 
+
+Leave one predicate family out 
+
+w/o I: Namespace/package 278 42 1123 1065 0.869 0.198 0.323 0.535 w/o II: Filesystem/cwd 787 25 614 1082 0.969 0.562 0.711 0.745 w/o III: Command/test/runtime 1010 64 391 1043 0.940 0.721 0.816 0.819 w/o IV: Harness/tool schema 977 61 424 1046 0.941 0.697 0.801 0.807 
+
+Table 7. RQ7: Sensitivity analysis across multi-hop probing depths. Latency is reported in milliseconds. Bold and underline indicate the best and second-best results, respectively. 
+
+Variant TP FP FN TN P R F1 Acc Med. p95 
+
+StateMirror (default) 1011 64 390 1043 0.940 0.722 0.817 0.819 1.499 306.662 
+
+StateMirror -MH1 1016 69 385 1038 0.936 0.725 0.817 0.819 2.342 506.356 
+
+StateMirror -MH2 1019 75 382 1032 0.931 0.727 0.817 0.818 2.867 822.877 0.817 (and removing them lowers F1 to 0.801). Command, test, and runtime predicates (Family III) add a single true positive, an absent pytest node, because this benchmark contains few command-level hallucinations. Overall, filesystem and cwd predicates are the primary coverage extension beyond the high-precision namespace core, while the remaining families offer complementary domain-specific gains. 
+
+Answer to RQ6: StateMirror relies on namespace and package-layout predicates as its high-precision core, while filesystem and cwd predicates raise F1 from 0.691 to 0.801, with remaining families providing complementary coverage up to 0.817 F1. 
+
+5.8 RQ7: Sensitivity Analysis 
+
+To evaluate whether tracing repository-local dependencies beyond direct predicates improves detection, we investigate bounded multi-hop probing across the 2,508 benchmark actions. Specif-ically, beyond the direct imports checked by default, StateMirror -MH1 and StateMirror -MH2 
+
+additionally check transitive repository-local imports up to one and two further levels, respectively. As reported in Table 7, deeper static probing yields negligible coverage improvements while introducing a disproportionate precision and latency penalty. Compared to the default configuration, 
+
+MH1 recovers five additional true positives at the cost of five false positives, leaving F1 at 0.817 and accuracy at 0.819, whereas MH2 recovers eight true positives but incurs eleven false positives (F1 stays at 0.817 and accuracy falls to 0.818). Furthermore, MH1 and MH2 take 1 .65 × and 2 .68 × the p95 tail latency of the default version. These additional false positives predominantly stem from deep package surfaces where conditional imports, compatibility aliases, and re-export hubs weaken 
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026.
+
+StateMirror: Pre-Execution Detection of Hallucinated Tool Calls in Coding Agents 15 Proposed action           
+
+> reproduce_issue.py
+> 4import sympy
+> 5import numpy as np
+> 6...
+> 10 a= sympy.Array(3)
+> 11 ...
+> 29 arr = np.asarray(1)
+> $python reproduce_issue.py
+
+StateMirror with recovery instructions 
+
+> Extract & probe
+> falsified predicates importable('numpy',) probe evidence no numpy.py / numpy/__init__.py in repo tree
+> Prompt Template
+> <mismatched pair> <regeneration instructions>
+> Re-examine the actual repository (ls, find, grep, view the module) and adjust your action before retrying. STATE CHECK: this action assumes repository state that does NOT hold in the actual workspace: - importable('numpy',): no numpy.py / numpy/__init__.py in repo tree - module_attr_defined('numpy', 'asarray'): module 'numpy' absent; cannot define 'asarray'
+
+Regenerated script & retry                  
+
+> reproduce_issue.py
+> 4import sympy
+> 6...
+> 9#Test rank-0 array in SymPy
+> 10 a= sympy.Array(3)
+> 11 print(f"SymPy Array(3): {a}")
+> 14 print(f" len(a): {len(a)}")
+> repaired code
+> $python reproduce_issue.py
+> erroneous code
+
+Fig. 5. RQ8: An example of live action repair and pre-execution intervention. Table 8. RQ8: Controlled action revision performance across agent sources and hallucination categories. 
+
+Source Hallucination category All Honeycomb OpenHands Sonar SWE-agent File Import Symbol 
+
+Repaired 95 25 24 21 25 27 44 24 
+
+𝑁 100 25 25 25 25 27 48 25 Rate 0.950 1.000 0.960 0.840 1.000 1.000 0.917 0.960 
+
+the localization of static checks. Consequently, checking only direct imports provides the optimal trade-off for pre-execution intervention, while multi-hop evidence is best reserved for non-blocking diagnostic modes. 
+
+Answer to RQ7: Extending StateMirror to multi-hop static probing provides negligible coverage improvements while introducing a higher rate of false positives and increasing p95 tail latency. 
+
+5.9 RQ8: Mitigation of Hallucinated Tool Calls 
+
+We investigate how effectively StateMirror mitigates detected hallucinated tool calls within agent workflows, at two levels with recovery instructions (as illustrated in Figure 5). Action repair asks whether a typed warning lets the agent replace the faulty action with a valid one, under both controlled revision and live agent execution. Pre-execution intervention asks whether blocking the faulty action before it runs removes the downstream cost the hallucination would otherwise cause over the rest of the task. We run StateMirror in two modes: report mode , which logs every warning without blocking, and intervention mode , which applies a conservative blocking rule. In intervention mode, StateMirror blocks an action and prompts regeneration only if a falsified predicate is a necessary precondition, such as an executable or a file to be read. It permits predicates related to intentional side effects (e.g., files the action aims to create) and diagnostic errors (e.g., missing dependencies within existing test files), blocking test commands only when the test target or runner itself is missing. 
+
+5.9.1 Action repair. To evaluate whether agents can correct pending errors given pre-execution feedback, we perform controlled action revision on 100 hallucinated tool calls (sampled evenly across the four agent sources). Each agent receives its pre-action workspace context, the failed action, and StateMirror ’s warning, without any execution feedback. As shown in Table 8, agents achieve an overall repair rate of 95.0%. Repair rates reach 100% on Honeycomb and SWE-agent, 96.0% on OpenHands, and 84.0% on Sonar. Of the five unrepaired cases, one repeats the warned predicate, and four replace the missing symbol with a sibling name that the package does not export either. Crucially, 88 of the 95 replacements introduce no secondary hallucinations, while only seven 
+
+, Vol. 1, No. 1, Article . Publication date: October 2026. 16 Shiwen Shan, Yintong Huo, Zhiying Wu, and Yuxin Su       
+
+> Table 9. RQ8: Task-level hallucination mitigation on 79 StateMirror-triggered cases from Qwen3.8 SWE-agent runs. Action repair evaluates the first replacement after a warning; cleared means no warned predicate recurs, and executed requires exit code 0. Time, steps, and tokens represent the average consumption per case.
+
+Action repair (𝑁 = 78) Agent time Steps Tokens Resolved Mode Cleared + Executed (s) (×10 3) (/79) Report – – 739.2 56.0 805.0 48 Intervention 73 (93.6%) 66 (84.6%) 622.7 52.7 709.9 48 
+
+Δ −15 .8% −6.0% −11 .8% ±0surface a new mismatch. Pre-execution detection of these replacements also adds minimal overhead (median 21.5 ms). To evaluate repair in an active agent loop, we deploy StateMirror with SWE-agent across 385 SWE-bench Verified tasks. In report mode, StateMirror audits 3,829 actions and emits 50 warnings across 49 tasks, 46 of which are confirmed by immediate execution failures. Rerunning these 49 tasks in intervention mode yields 46 evaluable events where the hallucination reproduces and triggers blocking. The agent’s very first replacement clears the mismatch and executes successfully in 45 of these 46 cases, achieving a 97.8% live repair rate. This confirms that deterministic pre-execution warnings are highly actionable, allowing agents to preempt execution failures and recover in a single turn. 
+
+5.9.2 Pre-execution intervention. We next evaluate whether pre-execution intervention mitigates the downstream cost of hallucinated tool calls over the remainder of the task. From 475 Qwen3.8 SWE-agent trajectories run in report mode, StateMirror detects actionable hallucinations in 79 runs. For these 79 cases, we replay the original trajectory up to the detected action and then let the agent continue in intervention mode, ensuring both arms share the exact same prefix. All runs adhere to a strict 100-step ceiling, with each intervention warning and replacement generation counting against the budget to ensure a fair comparison. Table 9 reports how the action is repaired and how much downstream cost the intervention removes. In the intervention cohort, the agent produces a replacement in 78 of the 79 cases before exhausting the budget. The first replacement clears every detected predicate in 73 cases (93.6%), and 66 of those (84.6%) successfully execute with exit code 0. Most non-clears simply repeat the missing dependency through a different command (e.g., an uninstalled numpy ). Compared with report mode (739.2 s, 56.0 steps, 805.0K tokens per case), the full intervention trajectories average 622.7 s, 52.7 steps, and 709.9K tokens. This yields reductions of 15.8%, 6.0%, and 11.8%, saving roughly 116.5 s, 3.4 steps, and 95.1K tokens per triggered task. Importantly, these savings do not come at the expense of task success: both modes resolve exactly 48 of the 79 tasks. These savings represent the direct cost of the hallucinated tool calls. They correspond to the wasted execution time, error observations, and recovery turns that pre-execution intervention successfully avoids. Because StateMirror itself adds no tokens, every saved step becomes a step available for genuine repair under the fixed 100-step budget ceiling. While absolute agent-time savings depend on provider latency and queue scheduling, the reductions in tokens and steps confirm that deterministic intervention improves execution efficiency. 
+
+> , Vol. 1, No. 1, Article . Publication date: October 2026.
+
+StateMirror: Pre-Execution Detection of Hallucinated Tool Calls in Coding Agents 17 Step 7 Proposed Action StateMirror-Extractor StateMirror-Prober Following Steps       
+
+> > python
+> reproduce.py
+> proposed tool command
+> Extracted Predicate
+> importable(repro_app)
+> Package absent
+> repro_app.py repro_app/__init__.py
+> BLOCK with typed warning 8–10 Create app + models
+> 13 Original TypeError
+> 14–15 Patch; hash succeeds
+> Step 17 Proposed Action StateMirror-Extractor Following Steps
+> > python -m pytest
+> .../fields/tests.py
+> proposed tool command
+> Extracted Predicate
+> file_exists(test path)
+> Test file absent
+> django/db/models/fields/tests.py
+> BLOCK with typed warning 18 Search actual tests
+> 25 pytest unavailable
+> 29–32 Django runner: OK
+> StateMirror-Prober
+> StateMirror StateMirror
+> recovery prompts recovery prompts
+
+Fig. 6. A runtime detection example in django__django-14672 . At steps 7 and 17, StateMirror blocks commands that assume a missing reproduction package and test file. The agent continues to a resolved patch. 
+
+Answer to RQ8: StateMirror effectively mitigates hallucinated tool calls. It enables successful action repair in 95.0% of controlled cases and 97.8% of live executions. This live intervention reduces agent time by 15.8%, execution steps by 6.0%, and token consumption by 11.8% per triggered task, without degrading end-to-end task resolution. 
+
+6 Case Study 
+
+We conduct a case study to show how StateMirror detects hallucinated tool calls in practice. Specifically, we trace a live SWE-agent run on django__django-14672 from the mitigation study. The task concerns hashing a ManyToManyRel whose through_fields is a list. Figure 6 shows two pre-execution interventions and the subsequent actions observed in the same trajectory. At step 7, the agent submits python reproduce.py , which imports a non-existent repro_app ;
+
+StateMirror flags importable(repro_app) as false and halts execution, guiding the agent to create the missing definitions before reproducing the issue and patching ManyToManyRel.identity .Later at step 17, when the agent attempts to run tests via django/db/models/fields/tests.py ,
+
+StateMirror intercepts the non-existent test path with a file_exists warning, prompting the agent to inspect the test suite and switch to the valid test runner tests/runtests.py , ultimately leading to a resolved patch. This case study highlights that StateMirror serves as an effective fail-fast safeguard in live trajectories. By intercepting invalid environment assumptions before execution, StateMirror 
+
+prevents uninformative runtime failures, reduces wasted recovery cost, and guides the agent toward valid workspace state, effectively mitigating hallucinated tool calls and enabling continuous progress. 
+
+7 Related Work 
+
+Coding Agent Auditing and Debugging. As interactive coding agents grow more popular, researchers have developed various auditing, debugging, and post-execution repair techniques [42, 45]. Traditional debugging and automated repair methods analyze failures after program execution to locate faults or suggest patches [9, 14, 16, 20, 47, 51]. Similarly, feedback-driven agent systems run commands and use the resulting runtime tracebacks to correct their actions [7, 36]. Other trajectory analysis frameworks evaluate multi-turn loops to identify failure patterns [3, 4, 21, 23], or analyze execution trajectories and their prefixes for failure attribution, diagnosis, online detection, and repair [1, 5, 52, 53, 57]. While AgentSpec [41] can perform pre-execution checks using rules 
+
+, Vol. 1, No. 1, Article . Publication date: October 2026. 18 Shiwen Shan, Yintong Huo, Zhiying Wu, and Yuxin Su 
+
+derived from user-specified safety requirements, StateMirror derives factual preconditions from the proposed tool call itself and verifies them through deterministic probes of the current execution environment. The post-hoc limitation is particularly evident when dealing with hallucinations in generated code. In language models, hallucination represents output that is unfaithful to a source or to the real world [12]. For code generation tasks, these errors often remain hidden until the program actually runs. For example, models frequently generate code that references unpublished packages [38] or fails during execution [40, 46, 55]. While existing methods analyze or mitigate errors in finished code snippets [13], they do not check whether the required modules, symbols, and paths are present in the target workspace before running the agent’s next tool call. Post-execution systems generally run actions first and resolve errors using tracebacks, which often increases execution steps and token consumption. In contrast, StateMirror serves as a proactive gate that verifies repository requirements with lightweight, read-only state probes before execution. 
+
+8 Threats to Validity 
+
+Internal threats. To ensure internal validity, we mitigate annotation subjectivity by establish-ing benchmark labels through independent expert annotations and consensus adjudication. We reconstruct workspace states with high fidelity by replaying verified prefix edits. Furthermore, our evaluation includes both failed and resolved trajectories across four different agent frameworks to minimize framework-specific bias. On the resolved stratum, we observe a lower recall because some errors involve dynamic runtime states rather than static mismatches. Currently, our deterministic predicates prioritize actionable, high-precision static checks. Extending this validation to dynamic, execution-time errors represents an important avenue for future work. 
+
+External threats. While our current empirical evaluation is instantiated on Python bug-fixing tasks, SWE-agent trajectories, and the Qwen3.8-27B model, the StateMirror architecture is de-signed for broad generalizability. Because it verifies foundational execution assumptions (e.g., filesystem and namespace states) rather than relying on bug-fixing-specific heuristics, its core formulation naturally extends to other coding agents such as code-generation agents and testing agents. Generalizing StateMirror to new programming languages or agent runtimes involves implementing domain-specific predicate extractors and probers, while the overall pre-execution detection workflow remains intact. 
+
+9 Conclusion 
+
+Hallucinated tool use occurs when an agent’s action assumes invalid workspace preconditions. Our preliminary study of 4,398 trajectories reveals these errors are highly prevalent, expensive to recover, and concentrated in filesystem and namespace mismatches. To address this, we present 
+
+StateMirror , a lightweight pre-execution detector that extracts predicates from actions and de-terministically validates them against the live environment. Evaluation on 2,508 actions shows 
+
+StateMirror achieves 0.940 precision and 0.817 F1, outperforming the strongest LLM judge by 35.3% in F1 with zero token cost and millisecond latency. For practical mitigation, StateMirror 
+
+enables agents to rectify over 95% of hallucinated tool calls, reducing execution time by 15.8% and token consumption by 11.8% during live intervention. 
+
+References  
+
+> [1] Shraddha Barke, Arnav Goyal, Alind Khare, Avaljot Singh, Suman Nath, and Chetan Bansal. 2026. AgentRx: Diagnosing AI Agent Failures from Execution Trajectories. arXiv:2602.02475 [cs.AI] https://arxiv.org/abs/2602.02475 [2] Islem Bouzenia, Premkumar T. Devanbu, and Michael Pradel. 2025. RepairAgent: An Autonomous, LLM-Based Agent for Program Repair. In 47th IEEE/ACM International Conference on Software Engineering, ICSE 2025, Ottawa, ON, Canada,
+> , Vol. 1, No. 1, Article . Publication date: October 2026.
+
+StateMirror: Pre-Execution Detection of Hallucinated Tool Calls in Coding Agents 19 
+
+April 26 - May 6, 2025 . IEEE, 2188–2200. doi:10.1109/ICSE55347.2025.00157 [3] Islem Bouzenia and Michael Pradel. 2025. Understanding Software Engineering Agents: A Study of Thought-Action-Result Trajectories. In Proceedings of the 40th IEEE/ACM International Conference on Automated Software Engineering .IEEE, Seoul, Republic of Korea, 2846–2857. doi:10.1109/ASE63991.2025.00234 [4] Mert Cemri, Melissa Z. Pan, Shuyi Yang, Lakshya A. Agrawal, Bhavya Chopra, Rishabh Tiwari, Kurt Keutzer, Aditya G. Parameswaran, Dan Klein, Kannan Ramchandran, Matei A. Zaharia, Joseph E. Gonzalez, and Ion Stoica. 2025. Why Do Multi-Agent LLM Systems Fail?. In Advances in Neural Information Processing Systems 38: Annual Conference on Neural Information Processing Systems 2025, NeurIPS 2025, San Diego, CA, USA, December 2-7, 2025 / Mexico City, Mexico, November 30 - December 5, 2025 , Danielle Belgrave, Cheng Zhang, Laura N. Montoya, Hsuan-Tien Lin, Razvan Pascanu, Piotr Koniusz, Marzyeh Ghassemi, Nancy Chen, Iván Vladimir Meza Ruíz, and Arturo Loaiza-Bonilla (Eds.). http://papers.nips.cc/paper_files/paper/2025/hash/b1041e52d3be19f0a9bc491657488e4a-Abstract-Datasets_ and_Benchmarks_Track.html [5] Mengzhuo Chen, Junjie Wang, Zhe Liu, Yawen Wang, Haiming Zheng, and Qing Wang. 2026. From Failed Trajectories to Reliable LLM Agents: Diagnosing and Repairing Harness Flaws. arXiv:2606.06324 [cs.SE] https://arxiv.org/abs/2606. 06324 [6] Xiang Chen, Chaoyang Gao, Chunyang Chen, Guangbei Zhang, and Yong Liu. 2025. An Empirical Study on Challenges for LLM Application Developers. ACM Trans. Softw. Eng. Methodol. 34, 7 (2025), 205:1–205:37. doi:10.1145/3715007 [7] Xinyun Chen, Maxwell Lin, Nathanael Schärli, and Denny Zhou. 2024. Teaching Large Language Models to Self-Debug. In The Twelfth International Conference on Learning Representations, ICLR 2024, Vienna, Austria, May 7-11, 2024 .OpenReview.net. https://openreview.net/forum?id=KuPixIqPiq [8] Pascal Cuoq, Florent Kirchner, Nikolai Kosmatov, Virgile Prevosto, Julien Signoles, and Boris Yakobowski. 2012. Frama-C: A software analysis perspective. In International conference on software engineering and formal methods .Springer, 233–247. [9] Zhiyu Fan, Xiang Gao, Martin Mirchev, Abhik Roychoudhury, and Shin Hwei Tan. 2023. Automated Repair of Programs from Large Language Models. In 45th IEEE/ACM International Conference on Software Engineering, ICSE 2023, Melbourne, Australia, May 14-20, 2023 . IEEE, 1469–1481. doi:10.1109/ICSE48619.2023.00128 [10] C. A. R. Hoare. 1969. An Axiomatic Basis for Computer Programming. Commun. ACM 12, 10 (1969), 576–580. doi:10.1145/363235.363259 [11] Honeycomb Team. 2024. Honeycomb: Autonomous Software Engineering Agent. SWE-bench submission. https: //github.com/swe-bench/experiments/pull/61 [12] Lei Huang, Weijiang Yu, Weitao Ma, Weihong Zhong, Zhangyin Feng, Haotian Wang, Qianglong Chen, Weihua Peng, Xiaocheng Feng, Bing Qin, and Ting Liu. 2025. A Survey on Hallucination in Large Language Models: Principles, Taxonomy, Challenges, and Open Questions. ACM Trans. Inf. Syst. 43, 2 (2025), 42:1–42:55. doi:10.1145/3703155 [13] Nihal Jain, Robert Kwiatkowski, Baishakhi Ray, Murali Krishna Ramanathan, and Varun Kumar. 2025. On Mitigating Code LLM Hallucinations with API Documentation. In 47th IEEE/ACM International Conference on Software Engineering: Software Engineering in Practice, SEIP@ICSE 2025, Ottawa, ON, Canada, April 27 - May 3, 2025 . IEEE, 237–248. doi:10. 1109/ICSE-SEIP66354.2025.00027 [14] Nan Jiang, Kevin Liu, Thibaud Lutellier, and Lin Tan. 2023. Impact of Code Language Models on Automated Program Repair. In 45th IEEE/ACM International Conference on Software Engineering, ICSE 2023, Melbourne, Australia, May 14-20, 2023 . IEEE, 1430–1442. doi:10.1109/ICSE48619.2023.00125 [15] Carlos E. Jimenez, John Yang, Alexander Wettig, Shunyu Yao, Kexin Pei, Ofir Press, and Karthik R. Narasimhan. 2024. SWE-bench: Can Language Models Resolve Real-world Github Issues?. In The Twelfth International Conference on Learning Representations, ICLR 2024, Vienna, Austria, May 7-11, 2024 . OpenReview.net. https://openreview.net/forum? id=VTF8yNQM66 [16] James A. Jones and Mary Jean Harrold. 2005. Empirical Evaluation of the Tarantula Automatic Fault-Localization Technique. In Proceedings of the 20th IEEE/ACM International Conference on Automated Software Engineering . ACM, New York, NY, USA, 273–282. doi:10.1145/1101908.1101949 [17] Sungmin Kang, Juyeon Yoon, and Shin Yoo. 2023. Large Language Models are Few-shot Testers: Exploring LLM-based General Bug Reproduction. In 45th IEEE/ACM International Conference on Software Engineering, ICSE 2023, Melbourne, Australia, May 14-20, 2023 . IEEE, 2312–2323. doi:10.1109/ICSE48619.2023.00194 [18] K Rustan M Leino. 2010. Dafny: An automatic program verifier for functional correctness. In International conference on logic for programming artificial intelligence and reasoning . Springer, 348–370. [19] Martin Leucker and Christian Schallhart. 2009. A brief account of runtime verification. J. Log. Algebraic Methods Program. 78, 5 (2009), 293–303. doi:10.1016/J.JLAP.2008.08.004 [20] Ben Liblit, Mayur Naik, Alice X. Zheng, Alex Aiken, and Michael I. Jordan. 2005. Scalable Statistical Bug Isolation. In 
+
+Proceedings of the ACM SIGPLAN 2005 Conference on Programming Language Design and Implementation . ACM, New York, NY, USA, 15–26. doi:10.1145/1065010.1065014 , Vol. 1, No. 1, Article . Publication date: October 2026. 20 Shiwen Shan, Yintong Huo, Zhiying Wu, and Yuxin Su 
+
+[21] Xiao Liu, Hao Yu, Hanchen Zhang, Yifan Xu, Xuanyu Lei, Hanyu Lai, Yu Gu, Hangliang Ding, Kaiwen Men, Kejuan Yang, Shudan Zhang, Xiang Deng, Aohan Zeng, Zhengxiao Du, Chenhui Zhang, Sheng Shen, Tianjun Zhang, Yu Su, Huan Sun, Minlie Huang, Yuxiao Dong, and Jie Tang. 2023. AgentBench: Evaluating LLMs as Agents. arXiv:2308.03688 [cs.AI] https://arxiv.org/abs/2308.03688 [22] Ruofan Lu, Yichen Li, and Yintong Huo. 2025. Exploring autonomous agents: A closer look at why they fail when completing tasks. In 2025 40th IEEE/ACM International Conference on Automated Software Engineering (ASE) . IEEE, 3856–3860. [23] Chang Ma, Junlei Zhang, Zhihao Zhu, Cheng Yang, Yujiu Yang, Yaohui Jin, Zhenzhong Lan, Lingpeng Kong, and Junxian He. 2024. AgentBoard: An Analytical Evaluation Board of Multi-Turn LLM Agents. arXiv:2401.13178 [cs.CL] https://arxiv.org/abs/2401.13178 [24] Bertrand Meyer. 1992. Applying "Design by Contract". Computer 25, 10 (1992), 40–51. doi:10.1109/2.161279 [25] Nebius. 2024. SWE-agent-trajectories. Hugging Face dataset. https://huggingface.co/datasets/nebius/SWE-agent-trajectories [26] Nebius. 2024. SWE-Bench Extra. SWE-bench Extra Dataset. https://huggingface.co/datasets/nebius/SWE-bench-extra [27] OpenAI. 2023. tiktoken: A fast BPE tokeniser for use with OpenAI’s models. Software library; cl100k_base encoding. https://github.com/openai/tiktoken [28] OpenAI. 2026. GPT-5.6: Frontier intelligence that scales with your ambition. GPT-5.6 Sol / Codex model announcement. https://openai.com/index/gpt-5-6/ [29] OpenRouter. 2024. OpenRouter. Unified API for large language models. https://openrouter.ai [30] Shishir G. Patil, Tianjun Zhang, Xin Wang, and Joseph E. Gonzalez. 2024. Gorilla: Large Language Model Connected with Massive APIs. In Advances in Neural Information Processing Systems 37: Annual Conference on Neural Information Processing Systems 2024, NeurIPS 2024, Vancouver, BC, Canada, December 10 - 15, 2024 , Amir Globersons, Lester Mackey, Danielle Belgrave, Angela Fan, Ulrich Paquet, Jakub M. Tomczak, and Cheng Zhang (Eds.). http://papers.nips.cc/ paper_files/paper/2024/hash/e4c61f578ff07830f5c37378dd3ecb0d-Abstract-Conference.html [31] Yujia Qin, Shihao Liang, Yining Ye, Kunlun Zhu, Lan Yan, Yaxi Lu, Yankai Lin, Xin Cong, Xiangru Tang, Bill Qian, Sihan Zhao, Lauren Hong, Runchu Tian, Ruobing Xie, Jie Zhou, Mark Gerstein, Dahai Li, Zhiyuan Liu, and Maosong Sun. 2024. ToolLLM: Facilitating Large Language Models to Master 16000+ Real-world APIs. In The Twelfth International Conference on Learning Representations, ICLR 2024, Vienna, Austria, May 7-11, 2024 . OpenReview.net. https://openreview. net/forum?id=dHng2O0Jjr [32] Qwen Team. 2026. Qwen3.7-Plus: Multimodal Agent Intelligence. Alibaba Cloud Model Studio. https://www. alibabacloud.com/blog/qwen3-7-plus-multimodal-agent-intelligence_603206 [33] Haifeng Ruan, Yuntong Zhang, and Abhik Roychoudhury. 2025. SpecRover: Code Intent Extraction via LLMs. In 47th IEEE/ACM International Conference on Software Engineering, ICSE 2025, Ottawa, ON, Canada, April 26 - May 6, 2025 .IEEE, 963–974. doi:10.1109/ICSE55347.2025.00080 [34] Timo Schick, Jane Dwivedi-Yu, Roberto Dessì, Roberta Raileanu, Maria Lomeli, Eric Hambro, Luke Zettlemoyer, Nicola Cancedda, and Thomas Scialom. 2023. Toolformer: Language Models Can Teach Themselves to Use Tools. In Advances in Neural Information Processing Systems 36: Annual Conference on Neural Information Processing Systems 2023, NeurIPS 2023, New Orleans, LA, USA, December 10 - 16, 2023 , Alice Oh, Tristan Naumann, Amir Globerson, Kate Saenko, Moritz Hardt, and Sergey Levine (Eds.). http://papers.nips.cc/paper_files/paper/2023/hash/d842425e4bf79ba039352da0f658a906-Abstract-Conference.html [35] Ridwan Shariffdeen and SonarSource. 2025. Sonar Foundation Agent. SWE-bench submission and technical report. https://github.com/AutoCodeRoverSG/sonar-foundation-agent [36] Noah Shinn, Federico Cassano, Ashwin Gopinath, Karthik Narasimhan, and Shunyu Yao. 2023. Reflexion: language agents with verbal reinforcement learning. In Advances in Neural Information Processing Systems 36: Annual Conference on Neural Information Processing Systems 2023, NeurIPS 2023, New Orleans, LA, USA, December 10 - 16, 2023 , Alice Oh, Tristan Naumann, Amir Globerson, Kate Saenko, Moritz Hardt, and Sergey Levine (Eds.). http://papers.nips.cc/paper_ files/paper/2023/hash/1b44b878bb782e6954cd888628510e90-Abstract-Conference.html [37] Donna Spencer. 2009. Card sorting: Designing usable categories . Rosenfeld Media. [38] Joseph Spracklen, Raveen Wijewickrama, A. H. M. Nazmus Sakib, Anindya Maiti, Bimal Viswanath, and Murtuza Jadliwala. 2025. We Have a Package for You! A Comprehensive Analysis of Package Hallucinations by Code Generating LLMs. In 34th USENIX Security Symposium, USENIX Security 2025, Seattle, WA, USA, August 13-15, 2025 , Lujo Bauer and Giancarlo Pellegrino (Eds.). USENIX Association, 3687–3706. https://www.usenix.org/conference/usenixsecurity25/ presentation/spracklen [39] Kimi Team. 2026. Kimi K3: Open Frontier Intelligence. CoRR abs/2607.24653 (2026). arXiv:2607.24653 doi:10.48550/ ARXIV.2607.24653 [40] Yuchen Tian, Weixiang Yan, Qian Yang, Xuandong Zhao, Qian Chen, Wen Wang, Ziyang Luo, Lei Ma, and Dawn Song. 2025. CodeHalu: Investigating Code Hallucinations in LLMs via Execution-based Verification. In Thirty-Ninth 
+
+, Vol. 1, No. 1, Article . Publication date: October 2026. StateMirror: Pre-Execution Detection of Hallucinated Tool Calls in Coding Agents 21 
+
+AAAI Conference on Artificial Intelligence, Thirty-Seventh Conference on Innovative Applications of Artificial Intelligence, Fifteenth Symposium on Educational Advances in Artificial Intelligence, AAAI 2025, Philadelphia, PA, USA, February 25 -March 4, 2025 , Toby Walsh, Julie Shah, and Zico Kolter (Eds.). AAAI Press, 25300–25308. doi:10.1609/AAAI.V39I24.34717 [41] Haoyu Wang, Christopher M. Poskitt, and Jun Sun. 2025. AgentSpec: Customizable Runtime Enforcement for Safe and Reliable LLM Agents. CoRR abs/2503.18666 (2025). arXiv:2503.18666 doi:10.48550/ARXIV.2503.18666 [42] Minxing Wang, Xiaofei Xie, and Yintong Huo. 2026. Trajaudit: Automated failure diagnosis for agentic coding systems. 
+
+arXiv preprint arXiv:2605.26563 (2026). [43] Xingyao Wang, Yangyi Chen, Lifan Yuan, Yizhe Zhang, Yunzhu Li, Hao Peng, and Heng Ji. 2024. Executable Code Actions Elicit Better LLM Agents. In Forty-first International Conference on Machine Learning, ICML 2024, Vienna, Austria, July 21-27, 2024 (Proceedings of Machine Learning Research, Vol. 235) , Ruslan Salakhutdinov, Zico Kolter, Katherine A. Heller, Adrian Weller, Nuria Oliver, Jonathan Scarlett, and Felix Berkenkamp (Eds.). PMLR / OpenReview.net, 50208–50232. https://proceedings.mlr.press/v235/wang24h.html [44] Xingyao Wang, Boxuan Li, Yufan Song, Frank F. Xu, Xiangru Tang, Mingchen Zhuge, Jiayi Pan, Yueqi Song, Bowen Li, Jaskirat Singh, et al. 2025. OpenHands: An Open Platform for AI Software Developers as Generalist Agents. In The Thirteenth International Conference on Learning Representations . https://arxiv.org/abs/2407.16741 [45] Zexin Wang, Changhua Pei, Yuanhao Liu, Jingjing Li, Yintong Huo, Quan Zhou, Haotian Si, Hang Cui, Zihan Liu, Jianhui Li, et al. 2026. Agent System Operations: Categorization, Challenges, and Future Directions. IEEE Transactions on Software Engineering (2026). [46] Zhijie Wang, Zijie Zhou, Da Song, Yuheng Huang, Shengmai Chen, Lei Ma, and Tianyi Zhang. 2025. Towards Understanding the Characteristics of Code Generation Errors Made by Large Language Models. In 47th IEEE/ACM International Conference on Software Engineering, ICSE 2025, Ottawa, ON, Canada, April 26 - May 6, 2025 . IEEE, 2587–2599. doi:10.1109/ICSE55347.2025.00180 [47] W. Eric Wong, Ruizhi Gao, Yihao Li, Rui Abreu, and Franz Wotawa. 2016. A Survey on Software Fault Localization. 
+
+IEEE Transactions on Software Engineering 42, 8 (2016), 707–740. doi:10.1109/TSE.2016.2521368 [48] John Yang, Carlos E. Jimenez, Alexander Wettig, Kilian Lieret, Shunyu Yao, Karthik Narasimhan, and Ofir Press. 2024. SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering. In Advances in Neural Information Processing Systems 37: Annual Conference on Neural Information Processing Systems 2024, NeurIPS 2024, Vancouver, BC, Canada, December 10 - 15, 2024 , Amir Globersons, Lester Mackey, Danielle Belgrave, Angela Fan, Ulrich Paquet, Jakub M. Tomczak, and Cheng Zhang (Eds.). http://papers.nips.cc/paper_files/paper/2024/hash/ 5a7c947568c1b1328ccc5230172e1e7c-Abstract-Conference.html [49] John Yang, Akshara Prabhakar, Karthik Narasimhan, and Shunyu Yao. 2023. InterCode: Standardizing and Benchmark-ing Interactive Coding with Execution Feedback. In Advances in Neural Information Processing Systems 36: Annual Conference on Neural Information Processing Systems 2023, NeurIPS 2023, New Orleans, LA, USA, December 10 - 16, 2023 ,Alice Oh, Tristan Naumann, Amir Globerson, Kate Saenko, Moritz Hardt, and Sergey Levine (Eds.). http://papers.nips. cc/paper_files/paper/2023/hash/4b175d846fb008d540d233c188379ff9-Abstract-Datasets_and_Benchmarks.html [50] Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik Narasimhan, and Yuan Cao. 2022. ReAct: Synergizing Reasoning and Acting in Language Models. arXiv:2210.03629 [cs.CL] https://arxiv.org/abs/2210.03629 [51] Andreas Zeller and Ralf Hildebrandt. 2002. Simplifying and Isolating Failure-Inducing Input. IEEE Transactions on Software Engineering 28, 2 (2002), 183–200. doi:10.1109/32.988498 [52] Boxuan Zhang, Jianing Zhu, Zeru Shi, Dongfang Liu, and Ruixiang Tang. 2026. AgentForesight: Online Auditing for Early Failure Prediction in Multi-Agent Systems. arXiv:2605.08715 [cs.AI] https://arxiv.org/abs/2605.08715 [53] Shaokun Zhang, Ming Yin, Jieyu Zhang, Jiale Liu, Zhiguang Han, Jingyang Zhang, Beibin Li, Chi Wang, Huazheng Wang, Yiran Chen, and Qingyun Wu. 2025. Which Agent Causes Task Failures and When? On Automated Failure Attribution of LLM Multi-Agent Systems. In Proceedings of the 42nd International Conference on Machine Learning (Proceedings of Machine Learning Research, Vol. 267) . PMLR, Vancouver, Canada, 76583–76599. https://arxiv.org/abs/2505.00212 [54] Yuntong Zhang, Haifeng Ruan, Zhiyu Fan, and Abhik Roychoudhury. 2024. AutoCodeRover: Autonomous Program Improvement. In Proceedings of the 33rd ACM SIGSOFT International Symposium on Software Testing and Analysis, ISSTA 2024, Vienna, Austria, September 16-20, 2024 , Maria Christakis and Michael Pradel (Eds.). ACM, 1592–1604. doi:10.1145/3650212.3680384 [55] Ziyao Zhang, Chong Wang, Yanlin Wang, Ensheng Shi, Yuchi Ma, Wanjun Zhong, Jiachi Chen, Mingzhi Mao, and Zibin Zheng. 2025. LLM Hallucinations in Practical Code Generation: Phenomena, Mechanism, and Mitigation. Proc. ACM Softw. Eng. 2, ISSTA (2025), 481–503. doi:10.1145/3728894 [56] Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, Siyuan Zhuang, Zhanghao Wu, Yonghao Zhuang, Zi Lin, Zhuohan Li, Dacheng Li, Eric P. Xing, Hao Zhang, Joseph E. Gonzalez, and Ion Stoica. 2023. Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena. In Advances in Neural Information Processing Systems 36: Annual Conference on Neural Information Processing Systems 2023, NeurIPS 2023, New Orleans, LA, USA, December 10 - 16, 2023 , Alice Oh, Tristan Naumann, Amir Globerson, Kate Saenko, Moritz Hardt, and Sergey Levine (Eds.). http://papers.nips.cc/paper_files/ , Vol. 1, No. 1, Article . Publication date: October 2026. 22 Shiwen Shan, Yintong Huo, Zhiying Wu, and Yuxin Su 
+
+paper/2023/hash/91f18a1287b398d378ef22505bf41832-Abstract-Datasets_and_Benchmarks.html [57] Kunlun Zhu, Zijia Liu, Bingxuan Li, Muxin Tian, Yingxuan Yang, Jiaxun Zhang, Pengrui Han, Qipeng Xie, Fuyang Cui, Weijia Zhang, Xiaoteng Ma, Xiaodong Yu, Gowtham Ramesh, Jialian Wu, Zicheng Liu, Pan Lu, James Zou, and Jiaxuan You. 2025. Where LLM Agents Fail and How They can Learn From Failures. arXiv:2509.25370 [cs.AI] https://arxiv.org/abs/2509.25370 [58] Thomas Zimmermann. 2016. Card-sorting: From text to themes. In Perspectives on data science for software engineering .Elsevier, 137–141. , Vol. 1, No. 1, Article . Publication date: October 2026.

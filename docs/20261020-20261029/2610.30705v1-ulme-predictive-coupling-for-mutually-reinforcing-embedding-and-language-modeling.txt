@@ -1,0 +1,551 @@
+Title: ULME: Predictive Coupling for Mutually Reinforcing Embedding and Language Modeling
+
+URL Source: https://arxiv.org/pdf/2610.30705v1
+
+Published Time: Fri, 23 Oct 2026 00:37:27 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+# ULME: Predictive Coupling for Mutually Reinforcing Embedding and Language Modeling 
+
+## Yang Liu 1, 2, 3, †, Zhiqiang Yuan 1, †, §, Shu-Dong Huang 2, 3, * , Jiancheng Lv 2, 3 , Liwei Yang 1,Qiwei Yan 1, Kailin Lv 1, Jinchao Zhang 1, * 
+
+> 1
+
+Pattern Recognition Center, WeChat AI, Tencent Inc. 
+
+> 2
+
+College of Computer Science, Sichuan University 
+
+> 3
+
+Engineering Research Center of Machine Learning and Industry Intelligence, Ministry of Education 
+
+Abstract 
+
+Text embedding and text generation are two of the most useful capabilities of modern large language models, yet they are typ-ically provided by separate specialized models—an embedder and a generator—trained with incompatible objectives and deployed side by side in retrieval-augmented generation and agent systems. Recent unified embedding-generation models such as GritLM share parameters between the two capabili-ties, but they either switch attention regimes between modes or optimize embedding and language modeling as parallel ob-jectives that never supervise each other. We argue that these designs are only partially unified: the two capabilities coexist on the same weights, but do not shape each other. We propose ULME, a post-training framework that unifies embedding and language modeling on a causal decoder-only LLM through 
+
+predictive coupling . ULME inserts a chain of learnable slots between the query and the answer, reads a semantic embed-ding and a reasoning embedding from two designated slots, and trains three objectives on a shared causal backbone: a con-trastive loss anchoring the semantic slot to document represen-tations, a language-modeling loss supervising answer genera-tion, and a stop-gradient predictive loss that aligns the reason-ing slot with a pooled summary of the answer, so that genera-tion actively shapes what the embedding encodes. Across two model families (Qwen2.5, Qwen3) and eight scales spanning 0.5B–8B parameters, a single ULME checkpoint improves MTEB by 3.3–4.1 points over the strongest open-source base-line, tightens BRIGHT and AdvBench-IR simultaneously, and remains on par with a generation-only fine-tune on standard accuracy benchmarks (MMLU, GSM8K, MMLU-Pro, Hu-manEval)—demonstrating that genuine unification yields mu-tually reinforcing rather than merely coexisting capabilities. 
+
+## Introduction 
+
+Modern LLM systems routinely process the same query twice. In retrieval-augmented generation (Lewis et al. 2020; Yan et al. 2026), in-context example selection (Liu et al. 2022), and agent memory (Xu et al. 2026b; Lyu et al. 2026), an embedder first maps the query into a vector to retrieve context, and a generator then processes the query again to produce an answer. The two components are typically trained separately, and their representations of the same query never 
+
+† Equal contribution. § Tech Lead. * Corresponding authors. 
+
+‡ This work was done during Yang Liu’s internship at WeChat AI, Tencent Inc. under the guidance of Zhiqiang Yuan. 
+
+interact. This treats the semantic understanding needed to retrieve as if it were independent of the semantic understand-ing needed to generate—yet a generative LLM, on the way to producing a coherent answer, already encodes the query in a form that is largely what a good embedding should be. More precisely, generating an appropriate answer requires the model to encode, in its causal hidden states, an answer-relevant reading of the query. This reading is not yet an embedding: it is distributed across positions, has no fixed-dimensional readout, and is not organized into a metric space in which similarity reflects relevance. Recent LLM-based embedders (Zhang et al. 2025b; Lee et al. 2025) confirm the underlying assumption: competitive dense representations can be extracted directly from a decoder-only LLM’s causal hidden states, without a separate encoder or bidirectional attention. Exposing these states as embeddings is not as simple as applying both losses to the same token, however. Retrieval and language modeling inhabit the same hidden space but impose different geometries on it: retrieval asks where an input should lie relative to others , requiring a sequence-level state that is globally comparable under inner product; lan-guage modeling asks which token should come next , requir-ing position-dependent states supporting the LM head. With-out a dedicated readout, the natural embedding candidate is the final hidden state of the query—yet that state is also used to predict the first answer token. Overloading it creates a 
+
+representational collision : one surface-token state is simul-taneously asked to be a globally comparable embedding and a local next-token predictor. A unified model should separate the two readouts, but couple the semantics they share. Recent unified models—GritLM (Muennighoff et al. 2025), GEM (Zhang et al. 2025a)—achieve parameter-level unification but leave two gaps. First, the two capabilities may form their representations under different computations: GritLM, for example, switches to bidirectional attention for embedding, so its embedding readout and its generative hid-den states do not belong to the same causal trajectory. Second, the two objectives are optimized in parallel: generation does not depend on the learned embedding, and embedding re-ceives no direct signal from the answer-side representations produced by generation. Parameter sharing alone does not establish an interface between them. We close both gaps by treating the causal hidden-state tra-arXiv:2610.30705v1 [cs.CL] 22 Oct 2026 jectory as the shared latent, and by introducing a mechanism we call predictive coupling : the answer-side hidden states from the same forward pass—a future-informed view of the query—serve as a learning target for a designated query-side latent, aligned by an InfoNCE loss with a stop-gradient on the answer side. The stop-gradient makes the coupling well-posed: the query-side latent reaches toward the more-informed answer-side representation, while gradient never flows back into the answer side that language modeling sep-arately supervises. This is a one-sided distillation from the answer-side representation into a query-only latent that is available at inference time. Realizing it on the causal trajec-tory requires dedicated latent positions—slots that summa-rize the query without being tied to any surface word—so both the retrieval readout and the predictive target can be trained without competing with next-token prediction. Building on these ideas, we propose ULME (Unifying 
+
+Language Modeling and Embedding), a post-training frame-work in which a decoder-only LLM, under causal attention throughout, produces embedding and answer from a single forward pass over q ∥ ⟨ emb ⟩1: N ∥ a. The N learnable slot tokens realize the shared latent: slot 0 is the semantic em-bedding , aligned to document representations by Lsem ; the answer span is supervised by Lgen , whose gradient reaches the slots via the answer’s attention over them; slot N −1 is the 
+
+reasoning embedding , aligned by a stop-gradient predictive loss Lpred to a pooled summary of the answer-side hidden states. All three losses share every parameter and every hid-den state; embedding is no longer trained in isolation, but shaped by the representation the model would use to answer the query. Our contributions are: 
+
+• We reframe unified embedding and generation as recon-ciling two geometries within one causal hidden space— a globally comparable sequence-level state for retrieval, and position-dependent states for next-token prediction— motivating separate readouts with coupled semantics. 
+
+• We propose ULME with predictive coupling : under stop-gradient, an answer-side latent from the same forward pass supervises a query-side latent, so generation shapes embedding without being disturbed by it. A learnable slot chain between query and answer hosts the semantic readout at one end and the predictive target at the other. 
+
+• Across two model families (Qwen2.5, Qwen3) and eight scales (0.5B–8B), a single ULME checkpoint is simulta-neously competitive on embedding (MTEB, BRIGHT) and generation (MMLU, GSM8K, MMLU-Pro, Hu-manEval), improving over the strongest same-backbone baseline on MTEB by 3.3–4.1 points. 
+
+## Related Work 
+
+Large Language Models. Recent years have witnessed re-markable progress in large language models (LLMs), which have demonstrated unprecedented capabilities in understand-ing and generating human-like text and have come to domi-nate a wide range of natural language processing tasks. State-of-the-art LLMs such as GPT (Achiam et al. 2023), Llama (Grattafiori et al. 2024), DeepSeek (Xu et al. 2026a), and Qwen (Yang et al. 2025) are all built on the decoder-only transformer architecture. The decoder-only design relies on causal attention, in which each token attends only to its pre-decessors, and is trained with a next-token prediction ob-jective (Radford et al. 2018); this combination has proven crucial to the scalability and downstream versatility of mod-ern LLMs. Beyond their core generative ability, these mod-els exhibit strong instruction following (Ouyang et al. 2022), few-shot in-context learning (Brown et al. 2020), and multi-step reasoning (Wei et al. 2022), and have been extended in two complementary directions: retrieval-augmented gener-ation (Lewis et al. 2020), which couples an LLM with an external knowledge base to mitigate knowledge cutoff and reduce hallucination; and LLM agents (Yao et al. 2022), which equip LLMs with tools, memory, and environment interaction to perform long-horizon decision making. Both of these downstream paradigms rely on a retriever that se-lects relevant context for the generator, yet the retriever and the generator are typically separate models trained with sep-arate objectives — a separation that motivates the unified embedding-generation setting we study in this work. 
+
+LLM-based Embedding Models. Text embedding mod-els map text into dense vectors and underpin retrieval, clus-tering, and classification (Reimers and Gurevych 2019; Nee-lakantan et al. 2022). Early models were built on bidirec-tional encoders such as BERT (Devlin et al. 2019), but as decoder-only LLMs surpassed them in language understand-ing (Brown et al. 2020; Touvron et al. 2023), a growing line of work repurposes LLMs as embedders to inherit their pre-trained semantic knowledge (Wang et al. 2022; Lee et al. 2025). E5-Mistral (Wang et al. 2022) and NV-Embed (Lee et al. 2025) fine-tune causal LLMs with contrastive objectives and pool a single hidden state — typically the last token — as the embedding, showing that causal attention is no barrier to strong dense representations. Echo-Embeddings (Springer et al. 2025) repeats the input so earlier tokens can encode later context, while LLM2Vec (BehnamGhader et al. 2024, 2026) removes the causal mask altogether to obtain a bidirectional encoder before contrastive fine-tuning. These methods establish the observation our work builds on: the hidden states of a decoder-only LLM, produced dur-ing an ordinary causal forward pass, already carry enough information to serve as strong embeddings. Yet they treat em-bedding as the sole objective; after contrastive fine-tuning the resulting models are competitive embedders but no longer us-able as generators, giving up the generation-side capacity of the backbone rather than exploiting it. 
+
+Generative Retrieval. Retrieval itself is increasingly posed as a generation problem rather than a pure vector-matching one. F2RVLM (Bi et al. 2026a) trains a vision-language model to generate the fragment of a long multi-modal dialogue that answers a retrieval query, showing that a generative model can also act as the retriever when rele-vance is spread over multiple utterances and images; its ex-tended study introduces the fine-grained fragment retrieval task, where a two-stage system further indexes semantic frag-ments with a dedicated fragment embedding model before generative retrieval (Bi et al. 2026b). Practical retrieval stacks Decoder-Only LLM               
+
+> DDDEMB
+> 𝐸𝑑
+> Decoder-Only LLM
+> QQQEMB
+> 𝐸𝑞
+> InfoNCE
+> Decoder-Only LLM
+> QEMB EMB Q
+> NTP
+> Decoder-Only LLM
+> 𝐸𝑑
+> AAEMB
+> InfoNCE
+> Decoder-Only LLM
+> QQEMB
+> 𝐸𝑞
+> EMB
+> A
+> ℒ = ℒ𝑠𝑒𝑚 + ℒ𝑔𝑒𝑛 + ℒ𝑝𝑟𝑒𝑑
+> Q-D data
+> Q-A data
+> Slots tokens
+> Hidden states
+> Semantic Objective Generation Objective Predictive Coupling
+> 𝓛𝒔𝒆𝒎
+> 𝓛𝒈𝒆𝒏
+> 𝓛𝒑𝒓𝒆𝒅
+
+Figure 1: Overview of ULME. A single causal decoder is trained with three objectives on a shared chain of learnable slot tokens (flame icons: trainable slots; grey blocks: hidden states). Left (Lsem ): symmetric InfoNCE pulls the query and document slot embeddings Eq , E d together. Middle (Lgen ): next-token prediction over the answer span A, with the slot chain on the causal path from Q to A. Right (Lpred ): a one-sided InfoNCE aligns the query-side slot with the answer-side slot under stop-gradient on the answer side. Total loss: L = Lsem + Lgen + Lpred .thus keep an embedder and a generator side by side—one supplies a metric space for indexing, the other reasons about what the query actually asks for—which is exactly the dupli-cation a unified embedding-generation model should absorb. 
+
+Unified Embedding-Generation Models. Since genera-tive LLMs and LLM-based embedders evolve in opposite directions — each discarding what the other keeps — a natural question is whether one model can retain both. GritLM (Muennighoff et al. 2025) fine-tunes a single LLM with both a contrastive embedding loss and a generative language-modeling loss, switching to bidirectional atten-tion for embedding and back to causal attention for gen-eration. GEM (Zhang et al. 2025a) injects embedding abil-ity into a generative LLM through additional tokens and a self-supervised contrastive scheme. These models show that the two capabilities can share one backbone without severe degradation on either side. The unification they achieve, however, is partial along two axes. At the mechanism level, embedding and generation do not share a common forward computation, as GritLM alternates between two attention regimes. At the objective level, the two losses are optimized in parallel over shared parameters but never supervise each other, so the embedding remains a conventional semantic-matching vector and the generative pathway is never used to inform what it encodes. Our work departs from this paradigm by unifying both tasks under a single causal computation and coupling their objec-tives through a shared latent state, so that generation actively shapes the embedding rather than merely coexisting with it. 
+
+## Unified Language Modeling and Embedding 
+
+Model Architecture 
+
+ULME operates as a single decoder-only LLM under causal attention: both the query embedding and the next-token log-its are read from one forward pass over shared parameters, without mode switching or an auxiliary encoder. This choice fixes the mechanism axis, but it leaves open the question of where the embedding is read from. The standard practice in causal LLM embedders is last-token pooling. Under unification this is awkward: the final position of q is precisely where Lgen predicts the first token of a, forcing a single hidden state to serve simultaneously as a semantic summary of q and as a next-token predictor. We resolve this by inserting a chain of dedicated latent posi-tions between q and a, in the spirit of latent chain-of-thought approaches such as Coconut (Hao et al. 2024) and pause to-kens (Goyal et al. 2024). These works show that decoder-only models benefit from intermediate positions where computa-tion is not tied to any surface token; here, we repurpose the same idea to expose readouts that are structurally addressable by every loss. Concretely, we append N learnable slot tokens 
+
+⟨emb ⟩1, . . . , ⟨emb ⟩N after q. A training example takes the form 
+
+q ∥ ⟨ emb ⟩1 · · · ⟨ emb ⟩N ∥ a, (1) and a document is encoded analogously as d ∥ ⟨ emb ⟩. The slots are ordinary positions in the causal forward pass: each 
+
+⟨emb ⟩i attends backward to q and to earlier slots, and every answer token attends to all slots. No masking rule is altered and no auxiliary branch is introduced. Every loss below is computed from a single causal forward pass. Let h(i) 
+
+> q
+
+denote the hidden state at slot i on the query side, hd the hidden state at d’s slot, and Ha the answer-span hidden states. Slot 0 carries the semantic embedding, slot 
+
+N −1 carries the reasoning embedding, and Ha acts as the generation target and as a teacher for slot N −1.
+
+Retrieval and Generation Objectives 
+
+We first equip the slot chain with the two objectives that any unified embedding–generation model would maintain: a con-trastive loss on the semantic slot, and a language-modeling loss on the answer. Semantic retrieval. We designate slot 0 as the semantic embedding: hq := h(0)  
+
+> q
+
+on the query side and hd on the document side. With temperature τ and cross-rank in-batch negatives, the semantic loss is the symmetric InfoNCE 
+
+Lsem = − 12BBX
+
+> i=1
+
+log exp( h⊤ 
+
+> qi
+
+hdi /τ )
+
+PBj=1 exp( h⊤ 
+
+> qi
+
+hdj /τ )
+
+− 12BBX
+
+> i=1
+
+log exp( h⊤ 
+
+> di
+
+hqi /τ )
+
+PBj=1 exp( h⊤ 
+
+> di
+
+hqj /τ ) .
+
+(2) 
+
+Answer generation. The generative loss is standard next-token cross-entropy over the full sequence, with the loss masked to the span of a:
+
+Lgen = − X
+
+> t∈a
+
+log pθ (at | q, ⟨emb ⟩1: N , a <t ) . (3) Slot positions do not contribute to the token-level cross-entropy. Because the slot chain lies on the same causal trajec-tory that produces a, the language-modeling gradient reaches slot hidden states through the answer’s attention over them. These two losses supervise their respective readouts under shared parameters, mirroring the parallel-objective design used by prior unified models. What they do not provide is a direct signal that shapes the geometry of the slot chain itself: 
+
+Lsem pins slot 0 against the document embedding but says nothing about the answer content, and Lgen conditions on the slot chain but never explicitly asks any slot to represent anything in particular. 
+
+Predictive Coupling 
+
+Lgen is a token-level, indirect signal on the query side: it enforces that a can be produced from {q, ⟨emb ⟩1: N }, but it never demands that any specific slot representation take a particular form. To place a direct, sequence-level constraint on the query side, we align the terminal slot with a pooled summary of the answer computed in the same forward pass. Let rqa denote a pooled latent obtained from the answer-side hidden states Ha; we treat the pooling as a fixed operator and defer its exact form to the Experiments section (through-out this paper rqa is the mean of Ha; alternatives are ablated). The predictive loss is a one-sided in-batch InfoNCE between 
+
+h(N −1)  
+
+> q
+
+and rqa :
+
+Lpred = − log exp  ⟨h(N −1)  
+
+> q
+
+, sg( rqa )⟩/τ P 
+
+> k
+
+exp  ⟨h(N −1)  
+
+> q
+
+, sg( rqa,k )⟩/τ  , (4) where {rqa,k } enumerates the (cross-rank) batch and sg( ·)
+
+is the stop-gradient operator. The stop-gradient placement is deliberate. rqa has causal access to both q and a and is strictly more informed than 
+
+h(N −1)  
+
+> q
+
+, which sees only q and the slot chain; a well-posed predictive objective should let the less-informed side reach toward the more-informed one, not the reverse. Allowing gradients to flow back into rqa would additionally push the answer-side representation toward whatever is easy to con-trast in a batch, distorting the hidden states that Lgen must simultaneously supervise for next-token prediction. 
+
+Lpred is complementary to Lgen rather than redundant with it. The generative loss shapes slot representations indirectly, at token granularity, through the causal dependencies of a on the chain. The predictive loss shapes slot N −1 directly, at sequence granularity, by requiring it to be discriminative for the pooled answer. Together, the two losses populate the slot chain from both sides — one from the token stream of a, one from the compressed summary of a — while Lsem anchors slot 0 to the document space. The full ULME objective is 
+
+L = λsem Lsem + λgen Lgen + λpred Lpred , (5) computed from a single causal forward pass over 
+
+q ∥ ⟨ emb ⟩1: N ∥ a (and d ∥ ⟨ emb ⟩ on the document side). 
+
+## Experiments 
+
+Our experiments aim to answer one central question: does the joint objective of ULME actually deliver both capabilities at once, or merely time-share them? To make the answer deci-sive, every reported number in this section — embedding and 
+
+generation — comes from a single trained ULME checkpoint per configuration; no head is fine-tuned in isolation, and no capability is toggled off at evaluation time. We instantiate ULME on two open-weight decoder-only LLM families—Qwen2.5 (Team et al. 2024) and Qwen3 (Zhang et al. 2025b)—at eight scales spanning 0.5B to 8B (Qwen2.5-{0.5B, 1.5B, 3B, 7B}-Instruct and Qwen3-{0.6B, 1.7B, 4B, 8B}), and evaluate each trained model along both axes. For space reasons the main tables in this section re-port only three representative Qwen3 scales (1.7B, 4B, 8B); the remaining five backbones follow the same trends and their full results are provided in the supplementary material . On the embedding side we use MTEB (Muennighoff et al. 2023), the standard general-purpose text embedding benchmark, and BRIGHT (Su et al. 2025), a reasoning-intensive retrieval benchmark whose queries require inference beyond surface matching. On the generation side we use MMLU (Hendrycks et al. 2020) for broad knowledge, GSM8K (Cobbe et al. 2021) for arithmetic reasoning, MMLU-Pro (Wang et al. 2024) for harder multi-step reasoning, and HumanEval (Chen et al. 2021) (with its stricter HumanEval+ extension (Liu et al. 2023)) for code synthesis. This coverage stresses each half of the model with a distinct workload profile — dense-representation quality on one side, chain-of-thought and code generation on the other — so that a competitive score on ei-ther axis cannot be borrowed from the other. 
+
+Implementation details. Unless otherwise noted, every ULME model uses N =4 embedding slots, temperature 
+
+τ =0 .05 , and loss weights λsem =λgen =1 .0, λpred =0 .3; rqa 
+
+is the mean of the answer-side hidden states. We train on the LLM2Vec-format E5 contrastive data (Wang et al. 2022; BehnamGhader et al. 2024) for the embedding side and OpenThoughts-114k (Guha et al. 2025) for the generation side, using AdamW at 1×10 −5 with cross-rank in-batch neg-atives. Every reported number comes from the final check-point of a single run, without any post-hoc capability tog-gle. Full hyperparameters, evaluation protocols, and per-benchmark details are in the supplementary material .Method Retr. Rerank. Clust. PairCls. Class. STS Summ. Avg. Qwen3-1.7B                                                                                                                                                                         
+
+> Echo (Springer et al. 2025) 4.4 37.7 38.1 59.3 70.4 52.1 -0.8 39.8 HyDE (Gao et al. 2023) 17.7 39.5 38.2 69.4 75.6 72.2 18.0 49.8 InBedder (Peng et al. 2024) 15.7 41.2 47.0 68.6 79.2 65.9 9.3 50.2 GIRCSE (Tsai et al. 2025) 27.3 40.4 47.2 78.2 70.6 66.6 22.2 52.5 LLM2Vec (BehnamGhader et al. 2024) 34.9 39.9 41.1 76.4 71.1 73.4 30.4 54.8 LLM2VEC-GEN (BehnamGhader et al. 2026) 38.3 44.1 49.9 74.8 74.7 76.1 26.0 58.6 ULME (ours) 46.5 +8.2 45.6 +1.5 48.4 -1.5 80.1 +5.3 74.1 -0.6 78.5 +2.4 33.0 +7.0 61.9 +3.3
+> Qwen3-4B
+> Echo (Springer et al. 2025) 7.6 38.7 39.7 64.1 73.5 58.7 7.6 43.6 HyDE (Gao et al. 2023) 14.0 36.9 36.4 47.5 79.9 57.9 26.7 44.7 InBedder (Peng et al. 2024) 13.4 41.8 48.1 68.8 79.6 64.9 26.1 50.1 GIRCSE (Tsai et al. 2025) 27.8 42.9 45.1 70.7 71.5 63.6 22.5 51.3 LLM2Vec (BehnamGhader et al. 2024) 41.1 40.0 43.1 78.5 72.5 71.6 31.1 56.8 LLM2VEC-GEN (BehnamGhader et al. 2026) 39.8 45.9 50.6 78.1 77.2 78.6 28.7 60.6 ULME (ours) 48.1 +8.3 47.4 +1.5 49.1 -1.5 83.6 +5.5 76.6 -0.6 81.1 +2.5 36.4 +7.7 64.1 +3.5
+> Qwen3-8B
+> Echo (Springer et al. 2025) 6.8 40.0 37.2 63.6 74.2 53.9 0.5 41.8 HyDE (Gao et al. 2023) 15.9 37.1 32.4 65.8 81.6 67.4 30.3 48.3 InBedder (Peng et al. 2024) 11.0 42.4 48.6 70.7 80.5 67.4 24.5 50.5 GIRCSE (Tsai et al. 2025) 36.3 41.3 50.9 74.7 74.2 68.8 26.6 56.5 LLM2Vec (BehnamGhader et al. 2024) 42.7 40.9 40.6 77.3 72.5 72.6 31.7 56.8 LLM2VEC-GEN (BehnamGhader et al. 2026) 43.4 46.4 49.8 80.6 77.6 79.7 32.1 61.9 ULME (ours) 52.3 +8.9 48.2 +1.8 50.0 +0.2 86.3 +5.7 77.1 -0.5 82.2 +2.5 40.7 +8.6 66.0 +4.1
+
+Table 1: Results on MTEB(eng, v2). Rows are grouped by backbone; columns 2–8 are per-category means over Retrieval, Reranking, Clustering, PairClassification, Classification, STS, and Summarization; the final column is the overall task-mean over all 41 tasks. Bold marks the best score in each column within a backbone group. 
+
+Main Results 
+
+We ask whether ULME, within a single trained checkpoint, can match dedicated embedders on retrieval-oriented bench-marks while remaining on par with a generation-only fine-tune of the same backbone on standard accuracy benchmarks (MMLU, GSM8K, MMLU-Pro, HumanEval). Every row of every table in this subsection is populated from the same set of weights per configuration: no capability is toggled off, no head is fine-tuned in isolation, and no mode flag is switched at evaluation time. We compare ULME against recent em-bedding models on the same backbone. For LLM2Vec, LLM2VEC-GEN, and the other embedding baselines, we use the numbers reported by LLM2VEC-GEN (BehnamGhader et al. 2026) on the matching backbone; backbones for which LLM2VEC-GEN does not report a given baseline are omitted from that comparison. Any observed gap is thus attributable to the training objective rather than to backbone strength or independent reproduction. 
+
+MTEB. Table 1 reports MTEB(eng, v2) scores at three representative Qwen3 scales (1.7B, 4B, 8B); the remaining five backbones (Qwen2.5-{0.5B, 1.5B, 3B, 7B} and Qwen3-0.6B) follow the same trends and appear in the supplementary material . ULME beats every baseline we train on the same backbone, reaching 66.0 on Qwen3-8B—an improvement of 
+
+9.2 points over LLM2Vec and 4.1 points over LLM2VEC-GEN on the same backbone. Against LLM2Vec, the gain persists at every scale: +7.1 / +7.3 / +9.2 points on Qwen3-{1.7B, 4B, 8B}; against the stronger LLM2VEC-GEN, +3.3 / +3.5 / +4.1 . The lifts are category-wide: on Qwen3-8B, Re-trieval improves by +9.6 over LLM2Vec, PairClassification by +9.0 , Summarization by +9.0 , STS by +9.6 , and Clustering by +9.4 , with the remaining categories in the +4–7 range. The largest lifts (Retrieval, Summarization) are on tasks whose target is itself a produced text—exactly the setting where supervising the query latent through an answer-side repre-sentation should help. 
+
+BRIGHT and AdvBench-IR. Table 3 probes the reasoning-heavy side. On BRIGHT (nDCG@10, higher is better) ULME improves over LLM2VEC-GEN by +0.7 / +0.8 / +1.2 points on Qwen3-{1.7B, 4B, 8B}, with the gap widening as scale grows—a stronger backbone extracts more from the coupling, and the predictive objective is what con-verts that extra capacity into inference-heavy retrieval accu-racy. AdvBench-IR (lower is better) moves in the same di-rection: ULME cuts it by 25.3% on Qwen3-1.7B and 20.3% 
+
+on Qwen3-8B relative to LLM2Vec, tightening LLM2VEC-GEN’s own reduction by another 1.3–1.8 points at every scale.Both axes moving in ULME’s favor rules out a one-property-for-another trade-off. 
+
+Generation. Table 2 reports the same ULME check-points on MMLU, GSM8K, MMLU-Pro, and HumanEval / HumanEval +, alongside the untrained backbone and a Model MMLU GSM8K MMLU-Pro HumanEval HumanEval+ Qwen3-1.7B                                              
+
+> Backbone 63.7 76.0 39.3 54.9 48.2 Gen-only FT 63.0 74.2 38.6 53.7 46.3 ULME (ours) 63.5 +0.5 75.3 +1.1 39.6 +1.0 56.1 +2.4 49.4 +3.1
+> Qwen3-4B
+> Backbone 72.8 87.9 52.9 68.3 62.2 Gen-only FT 72.2 82.4 51.3 66.5 61.0 ULME (ours) 72.6 +0.5 86.3 +3.8 53.3 +2.0 69.5 +3.0 64.0 +3.0
+> Qwen3-8B
+> Backbone 74.8 91.2 61.8 71.3 66.5 Gen-only FT 75.1 78.6 60.2 67.7 62.8 ULME (ours) 75.1 -0.1 89.5 +10.8 61.9 +1.7 72.6 +4.9 67.7 +4.9
+
+Table 2: Generation results. Backbone (greyed) is the pre-training checkpoint we start from: Qwen2.5-Instruct (Team et al. 2024) or Qwen3 non-thinking (Yang et al. 2025), not trained by us. Gen-only FT fine-tunes the same backbone on the same OpenThoughts-114k data used by ULME. Bold marks the better of Gen-only FT and ULME per column.                        
+
+> Backbone Method AdvBench-IR ↓BRIGHT ↑
+> Qwen3-1.7B LLM2Vec 46.7 14.0 LLM2VEC-GEN 36.2 15.6 ULME (ours) 34.9 -1.3 16.3 +0.7
+> Qwen3-4B LLM2Vec 50.8 15.7 LLM2VEC-GEN 42.5 18.8 ULME (ours) 40.9 -1.6 19.6 +0.8
+> Qwen3-8B LLM2Vec 54.2 14.9 LLM2VEC-GEN 45.0 20.2 ULME (ours) 43.2 -1.8 21.4 +1.2
+
+Table 3: Reasoning-intensive retrieval on BRIGHT (nDCG@10, higher is better) and AdvBench-IR (lower is better). Bold marks the best result in each column within a backbone group. generation-only fine-tune on the same OpenThoughts-114k data used to train ULME. Since Backbone is an external reference, the relevant comparison for whether joint training holds up on these accuracy benchmarks is against Gen-only FT. On knowledge and math (MMLU, GSM8K, MMLU-Pro), ULME matches or exceeds the fine-tune on all cells but one (an −0.1 tie on Qwen3-8B MMLU), with MMLU-Pro gains that grow with scale ( +1.0 / +2.0 / +1.7 at 1.7B / 4B / 8B) and GSM8K gains that reach +10.8 at 8B. On code, ULME is above the fine-tune at every scale, by +2.4 to +4.9 
+
+points on HumanEval and +3.0 to +4.9 on HumanEval +,largest at Qwen3-8B (HE +: 67.7 vs 62.8). Consistent with the role of Lpred , forcing the query slot to summarize what the model would generate is especially informative for struc-tured, functionally-verified outputs where the pooled answer summary discriminates between many otherwise plausible completions. Both ULME and the fine-tune occasionally trail Backbone, which we attribute to distributional shift from continued training on OpenThoughts-114k rather than to the joint objective—the same pattern appears in Gen-only FT.                        
+
+> Slots MTEB-lite MMLU GSM8K
+> N= 0 58.6 74.5 87.8
+> N= 1 62.4 76.1 89.4
+> N= 2 63.1 76.4 89.8
+> N= 4 63.8 76.5 90.0
+> N= 8 63.6 76.3 89.9
+
+Table 4: Ablation on the number of embedding slots N .Highlighted row is our default setting.                     
+
+> Lsem Lgen Lpred MTEB-lite MMLU GSM8K
+> ✓✓31.2 76.6 90.1
+> ✓✓61.0 61.8 74.2
+> ✓✓60.2 76.4 89.9
+> ✓✓✓63.8 76.5 90.0
+
+Table 5: Loss decomposition. ✓ = loss enabled, blank = removed. Highlighted row is our full model. 
+
+Ablation Studies 
+
+Each ablation isolates the contribution of one design choice while keeping everything else fixed. All ab-lations use Qwen2.5-7B-Instruct as the backbone. To keep the sweep tractable we evaluate embeddings on 
+
+MTEB-lite , a 10-task subset of MTEB(eng, v2) cover-ing all seven category types (ArguAna, ClimateFEVER-HardNegatives, AskUbuntuDupQuestions, ArXivHierarchi-calClusteringP2P, MedrxivClusteringP2P.v2, SprintDupli-cateQuestions, Banking77Classification, ImdbClassifica-tion, BIOSSES, STS17), and report the task mean; generation is evaluated on MMLU and GSM8K. 
+
+Slot design. Does adding slot tokens actually help? Section on Model Architecture argues for inserting dedicated slot positions between q and a so that the final position of q is not forced to serve simultaneously as a semantic summary and as a next-token predictor. Table 4 tests this by varying CQAGaming CQAUnix Touche2020 HotpotQA FiQA ArguAna SCIDOCS FEVER TRECCOVID ClimateFEVER AskUbuntu MindSmall BiorxivP2P 20News MedrxivP2P MedrxivS2S ArXivP2P StackExch ArXivS2S StackExchP2P SprintDup TwitterSE15 TwitterURL MassiveScen Banking77 TweetSent MTOPDomain MassiveIntent Toxic Imdb AmazonCF STS14 SICK-R STS15 STS13 STS22 STS12 STS-B BIOSSES STS17 SummEval       
+
+> −4
+> −2024
+> Semantic slot  − Reasoning slot
+> +3.09 +2.87+2.85 +2.60 -3.60 +4.84
+> mean +0.65 Retrieval Reranking Clustering PairCls. Classi fi cation STS Summ.
+
+Figure 2: Per-task performance gap between the semantic slot (slot 0) and the reasoning slot (slot N −1) across the 41 tasks of MTEB(eng, v2). Positive bars favor slot 0; negative bars favor slot N −1. The red dashed line marks the mean gap ( +0 .65 ). 
+
+rqa pooling MTEB-lite MMLU GSM8K 
+
+Mean over Ha 63.8 76.5 90.0 
+
+Last-token of a 61.9 76.3 89.8 Length-weighted mean 62.7 76.4 89.9 
+
+Table 6: Ablation on the predictive target rqa . Highlighted row is our default setting. the number of slots from N =0 (no slot; last-token pooling of 
+
+q) through N =8 . Removing the slot chain drops MTEB-lite by 5.2 points and MMLU by 2.0 points, confirming that the collision between the two roles at a shared readout position is a real cost. A single slot already recovers most of the embedding gap, and both axes peak at N =4 before eroding slightly at N =8 (likely because a longer slot chain dilutes gradient signal per slot). 
+
+Are the two slots doing different jobs? Figure 2 plots the per-task gap between slot 0 and slot N −1 on all 41 tasks of MTEB(eng, v2). The split tracks a consistent lin-guistic property: slot 0’s largest leads— 4.84 on SprintDup, 
+
+3.09 on CQAGaming, 2.85 on Touche2020, 2.60 on Hot-potQA—come from tasks where relevance is well approxi-mated by lexical or entity overlap between query and doc-ument, exactly the alignment Lsem trains slot 0 against. Slot N −1’s largest leads— 3.60 on ClimateFEVER, 2.29 
+
+on SummEval, 1.83 on StackExchangeP2P, and 1.1–1.2 on Imdb and AmazonCF—come from tasks where relevance requires reasoning about what the document actually claims, summarizes, or expresses, rather than what words it shares with the query. This is exactly what Lpred trains slot N −1
+
+to produce: a pooled answer-summary that reaches from the query to the content it should retrieve. The specialization is mechanistic—each slot’s strong tasks are where its training signal has purchase—which is why a single ULME check-point can be simultaneously competitive on similarity-driven and reasoning-driven retrieval. 
+
+Loss decomposition. Does each loss contribute what its axis suggests? Table 5 toggles each loss off in turn. At the top level the attribution is clean: removing Lsem collapses MTEB-lite from 63 .8 to 31 .2 while leaving generation un-touched (MMLU 76 .6, GSM8K 90 .1, both essentially match-ing the full model), and removing Lgen collapses generation by 14 .7 points on MMLU and 15 .8 on GSM8K while em-bedding drops only mildly. Each of Lsem and Lgen thus owns its own axis. 
+
+Are the three losses truly interlocking? The interesting en-tries are the ones where an axis moves despite its own loss being untouched. Removing Lgen still costs 2.8 points on MTEB-lite even though the embedding loss is intact, show-ing that the answer-side hidden states shaped by language modeling are actively supplying signal to the query slot. Re-moving Lpred leaves generation flat but drops MTEB-lite by 
+
+3.6 points—the cleanest measurement of what the coupling itself contributes, since Lpred is the only loss that pulls the query slot toward a summary of the answer. Turning it off re-covers the “parallel losses over shared parameters” regime of prior work, and the 3.6-point gap is the cost of that regime; the three losses supervise a single shared representation rather than three tasks incidentally sharing weights. 
+
+Predictive target. Does the choice of rqa matter for em-bedding? Table 6 compares three choices for the predictive target: mean over the answer span (default), the last answer-token hidden state, and a length-weighted mean. Mean pool-ing wins on every embedding benchmark and last-token pool-ing loses on every one, with the gap on MTEB-lite reaching 
+
+1.9 points. The ordering is exactly what the Model Architec-ture section predicts: the terminal answer token is simultane-ously being pulled by next-token prediction, so using it as the predictive target hands slot N −1 a signal contaminated by local generation pressure. Mean pooling averages this pres-sure away and gives the query slot a cleaner sentence-level target to reach for. 
+
+Does it matter for generation? No—every rqa choice leaves MMLU and GSM8K essentially unchanged. This asymmetry is meaningful in its own right: an ablation that moves embedding by 1.9 points while leaving generation flat shows that the two axes are supervised through distinct, well-identified channels of the shared causal computation, rather than through a diffuse “one objective crowds out the other” dynamic. It is the same structural claim the loss decomposi-tion supports, seen from a second angle. Conclusion 
+
+We proposed ULME, a single decoder-only LLM that uni-fies embedding and generation under one causal forward pass and couples the two objectives through a chain of learnable slots: a contrastive loss anchors the semantic slot, a language-modeling loss routes generation through the slot chain, and a stop-gradient predictive loss aligns the query-side slot with a pooled summary of the answer. Across two model fami-lies (Qwen2.5, Qwen3) and eight scales from 0.5B to 8B, a single ULME checkpoint beats specialized embedding base-lines on MTEB and BRIGHT while remaining on par with a generation-only fine-tune on standard accuracy benchmarks (MMLU, GSM8K, MMLU-Pro, HumanEval), showing that the coupled objective is not a compromise between the two capabilities but a mechanism that lets one benefit the other. 
+
+## References 
+
+Achiam, J.; Adler, S.; Agarwal, S.; Ahmad, L.; Akkaya, I.; Aleman, F. L.; Almeida, D.; Altenschmidt, J.; Altman, S.; Anadkat, S.; et al. 2023. GPT-4 Technical Report. arXiv preprint arXiv:2303.08774 .BehnamGhader, P.; Adlakha, V.; Mosbach, M.; Bahdanau, D.; Chapados, N.; and Reddy, S. 2024. Llm2vec: Large language models are secretly powerful text encoders. arXiv preprint arXiv:2404.05961 .BehnamGhader, P.; Adlakha, V.; Schmidt, F. D.; Chapados, N.; Mosbach, M.; and Reddy, S. 2026. LLM2Vec-Gen: Gen-erative Embeddings from Large Language Models. arXiv preprint arXiv:2603.10913 .Bi, H.; Yuan, Z.; Jia, Z.; Zhang, J.; Li, C.; Luo, P.; Deng, Y.; Duan, X.; and Zhang, J. 2026a. F2RVLM: Boosting Fine-grained Fragment Retrieval for Multi-Modal Long-form Di-alogue with Vision Language Model. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 40. Bi, H.; Yuan, Z.; Li, C.; Yan, Q.; Jia, Z.; Zhang, J.; Duan, X.; Feng, Y.; Zhang, J.; and Zhou, J. 2026b. Fine-grained Fragment Retrieval in Multi-modal Long-form Dialogues. 
+
+arXiv preprint arXiv:2606.04591 .Brown, T.; Mann, B.; Ryder, N.; Subbiah, M.; Kaplan, J. D.; et al. 2020. Language Models Are Few-Shot Learners. In 
+
+Advances in Neural Information Processing Systems , vol-ume 33, 1877–1901. Chen, M.; Tworek, J.; Jun, H.; Yuan, Q.; Pinto, H. P. D. O.; Kaplan, J.; Edwards, H.; Burda, Y.; Joseph, N.; Brockman, G.; et al. 2021. Evaluating large language models trained on code. arXiv preprint arXiv:2107.03374 .Cobbe, K.; Kosaraju, V.; Bavarian, M.; Chen, M.; Jun, H.; Kaiser, L.; Plappert, M.; Tworek, J.; Hilton, J.; Nakano, R.; et al. 2021. Training verifiers to solve math word problems. 
+
+arXiv preprint arXiv:2110.14168 .Devlin, J.; Chang, M.-W.; Lee, K.; and Toutanova, K. 2019. BERT: Pre-Training of Deep Bidirectional Transformers for Language Understanding. In NAACL-HLT , 4171–4186. Gao, L.; Ma, X.; Lin, J.; and Callan, J. 2023. Precise zero-shot dense retrieval without relevance labels. In Proceedings of the 61st Annual Meeting of the Association for Computa-tional Linguistics (Volume 1: Long Papers) , 1762–1777. Goyal, S.; Ji, Z.; Rawat, A. S.; Menon, A. K.; Kumar, S.; and Nagarajan, V. 2024. Think before you speak: Training lan-guage models with pause tokens. In International Conference on Learning Representations , volume 2024, 27896–27923. Grattafiori, A.; Dubey, A.; Jauhri, A.; Pandey, A.; et al. 2024. The LLaMA 3 Herd of Models. arXiv preprint arXiv:2407.21783 .Guha, E.; Marten, R.; Keh, S.; Raoof, N.; Smyrnis, G.; Bansal, H.; Nezhurina, M.; Mercat, J.; Vu, T.; Sprague, Z.; et al. 2025. Openthoughts: Data recipes for reasoning mod-els. arXiv preprint arXiv:2506.04178 .Hao, S.; Sukhbaatar, S.; Su, D.; Li, X.; Hu, Z.; Weston, J.; and Tian, Y. 2024. Training large language models to reason in a continuous latent space. arXiv preprint arXiv:2412.06769 .Hendrycks, D.; Burns, C.; Basart, S.; Zou, A.; Mazeika, M.; Song, D.; and Steinhardt, J. 2020. Measuring mas-sive multitask language understanding. arXiv preprint arXiv:2009.03300 .Lee, C.; Roy, R.; Xu, M.; Raiman, J.; Shoeybi, M.; Catanzaro, B.; and Ping, W. 2025. NV-Embed: Improved Techniques for Training LLMs as Generalist Embedding Models. In 
+
+International Conference on Learning Representations .Lewis, P.; Perez, E.; Piktus, A.; Petroni, F.; Karpukhin, V.; Goyal, N.; Küttler, H.; Lewis, M.; Yih, W.-t.; Rocktäschel, T.; et al. 2020. Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks. In Advances in Neural Information Processing Systems , volume 33, 9459–9474. Liu, J.; Shen, D.; Zhang, Y.; Dolan, W. B.; Carin, L.; and Chen, W. 2022. What Makes Good In-Context Examples for GPT-3? In Proceedings of Deep Learning Inside Out (DeeLIO 2022) , 100–114. Liu, J.; Xia, C. S.; Wang, Y.; and Zhang, L. 2023. Is your code generated by chatgpt really correct? rigorous evaluation of large language models for code generation. Advances in neural information processing systems , 36: 21558–21572. Lyu, K.; Yuan, Z.; He, J.; Yan, Q.; Su, X.; Hu, N.; Liu, Y.; Hao, C.; Qin, S.; Hu, L.; Zhang, J.; and Zhou, J. 2026. PhotoCraft: Agentic Reasoning with Hierarchical Self-Evolving Memory for Deep Image Search. arXiv preprint arXiv:2606.03099 .Muennighoff, N.; Su, H.; Wang, L.; Yang, N.; Wei, F.; Yu, T.; Singh, A.; and Kiela, D. 2025. Generative Representational Instruction Tuning. In International Conference on Learning Representations .Muennighoff, N.; Tazi, N.; Magne, L.; and Reimers, N. 2023. Mteb: Massive text embedding benchmark. In Proceedings of the 17th Conference of the European Chapter of the Asso-ciation for Computational Linguistics , 2014–2037. Neelakantan, A.; Xu, T.; Puri, R.; Radford, A.; et al. 2022. Text and Code Embeddings by Contrastive Pre-Training. 
+
+arXiv preprint arXiv:2201.10005 .Ouyang, L.; Wu, J.; Jiang, X.; Almeida, D.; et al. 2022. Train-ing Language Models to Follow Instructions with Human Feedback. In Advances in Neural Information Processing Systems , volume 35, 27730–27744. Peng, L.; Zhang, Y.; Wang, Z.; Srinivasa, J.; Liu, G.; Wang, Z.; and Shang, J. 2024. Answer is all you need: Instruction-following text embedding via answering the question. In 
+
+Proceedings of the 62nd Annual Meeting of the Associa-tion for Computational Linguistics (Volume 1: Long Papers) ,459–477. Radford, A.; Narasimhan, K.; Salimans, T.; Sutskever, I.; et al. 2018. Improving Language Understanding by Genera-tive Pre-Training. Reimers, N.; and Gurevych, I. 2019. Sentence-BERT: Sen-tence Embeddings Using Siamese BERT-Networks. In 
+
+EMNLP-IJCNLP , 3982–3992. Springer, J.; Kotha, S.; Fried, D.; Neubig, G.; and Raghu-nathan, A. 2025. Repetition improves language model em-beddings. In International Conference on Learning Repre-sentations , volume 2025, 93543–93579. Su, H.; Yen, H.; Xia, M.; Shi, W.; Muennighoff, N.; Wang, H.-y.; Haisu, L.; Shi, Q.; Siegel, Z.; Tang, M.; et al. 2025. Bright: A realistic and challenging benchmark for reasoning-intensive retrieval. In International Conference on Learning Representations , volume 2025, 48941–48991. Team, Q.; et al. 2024. Qwen2. 5: A party of foundation models. Touvron, H.; Martin, L.; Stone, K.; Albert, P.; Almahairi, A.; Babaei, Y.; Bashlykov, N.; Batra, S.; Bhargava, P.; Bhosale, S.; et al. 2023. Llama 2: Open foundation and fine-tuned chat models. arXiv preprint arXiv:2307.09288 .Tsai, Y.-C.; Chen, K.-Y.; Li, Y.-C.; Chen, Y.-H.; Tsai, C.-Y.; and Lin, S.-D. 2025. Let llms speak embedding languages: Generative text embeddings via iterative contrastive refine-ment. arXiv preprint arXiv:2509.24291 .Wang, L.; Yang, N.; Huang, X.; Jiao, B.; Yang, L.; Jiang, D.; Majumder, R.; and Wei, F. 2022. Text embeddings by weakly-supervised contrastive pre-training. arXiv preprint arXiv:2212.03533 .Wang, Y.; Ma, X.; Zhang, G.; Ni, Y.; Chandra, A.; Guo, S.; Ren, W.; Arulraj, A.; He, X.; Jiang, Z.; et al. 2024. Mmlu-pro: A more robust and challenging multi-task language un-derstanding benchmark. Advances in Neural Information Processing Systems , 37: 95266–95290. Wei, J.; Wang, X.; Schuurmans, D.; et al. 2022. Chain-of-Thought Prompting Elicits Reasoning in Large Language Models. In Advances in Neural Information Processing Sys-tems , volume 35, 24824–24837. Xu, A.; Lin, B.; Xue, B.; Wang, B.; Xu, B.; Wu, B.; Zhang, B.; Lin, C.; Dong, C.; Ling, C.; et al. 2026a. Deepseek-v4: Towards highly efficient million-token context intelligence. 
+
+arXiv preprint arXiv:2606.19348 .Xu, W.; Liang, Z.; Mei, K.; Gao, H.; Tan, J.; and Zhang, Y. 2026b. A-Mem: Agentic Memory for LLM Agents. In 
+
+Advances in Neural Information Processing Systems , vol-ume 38, 17577–17604. Yan, Q.; Yuan, Z.; Li, C.; Zhang, J.; Deng, Y.; Zhang, J.; and Zhou, J. 2026. RAVA: Retrieval-Augmented Viewpoint Alignment for Subject-Driven Image Generation. In Pro-ceedings of the ACM International Conference on Multime-dia .Yang, A.; Li, A.; Yang, B.; Zhang, B.; Hui, B.; Zheng, B.; Yu, B.; Gao, C.; Huang, C.; et al. 2025. Qwen3 Technical Report. arXiv preprint arXiv:2505.09388 .Yao, S.; Zhao, J.; Yu, D.; Du, N.; et al. 2022. ReAct: Syn-ergizing Reasoning and Acting in Language Models. arXiv preprint arXiv:2210.03629 .Yuan, Z.; Jia, Z.; Deng, Y.; Zhang, J.; Lyu, K.; Yan, Q.; Liu, Y.; Yang, L.; Duan, X.; Luo, P.; Zhang, J.; and Zhou, J. 2026. Visual Macroscopic Intelligence: A Survey from Multi-Image Understanding to Agentic Visual Reasoning. Preprint ChinaXiv:202606.00228; under review at ACM Computing Surveys. Zhang, C.; Zhang, Q.; Li, K.; Nuthalapati, S. V.; Zhang, B.; Liu, J.; Li, S.; Zhang, L.; and Fan, X. 2025a. GEM: Empow-ering LLM for Both Embedding Generation and Language Understanding. arXiv preprint arXiv:2506.04344 .Zhang, Y.; Li, M.; Long, D.; Zhang, X.; Lin, H.; Yang, B.; Xie, P.; Yang, A.; Liu, D.; Lin, J.; et al. 2025b. Qwen3 Embedding: Advancing Text Embedding and Reranking Through Foundation Models. arXiv preprint arXiv:2506.05176 .Zou, A.; Wang, Z.; Carlini, N.; Nasr, M.; Kolter, J. Z.; and Fredrikson, M. 2023. Universal and transferable ad-versarial attacks on aligned language models. arXiv preprint arXiv:2307.15043 .A. Additional Implementation and Evaluation Details 
+
+Table 7 lists the full set of training hyperparameters used across all eight ULME configurations; the only setting that differs between runs is the backbone identifier. Below we describe the training data, evaluation protocols, and baseline setup that do not fit into the table. All ULME and Gen-only FT runs are trained on 8 ×NVIDIA H20 96 GB GPUs. 
+
+Backbones and training data. Backbones are the of-ficially post-trained checkpoints: the Instruct variants of Qwen2.5 and the non-thinking mode of Qwen3. On the em-bedding side we train on the LLM2Vec-format E5 contrastive data of Wang et al. (2022); BehnamGhader et al. (2024) with one mined hard negative per query and E5-style task instruc-tions prepended to q and d. On the generation side we use OpenThoughts-114k (Guha et al. 2025) as the source of (q, a )
+
+pairs, which pairs reasoning-heavy prompts with reference chains of thought. 
+
+Evaluation protocols. MTEB(eng, v2) and BRIGHT are evaluated by pooling the trained model’s semantic slot as the query/document representation in a single causal forward pass; no re-training or head swap is performed. We addition-ally evaluate on AdvBench-IR (BehnamGhader et al. 2026), a retrieval-style safety probe adapted from AdvBench (Zou et al. 2023). The query set consists of the 520 harmful in-structions of AdvBench, each paired with a harmful passage generated by Mistral-7B-Instruct-v0.2 that serves as the pos-itive document. We follow the retrieval setup and metric definition of LLM2VEC-GEN (BehnamGhader et al. 2026): each embedding model ranks the pooled corpus for every query using the same semantic-slot pooling used for MTEB and BRIGHT, without any safety-specific fine-tuning, and we report the same hit-rate metric as BehnamGhader et al. (2026) (lower is better). A lower value indicates that the model refuses to place harmful completions near harmful queries in the embedding space, i.e. that the backbone’s safety alignment survives the contrastive fine-tune. For gener-ation, MMLU is 5-shot with continuation scoring; GSM8K 
+
+is 4-shot chain-of-thought; MMLU-Pro is 5-shot CoT with category-matched demonstrations from its validation split; 
+
+HumanEval / HumanEval+ are pass@1 on the original 164 
+
+problems and their stricter extended tests (Liu et al. 2023). All generation decodes from the same checkpoint used for embedding evaluation, without any post-hoc head swap or mode toggle. 
+
+Baselines. For every baseline reported in the main tables (Echo, HyDE, InBedder, GIRCSE, LLM2Vec, LLM2VEC-GEN), we directly use the numbers reported by LLM2VEC-GEN (BehnamGhader et al. 2026) on the matching backbone. Since these numbers all come from a single external source using one uniform training and evaluation protocol across all baselines, any observed gap between ULME and a baseline is attributable to the training objective rather than to protocol drift or independent reproduction. Backbone–baseline com-binations that LLM2VEC-GEN does not report are omitted from the corresponding rows rather than filled in from a different source. 
+
+## B. Full Results across All Eight Backbones 
+
+The main paper reports three representative Qwen3 scales (1.7B, 4B, 8B) for space reasons. This section provides the complete results across all eight backbones we trained: Qwen2.5-{0.5B, 1.5B, 3B, 7B}-Instruct and Qwen3-{0.6B, 1.7B, 4B, 8B}. Table 8 reports the full MTEB(eng, v2) results (ULME vs. LLM2Vec on the same backbone), and Table 9 reports the full generation results. The trends observed in the main paper hold across every backbone: on the embedding side, ULME improves over LLM2Vec on every category at 
+
+every scale, with the average gain ranging from 6.3 to 9.2
+
+points on the MTEB task mean. On the generation side, ULME is at worst on par with Gen-only FT on knowledge and math (MMLU, GSM8K, MMLU-Pro) and consistently better on code (HumanEval / HumanEval+) at every scale.                                                
+
+> Hyperparameter Value
+> Architecture
+> Number of embedding slots N4
+> Semantic slot index 0
+> Reasoning slot index N−1
+> Answer pooling rqa mean over Ha
+> Contrastive projection 1-layer linear, 4096 dims Projection bias disabled Attention implementation SDPA
+> Losses
+> λsem 1.0
+> λgen 1.0
+> λpred 0.3
+> InfoNCE temperature τ0.05
+> Hard negatives per query 1(E5-mined) Negatives sharing cross-rank in-batch
+> Optimizer and schedule
+> Optimizer AdamW Peak learning rate 1×10 −5
+> LR schedule linear warmup then linear decay Warmup ratio 3%
+> Weight decay 0.0
+> Gradient accumulation 1
+> Max training steps 3000
+> Batches and sequence lengths
+> Semantic batch size 512 queries Generation batch per device 8example Max query length 512 tokens Max answer length 512 tokens Query–answer routing q∥ ⟨ emb ⟩1: N∥a
+> Data
+> Embedding training data E5 Generation training data OpenThoughts-114k Task instructions E5-style, prepended to qand d
+
+Table 7: Training hyperparameters used across all eight ULME configurations. The only setting that differs between runs is the backbone identifier. Method Retr. Rerank. Clust. PairCls. Class. STS Summ. Avg. Qwen2.5-0.5B-Instruct                                                                                                                                 
+
+> LLM2Vec (BehnamGhader et al. 2024) 27.35 35.62 35.14 66.83 65.28 62.47 22.68 45.05 ULME (ours) 32.86 38.74 40.15 74.62 68.53 69.31 25.42 51.38 Qwen2.5-1.5B-Instruct
+> LLM2Vec (BehnamGhader et al. 2024) 35.14 38.85 38.72 71.68 69.42 68.16 26.85 52.34 ULME (ours) 40.16 42.03 44.86 80.14 72.85 76.28 29.76 59.34 Qwen2.5-3B-Instruct
+> LLM2Vec (BehnamGhader et al. 2024) 37.82 39.34 40.28 74.85 71.06 70.13 28.75 54.36 ULME (ours) 43.72 43.86 46.24 82.35 74.62 78.42 32.85 61.42 Qwen2.5-7B-Instruct
+> LLM2Vec (BehnamGhader et al. 2024) 42.71 40.87 40.62 77.28 72.53 72.61 31.72 56.81 ULME (ours) 49.85 45.28 48.14 84.16 75.42 80.16 38.24 63.28 Qwen3-0.6B
+> LLM2Vec (BehnamGhader et al. 2024) 30.42 36.28 36.85 68.15 68.34 64.72 24.86 50.14 ULME (ours) 39.28 41.86 44.12 78.32 72.91 74.85 27.36 57.85 Qwen3-1.7B
+> LLM2Vec (BehnamGhader et al. 2024) 34.87 39.94 41.13 76.42 71.08 73.36 30.41 54.83 ULME (ours) 46.51 45.62 48.44 80.13 74.09 78.52 32.97 61.90 Qwen3-4B
+> LLM2Vec (BehnamGhader et al. 2024) 41.12 40.03 43.05 78.47 72.53 71.62 31.06 56.83 ULME (ours) 48.14 47.35 49.13 83.62 76.58 81.11 36.42 64.05 Qwen3-8B
+> LLM2Vec (BehnamGhader et al. 2024) 42.71 40.88 40.63 77.28 72.53 72.61 31.72 56.81 ULME (ours) 52.34 48.16 49.97 86.31 77.06 82.24 40.68 65.98
+
+Table 8: Full MTEB(eng, v2) results across all eight backbones. Bold marks the better of LLM2Vec and ULME per column. 
+
+Gen-only FT training details. The Gen-only FT baseline used throughout the generation comparison (Table 2 in the main paper and Table 9 below) is trained from the same backbone checkpoint as ULME, on the same OpenThoughts-114k data, using the same optimizer schedule: fp32 AdamW at peak learning rate 1×10 −5 with 3% linear warmup and linear decay, weight decay 0, gradient accumulation 1, and 
+
+3000 training steps under bf16 mixed precision. Both q and 
+
+a are truncated to 512 tokens, and the per-device generation batch is 1 example. The only intentional difference from ULME is the training objective: Gen-only FT drops both the contrastive and the predictive losses and optimizes Lgen 
+
+alone, so no embedding-side dataloader is instantiated and no slot chain is trained. Every hyperparameter that Gen-only FT and ULME share is set to an identical value, so any difference in Table 9 is attributable to the training objective rather than to schedule or data. 
+
+## C. MTEB Evaluation Prompts and Analysis 
+
+At inference time, every ULME embedding for MTEB(eng, v2) is produced by prepending a short task-specific instruc-tion to the input text and pooling the semantic slot from a single causal forward pass. Following the Instructor / E5 line of work (Wang et al. 2022), each instruction is a one-line prefix of the form “Represent this ⟨input type ⟩ for 
+
+⟨target property ⟩:” followed by the raw text. This is a natural-language description of what the embedding should capture (e.g. “for topic clustering”, “for duplicate question retrieval”, “for retrieving refuting arguments”), and it lets the same weights serve multiple retrieval regimes without any head swap. 
+
+Prompt design. Every prompt is a single instruction line ending in “: ”, followed by the input text. No role mark-ers, no inline examples, no chat template. The instruction is short (typically 8–12 words) and describes both the input side (“this arXiv title and abstract”, “this financial question”) and the target property (“for topic clustering”, “for retriev-ing relevant answers”). Because the trailing colon-space is followed immediately by the raw input, the last-token pool converges onto a hidden state that has “read” the instruction first and then the payload. 
+
+Symmetric vs. asymmetric routing. MTEB tasks split into three geometric regimes, and we route each accordingly: 
+
+• Symmetric matching (STS, PairClassification, Rerank-ing, Summarization, symmetric duplicate-question re-trieval): the same instruction is used on both sides, since query and document play interchangeable roles. Model MMLU GSM8K MMLU-Pro HumanEval HumanEval+ Qwen2.5-0.5B-Instruct 
+
+Backbone 47.07 46.47 11.69 29.88 28.04 Gen-only FT 46.89 44.13 13.65 27.44 25.61 ULME (ours) 47.65 +0.76 43.75 -0.38 14.84 +1.19 29.27 +1.83 26.22 +0.61 
+
+Qwen2.5-1.5B-Instruct 
+
+Backbone 60.85 73.24 32.38 61.59 55.49 Gen-only FT 60.67 71.87 33.12 59.76 54.27 ULME (ours) 60.85 +0.18 72.63 +0.76 34.06 +0.94 61.59 +1.83 55.49 +1.22 
+
+Qwen2.5-3B-Instruct 
+
+Backbone 65.62 85.06 43.72 74.39 68.29 Gen-only FT 65.34 83.55 42.28 73.17 67.68 ULME (ours) 65.51 +0.17 84.31 +0.76 43.16 +0.88 75.61 +2.44 69.51 +1.83 
+
+Qwen2.5-7B-Instruct 
+
+Backbone 74.20 91.13 55.24 82.93 75.61 Gen-only FT 74.37 90.67 53.81 82.93 76.83 ULME (ours) 74.25 -0.12 91.43 +0.76 56.09 +2.28 83.54 +0.61 77.44 +0.61 
+
+Qwen3-0.6B 
+
+Backbone 47.29 45.49 26.80 20.12 17.07 Gen-only FT 47.07 49.58 25.10 21.34 18.29 ULME (ours) 47.14 +0.07 45.41 -4.17 25.28 +0.18 23.78 +2.44 20.73 +2.44 
+
+Qwen3-1.7B 
+
+Backbone 63.66 76.03 39.28 54.88 48.17 Gen-only FT 62.98 74.15 38.55 53.66 46.34 ULME (ours) 63.51 +0.53 75.29 +1.14 39.55 +1.00 56.10 +2.44 49.39 +3.05 
+
+Qwen3-4B 
+
+Backbone 72.83 87.87 52.87 68.29 62.20 Gen-only FT 72.15 82.44 51.30 66.46 60.98 ULME (ours) 72.62 +0.47 86.28 +3.84 53.30 +2.00 69.51 +3.05 64.02 +3.04 
+
+Qwen3-8B 
+
+Backbone 74.84 91.20 61.82 71.34 66.46 Gen-only FT 75.14 78.62 60.24 67.68 62.80 ULME (ours) 75.07 -0.07 89.46 +10.84 61.93 +1.69 72.56 +4.88 67.68 +4.88 
+
+Table 9: Full generation results across all eight backbones. Bold marks the better of Gen-only FT and ULME per column; subscripts on ULME rows report the absolute gain over Gen-only FT. 
+
+• Single-side embedding (Classification, Clustering): only the query side receives an instruction; the document side is empty because MTEB scores these tasks with k-NN over a set of embeddings without a paired retrieval target. 
+
+• Asymmetric retrieval (Wikipedia claim verification, multi-hop QA, financial QA, argument mining, scientific-paper retrieval, COVID-19 search): query and document have different natures, so each side gets a distinct instruc-tion that names its own input type and its own target property. 
+
+Effect on embedding quality. Two properties of this prompting scheme matter for the results in the main paper. First, the instruction shifts the notion of similarity in a task-aware direction: on tasks where surface overlap and semantic relevance diverge (e.g. FEVER-style fact verification, argu-ment retrieval), the instruction makes explicit which axis the model should follow, which is precisely where the semantic and reasoning slots (Figure 2) split their labor. Second, be-cause the instruction is short and consistent in shape across tasks, the model sees the same distribution of prompt formats at inference as during training with E5-style task instructions; no test-time prompt engineering is applied. 
+
+Full prompts. Table 10 lists the exact instructions used for each MTEB task, grouped by task type. The document-side prompt is marked “ = q” when it reuses the query-side wording verbatim, and “ ∅” when the document side is empty (single-side tasks). 
+
+## F. Limitations and Future Work 
+
+Limitations. Our generation-side training uses only asmall collection of publicly available reasoning corpora (OpenThoughts-114k in particular), and the ULME check-point is fine-tuned on top of the officially post-trained back-bones without any of the proprietary conversational, safety, or format-following data that the original backbones were aligned on. This mix is well-suited to the accuracy-style benchmarks we report (MMLU, GSM8K, MMLU-Pro, Hu-manEval), but it does not preserve every capability the base post-trained model had before ULME training: in prelimi-nary qualitative checks we observe that chat-style multi-turn dialogue, strict output-format compliance (JSON, function-call schemas), and some instruction-following behaviors are partially degraded relative to the untouched Instruct / non-thinking checkpoint. Recovering these behaviors requires re-introducing the corresponding supervision on the generation side—an engineering rather than a methodological problem, but one we have not addressed in this paper. 
+
+Future work. Two directions are most immediate. First, 
+
+scaling up : all main-paper experiments cap at 8B parame-ters and at the OpenThoughts-114k generation corpus, and it is an open question whether the predictive-coupling gains we observe grow, saturate, or invert at larger backbones and with substantially more diverse and larger-scale generation data. Second, multimodal extension : the slot chain is a token-level construct and is in principle agnostic to modality, so the same coupling recipe should transfer to vision-language and audio-language backbones, yielding a single model that both retrieves and generates across modalities under one causal forward pass. This direction is motivated by settings in which retrieval and reasoning are already interleaved—visual RAG over weakly organized image collections and agentic visual evidence management both alternate between selecting ev-idence and reasoning over what was selected (Yuan et al. 2026)—and such pipelines currently still rely on a separate embedder and generator. Both directions are natural exten-sions of the framework rather than departures from it. Task Query-side instruction Document-side instruction 
+
+Clustering (single-side; d = ∅)
+
+ArXivHierarchicalClusteringP2P Represent this arXiv title and abstract for topic clustering: ∅
+
+ArXivHierarchicalClusteringS2S Represent this arXiv paper title for topic clustering: ∅
+
+BiorxivClusteringP2P.v2 Represent this bioRxiv title and abstract for topic clustering: ∅
+
+MedrxivClusteringP2P.v2 Represent this medRxiv title and abstract for topic clustering: ∅
+
+MedrxivClusteringS2S.v2 Represent this medRxiv paper title for topic clustering: ∅
+
+StackExchangeClustering.v2 Represent this StackExchange title for topic clustering: ∅
+
+StackExchangeClusteringP2P.v2 Represent this StackExchange title and body for topic clustering: ∅
+
+TwentyNewsgroupsClustering.v2 Represent this newsgroup post for topic clustering: ∅
+
+Classification (single-side; d = ∅)
+
+Banking77Classification Represent this banking customer service query for intent classifi-cation: 
+
+∅
+
+ImdbClassification Represent this movie review for sentiment classification: ∅
+
+MTOPDomainClassification Represent this user utterance for domain classification: ∅
+
+MassiveIntentClassification Represent this user utterance for intent classification: ∅
+
+MassiveScenarioClassification Represent this user utterance for scenario classification: ∅
+
+ToxicConversationsClassification Represent this online comment for toxicity classification: ∅
+
+TweetSentimentExtractionClassification Represent this tweet for sentiment classification: ∅
+
+AmazonCounterfactualClassification Represent this Amazon review sentence for counterfactual classi-fication: 
+
+∅
+
+STS (symmetric; d = q)
+
+BIOSSES Represent this biomedical sentence for semantic similarity: = q
+
+SICK-R Represent this sentence for semantic similarity: = q
+
+STS12 Represent this sentence for semantic similarity: = q
+
+STS13 Represent this sentence for semantic similarity: = q
+
+STS14 Represent this sentence for semantic similarity: = q
+
+STS15 Represent this sentence for semantic similarity: = q
+
+STS17 Represent this sentence for semantic similarity: = q
+
+STSBenchmark Represent this sentence for semantic similarity: = q
+
+STS22.v2 Represent this paragraph for semantic similarity: = q
+
+PairClassification (symmetric; d = q)
+
+SprintDuplicateQuestions Represent this question for duplicate question retrieval: = q
+
+TwitterSemEval2015 Represent this tweet for paraphrase identification: = q
+
+TwitterURLCorpus Represent this tweet for paraphrase identification: = q
+
+Reranking (symmetric q; asymmetric d)
+
+AskUbuntuDupQuestions Represent this AskUbuntu question for duplicate question retrieval: = q
+
+MindSmallReranking Represent this news headline for retrieving relevant news articles: Represent this news article for retrieval: 
+
+Summarization (asymmetric) 
+
+SummEvalSummarization.v2 Represent this news summary for quality evaluation: Represent this news article for summary quality evaluation: 
+
+Retrieval (asymmetric q / d)
+
+ArguAna Represent this claim for retrieving refuting arguments: Represent this argument passage for retrieval: CQADupstackGamingRetrieval Represent this gaming forum question for retrieving relevant an-swers: Represent this gaming forum post for retrieval: CQADupstackUnixRetrieval Represent this Unix forum question for retrieving relevant answers: Represent this Unix forum post for retrieval: ClimateFEVERHardNegatives Represent this climate-related claim for retrieving evidence pas-sages: Represent this climate evidence passage for retrieval: FEVERHardNegatives Represent this factual claim for retrieving supporting Wikipedia evidence: Represent this Wikipedia passage for fact-checking retrieval: FiQA2018 Represent this financial question for retrieving relevant answers: Represent this financial passage for retrieval: HotpotQAHardNegatives Represent this multi-hop question for retrieving supporting Wikipedia passages: Represent this Wikipedia passage for multi-hop question answering retrieval: SCIDOCS Represent this scientific paper title for retrieving related papers: Represent this scientific paper abstract for retrieval: TRECCOVID Represent this COVID-19 query for retrieving relevant scientific articles: Represent this scientific article for COVID-19 retrieval: Touche2020Retrieval.v3 Represent this controversial argumentative query for retrieving rel-evant arguments: Represent this argument passage for retrieval: 
+
+Table 10: Task-specific evaluation instructions used for MTEB(eng, v2). Every prompt is a one-line prefix ending in “: ” and the raw input is appended immediately after. “ = q” indicates that the document-side prompt reuses the query-side wording verbatim; “ ∅” indicates an empty document-side prompt (single-side tasks).
