@@ -1,0 +1,1249 @@
+Title: 2026.findings-acl.434.pdf
+
+URL Source: https://aclanthology.org/2026.findings-acl.434.pdf
+
+Published Time: Thu, 11 Jun 2026 02:31:17 GMT
+
+Number of Pages: 22
+
+Markdown Content:
+Findings of the Association for Computational Linguistics: ACL 2026 , pages 8945–8966 July 2-7, 2026 ©2026 Association for Computational Linguistics CGBridge: Bridging Code Graphs and Large Language Models for Better Structure-Aware Code Understanding 
+
+Zeqi Chen 1, Zhaoyang Chu 2, Yi Gui 2, Feng Guo 1, Yao Wan 2, Chuan Shi 1*1Beijing University of Posts and Telecommunications 
+
+2Huazhong University of Science and Technology 
+
+{chenzeqi, shichuan}@bupt.edu.cn 
+
+Abstract 
+
+Large Language Models (LLMs) have demon-strated remarkable performance in code intel-ligence tasks such as code generation, sum-marization, and translation. However, their reliance on linearized token sequences makes them brittle to long-range program dependen-cies and superficial lexical shifts such as iden-tifier renaming. Existing structure-aware ap-proaches typically treat structure as serialized text prompts or auxiliary training objectives, which often inflate context length or rely on internalized structural priors, failing to pro-vide explicit guidance during inference. To address these limitations, we propose CG-BRIDGE , a novel plug-and-play method that enhances LLMs with Code Graph information through an external, trainable B RIDGE module. It aligns Code Property Graph structure with code semantics and compresses them into com-pact soft-prefixes, decoupling structural reason-ing from textual generation without updating the backbone. Experiments across multiple code LLM backbones and scales show consis-tent gains over both text-only adaptation and graph-augmented baselines. Furthermore, CG-BRIDGE remains robust under identifier renam-ing and enables over 4 × faster inference than LoRA-tuned models, demonstrating both effec-tiveness and efficiency in structure-aware code understanding. The code is available at: https: //github.com/BUPT-GAMMA/CGBridge.git .
+
+1 Introduction 
+
+Large language models (LLMs) have advanced soft-ware engineering, powering applications like code generation, summarization, and translation (Wan et al., 2024). Recent code-focused LLMs like Code Llama (Rozière et al., 2024), Qwen-Coder (Hui et al., 2024), and DeepSeek-Coder (Guo et al., 2024) achieve strong performance by scaling up 
+
+> *
+
+Corresponding author. Linearize                     
+
+> Linearize
+> Calculate the price
+> based on the ratio.
+> If … then … , else …
+> Compute the final
+> price based on the
+> ratio. price *if else price ratio …………
+> …
+> Construct
+> Graph
+> efg
+> ratio
+> efg …
+> …LLM
+> Bridge
+> Variable
+> Renaming Retrieve a random
+> parameter.
+> Structure Information Loss
+> …
+> 1
+> 2
+> 3
+> …
+> 33
+> …
+> 88
+> def cal_price (self ):
+> price = base
+> if … :
+> …
+> else :
+> ….
+> price = price * ratio
+> efg *if else efg ratio ………1
+> 2
+> 3
+> …
+> 33
+> …
+> 88
+> def cal_price (self ):
+> efg =xyz
+> if … :
+> …
+> else :
+> ….
+> efg =efg * ratio
+
+Figure 1: A motivating example. While text-only methods fail under identifier obfuscation due to lexi-cal reliance, explicit structural guidance enables robust reasoning independent of naming patterns. 
+
+model and training data. Despite this success, they typically process code as linear text, overlook-ing the program’s structural semantics captured by Abstract Syntax Trees (ASTs), Control-Flow Graphs (CFGs), and Data-Flow Graphs (DFGs), which can be naturally unified into a Code Property Graph (CPG) (Yamaguchi et al., 2014). This “code-as-text” paradigm forces models to rely on sur-face heuristics—such as naming patterns—rather than underlying logic, making them brittle to struc-tural reasoning or simple obfuscation (Hooda et al., 2024). Fig. 1 illustrates this weakness: when iden-tifiers are obfuscated (e.g., price → efg ), the base model fails to capture the program logic, revealing its reliance on surface lexical patterns. Motivated by this brittleness, prior work has sought to incor-porate program structure into language models. Existing attempts can be broadly categorized into three paradigms. (1) Structure-aware neu-ral code models (Guo et al., 2021, 2022) in-ject AST/DFG signals into Transformer archi-tectures and are typically fine-tuned with super-vised, task-specific objectives or heads; however, they are designed for relatively small encoders and are less compatible with today’s end-to-end instruction-following, decoder-only (often frozen) code LLM setting. (2) Graph-as-text prompt-ing (Zhao et al., 2023; Lu et al., 2024) serializes graphs into long prompts fed to an LLM; while 
+
+8945 simple and model-agnostic, this often inflates con-text length and dilutes higher-order dependencies in lengthy sequences. (3) Graph-augmented LLM training (Zhang et al., 2025e; Li et al., 2023a) inter-nalizes structural priors via joint training or back-bone modification, but it is costly and commonly relies on internalized structural priors at inference. Without an explicit inference-time structural an-chor, distribution shifts (e.g., identifier renaming) can cause structural loss and lexical guessing. In this work, rather than treating structure as an auxiliary feature, a prompt artifact, or an implicit prior, we treat the CPG as an independent struc-tural modality serving as an explicit structural an-chor at inference time. We introduce CGB RIDGE ,a plug-and-play framework that augments frozen LLMs with Code Graphs via an external, trainable BRIDGE module (Fig. 3). CGB RIDGE bridges non-Euclidean graphs and sequential text by learning a reusable structural expert (Code Graph Encoder) and a lightweight interface (Bridge module) that aligns CPG structural signals with code semantics and compresses them into compact soft-prefixes, thereby decoupling structural reasoning from tex-tual generation without updating the backbone. Our contributions are threefold: (1) we pro-pose a new perspective for structure-aware code intelligence in the era of instruction-following LLMs—treating the CPG as an external structural modality and as an explicit inference-time struc-tural anchor; (2) we instantiate this perspective with CGB RIDGE and a three-stage graph–LLM alignment strategy that learns a reusable Code Graph Encoder and a lightweight Bridge, aligns CPG structural signals with code semantics via multi-objective learning, and compresses them into soft-prefixes for a frozen backbone; and (3) we demonstrate through extensive experiments that CGB RIDGE yields consistent gains on code sum-marization and translation across diverse model families and scales, exhibits superior robustness under systematic identifier renaming, and achieves up to 4× faster inference than LoRA-tuned models, demonstrating both effectiveness and efficiency. 
+
+2 Related Work 
+
+Code LLMs and Parameter-Efficient Adapta-tion. Code-focused LLMs (e.g., CodeLlama, Qwen-Coder, and DeepSeek-Coder) are typically obtained by full-parameter continual pretraining on large-scale code corpora. For downstream applica-tion, practitioners often employ PEFT methods (Xu et al., 2023) such as LoRA (Hu et al., 2022). How-ever, text-only adaptation mainly optimizes token likelihood and can under-utilize long-range struc-tural relations (e.g., control/def-use dependencies) that are central to program semantics. 
+
+Structure-Aware Neural Code Models. Prior to LLMs, many works enhanced code represen-tation learning by injecting structural edges into neural architectures. For example, GraphCode-BERT and UniXcoder (Guo et al., 2021, 2022) inject AST/DFG signals into Transformer encoders to improve structural awareness. However, these methods typically target relatively small encoders and are fine-tuned with task-specific objectives or heads, making them less compatible with today’s instruction-following, decoder-only code LLMs. 
+
+Injecting Graphs into LLMs. Recent graph– LLM methods can be grouped into three paradigms. (1) Graph-as-text prompting linearizes graphs into long prompts (e.g., GRACE (Lu et al., 2024)) or employs retrieval-augmented strategies (e.g., cAST (Zhang et al., 2025d), CODEXGRAPH (Liu et al., 2025), RepoGraph (Ouyang et al., 2025), CodeMEM (Wang et al., 2026)). While flexible and model-agnostic, methods in this line may suf-fer from context inflation and diluted structural signals. (2) Graph-augmented training / back-bone modification incorporates structural priors via joint training or architectural integration (e.g., Graphix-T5 (Li et al., 2023a), GALLa (Zhang et al., 2025e)). Recent concurrent work also ex-plored complementary graph-guided code LLM designs, including CPG-guided vulnerability de-tection and repository-level code graph integra-tion (e.g., LLMxCPG (Lekssays et al., 2025), CGM (Tao et al., 2025)). While effective, these methods are often costly for large backbones and leave structural guidance largely implicit at infer-ence time. (3) Graph-LLM cross-modal alignment 
+
+aligns graph and text representations (e.g., Graph-CLIP (Zhu et al., 2025)) or distills graphs into compact prefixes (e.g., GraphLLM (Chai et al., 2023), LLaGA (Chen et al., 2024b)). However, these general-purpose aligners transfer poorly to source code: they mainly target homogeneous or text-attributed graphs and graph reasoning/discrim-inative settings, rather than instruction-following code tasks grounded in heterogeneous program structure (AST/CFG/DFG). In contrast, our work treats the CPG as explicit inference-time structural 8946 x=0 … return x                    
+
+> block (a,b)
+> parameters
+> max
+> identifier
+> if a > b:
+> if_statement
+> a > b
+> condition_evaluation
+> 1
+> 2
+> 3
+> 4
+> 5
+> 6
+> 7
+> def max (a , b ):
+> a=0
+> if a>b:
+> x=a
+> else :
+> x=b
+> return x
+> contributes
+> to
+> return x
+> return_statement
+> x=a
+> assignment
+> x
+> identifier a
+> identifier
+> x
+> identifier
+> def max(a,b)
+> function_define
+> sequential
+> execution ···
+> ···ℰAST
+> ℰCFG
+> ℰDFG
+> has_name has_parameters has_body
+> contains contains contains
+> true_ branch has_condition false_ branch contains
+> flows_to contains contains
+> Python code
+> Node
+
+Figure 2: A Python function and its corresponding CPG. 
+
+guidance under a frozen backbone. 
+
+3 Preliminaries 
+
+3.1 Code Property Graph 
+
+To capture the heterogeneous semantics of source code, we employ the Code Property Graph (CPG), a unified representation widely used in program analysis (Liu et al., 2023). Fig. 2 illustrates a sim-plified CPG for a Python function, where three distinct structural dependencies are intertwined to provide a holistic view. Specifically, the blue AST edges encode the grammatical hierarchy and compositional structure (Sun et al., 2023), link-ing high-level constructs ( function_define ) to their constituents ( names , parameters , bodies ); 
+
+the green CFG edges explicitly map the execu-tion logic, defining control dependencies between statements such as the true and false branches of conditionals (Viet Phan et al., 2017); and the red DFG edges track the data flow (Guo et al., 2021), delineating how variable definitions (e.g., a)propagate to downstream assignments (e.g., x). 
+
+3.2 Problem Formulation 
+
+We focus on instruction-following code generation grounded in structural context. Formally, let C de-note a source code snippet and G denote its corre-sponding CPG, G = ( V, E) where nodes represent syntactic elements and edges capture structural re-lations. Given a natural language instruction I
+
+(e.g., “summarize the code” or “translate Python to Java”), the goal is to generate a target response 
+
+Y = ( y1, . . . , y m). Unlike standard LLMs, we explicitly condition generation on the structural graph G. The objective is to optimize the model parameters θ by maximizing the log-likelihood: 
+
+max 
+
+> θm
+
+∑
+
+> t=1
+
+log P (yt | y<t , G, C, I; θ) , (1) 
+
+where y<t is the generated prefix before step t.
+
+4 CGB RIDGE : The Proposed Method 
+
+We propose CGB RIDGE , a novel plug-and-play approach for incorporating Code Graph informa-tion into LLMs via a trainable B RIDGE mod-ule. As illustrated in Fig. 3, CGB RIDGE follows a three-stage training procedure: Stage 1 (Self-Supervised Structural Pretraining) constructs a reusable structural expert by training a Code Graph Encoder (CGE) on large-scale unlabeled CPGs via two self-supervised objectives; Stage 2 (Cross-Modal Semantic Alignment) trains an external Bridge module to align structural representations with code-text semantics via three complementary objectives, compressing each CPG into compact embeddings for the LLM token space; Stage 3 (Instruction-Based Task Adaptation) leverages the Bridge module to inject learned graph-derived soft prompts into the frozen LLM, fine-tuning the Bridge for downstream code intelligence tasks. 
+
+4.1 Self-Supervised Structural Pretraining 4.1.1 Code Graph Encoder 
+
+We model a source code snippet C as a heteroge-neous CPG G and employ a CGE to encode it into structural embeddings HG . The CGE is encoder-agnostic and can be instantiated by different graph encoders. In this work, we instantiate it as an Lg-layer graph neural network (GNN). At layer l, the representation of node i is updated by aggregating edge-conditioned messages from its neighbors: 
+
+h(l) 
+
+> i
+
+= ϕ(h(l−1)  
+
+> i
+
+, ⊕ 
+
+> j∈N (i)
+
+ψ (h(l−1)  
+
+> j
+
+, e ji )) , (2) 
+
+where N (i) is the neighbor set of node i, ψ(·) com-bines the neighbor-node representation h(l−1)  
+
+> j
+
+with the edge feature eji , ⊕ is a permutation-invariant aggregator, and ϕ(·) is the node-state update func-tion. Conditioning on eji is crucial for heteroge-neous CPGs, as it enables CGE to distinguish dif-ferent relation types (e.g., syntactic vs. data-flow). After Lg layers, HG = {h(Lg ) 
+
+> i
+
+}i∈V ∈ R|V|× dmodel 
+
+will serve as the structural input for the Bridge. 
+
+4.1.2 Training Procedure 
+
+To ensure the CGE can produce meaningful graph representations, we first pre-train it on a large cor-pus of unlabeled code graphs, guided by the fol-lowing two self-supervised objectives (Fig. 3(a)). 
+
+Graph-Level Contrastive Learning. To learn ro-bust global representations, we adopt contrastive 8947 Shared Self-Attention Cross Attention Embedder Feed Forward Feed Forward  
+
+> Query Tokens 𝑸
+
+## …   
+
+> Code Text 
+> Code Embeddings 𝑯 (𝑳 𝒃 )
+> (2) Cross-Modal Semantic Alignment
+> Unlabeled Code 
+
+CGE      
+
+> Construct Heterogeneous Graph CPG 
+> Contrastive Learning Edge-Type Prediction
+> InfoNCE
+> AST
+> CFG
+> DFG
+> NO_EDGE
+> Classifier
+
+𝐏𝐫𝐨𝐣 𝐋𝐋𝐌 𝑃 𝒢 Fed into    
+
+> 12
+> …
+> def get_conn(self): if …:return …
+> Summarize the following code:
+> 1
+> …
+> def checkMin(arr,n):
+> …
+> Translate the Python code to Java:
+
+…
+
+> Get the … instance … if …
+
+…  
+
+> 1
+> …
+> public static void checkMin (int[] arr, int n) { …
+> (3) Instruction-Based Task Adaptation Graph-Text Contrastive Graph-Text Matching Graph-grounded Text Generation
+> Soft Prompt 𝑃 𝒢 Δ𝜃 𝐵
+
+Frozen LLM 
+
+Bridge 
+
+> Instructions
+
+## … … 
+
+> 𝑳 𝒃 ×
+> Code Summarization Code Translation
+> AST
+
+## …       
+
+> 𝐵 𝑄 1𝐵 𝑄 2𝐵 𝑄 3𝐵 𝑄 4
+> ℎ𝑐𝑙𝑠 1
+> ℎ𝑐𝑙𝑠 2
+> ℎ𝑐𝑙𝑠 3
+> ℎ𝑐𝑙𝑠 4
+> 𝐵 𝑄 𝑖 ℎ𝑐𝑙𝑠 𝑖 ℎ𝑐𝑙𝑠 𝑗
+> 𝐵 𝑄 𝑗 ℎ𝑐𝑙𝑠 𝑖 𝐵 𝑄 𝑖
+
+Classifier Decoder   
+
+> Reconstruct CFG DFG
+> Bridge Embeddings 𝑩 𝑸
+
+## ……    
+
+> 𝑯 𝓒 (𝟎)
+> Code Graph Encoder Bridge Module Frozen LLM Training procedure Training procedure Training procedure
+> (1) Self-Supervised Structural Pretraining
+> 𝑯 𝓖
+> …
+> 𝑯 𝓖
+> …
+
+Figure 3: Overview of CGB RIDGE . (1) Code Graph Encoder : Pre-trains on heterogeneous graphs to extract structural features. (2) Bridge Module : Aligns graph representations with textual semantics to synthesize soft-prompts. (3) Frozen LLM : Utilizes the injected structural guidance for efficient, instruction-based task adaptation. 
+
+learning (You et al., 2020). For each graph, we generate two augmented views (e.g., via feature masking and edge dropping) and train the CGE to maximize their embedding similarity while mini-mizing similarity against batch negatives, using an InfoNCE loss (van den Oord et al., 2018) ( Lcl ). 
+
+Edge-Type Prediction. To capture fine-grained relational semantics, we predict edge types for sampled node pairs. We incorporate negative sam-pling (Grover and Leskovec, 2016) by including unconnected pairs, which the model must classify as a distinct “NO_EDGE” type. This classification loss is denoted as Ledge .The loss for Stage 1 is a weighted sum of the two objectives: LStage1 = λcl · L cl + λedge · L edge .
+
+4.2 Cross-Modal Semantic Alignment 4.2.1 Bridge Module 
+
+The Bridge module addresses the modality gap between the graph embeddings and the LLM’s se-quential input space. Architecturally, it is an Lb-layer Transformer (Vaswani et al., 2017) with Nq
+
+learnable query tokens, Q ∈ RNq ×dmodel , following multimodal learning paradigms (Li et al., 2023b). Specifically, the module takes the structural embed-dings HG from CGE and the code-text embeddings 
+
+HC (from C via the module’s text embedder) as inputs. Within layer l, Q interacts with these cross-modal representations through distinct attention mechanisms. The process unfolds in three steps: 
+
+1) Multi-Modal Fusion via Shared Self-Attention. Q(l−1) and H(l−1) 
+
+C from the previous layer are concatenated and processed by a shared self-attention layer, allowing them to exchange in-formation. For l = 1 , the inputs are the initial learnable queries Q and code text embeddings HC :
+
+[Q(l)
+
+sa , H (l)
+
+> C,
+
+sa ] = Self-Attn ([ Q(l−1) , H (l−1)  
+
+> C
+
+]) . (3) 
+
+2) Graph Information Extraction via Cross-Attention. Q(l)
+
+sa from the self-attention step then acts as the query to extract relevant structural infor-mation from HG via cross-attention: 
+
+Q(l)
+
+cross = Cross-Attn (Q = Q(l)
+
+sa , K = HG , V = HG ) . (4) 
+
+3) Feed-Forward Network. The output represen-tations from the attention layers are refined by sep-arate Feed-Forward Networks (FFNs): 
+
+Q(l) = FFN Q(Q(l)
+
+cross ), H(l) 
+
+> C
+
+= FFN C (H(l)
+
+> C,
+
+sa ) . (5) 
+
+The Bridge outputs BQ = Q(Lb) ∈ RNq ×dmodel ,which is projected into a soft prompt PG =
+
+Proj LLM (BQ) to guide task-specific generation. 
+
+4.2.2 Training Procedure 
+
+This stage aligns code graph-text pairs (HG , C)
+
+within the Bridge module, independent of the LLM 8948 backbone (Fig. 3(b)). Following established mul-timodal learning paradigms (Li et al., 2022), we employ three complementary objectives: 
+
+Graph-Text Contrastive Learning (GTC). This objective aligns global representations of graphs and texts. Given a batch of M paired samples, the Bridge produces BiQ ∈ RNq ×dmodel for each sample i, and the text encoder provides hi 
+
+> cls
+
+(the 
+
+[CLS] embedding from H(Lb) 
+
+> C
+
+). We use symmetric InfoNCE (Zhang et al., 2023) to pull matched pairs 
+
+(BiQ, h i
+
+> cls
+
+) together and push apart negatives: 
+
+LGTC = SymInfoNCE (hcls , B Q, τ ) . (6) Similarity is computed as the max cosine similar-ity over Nq queries, scaled by a learnable τ ; the detailed implementation is provided in Appendix I. 
+
+Graph–Text Matching (GTM). This objective trains a binary classifier ϕgtm to predict whether a graph-text pair (BiQ, h i
+
+> cls
+
+) matches, with predicted probability pi = ϕgtm (BiQ, h i
+
+> cls
+
+). We minimize the standard cross-entropy over M samples with hard negative mining (Robinson et al., 2021):      
+
+> LGTM =−1
+> M
+> M∑
+> i=1
+> (
+> yilog( pi)+(1 −yi) log(1 −pi)
+> )
+> .(7)
+
+Graph-grounded Text Generation (GTG). This objective encourages BQ to encapsulate a compre-hensive summary of the graph by reconstructing the code text C. During autoregressive decoding, each token attends to BQ, grounding the genera-tion in the structural representation. The loss is the average negative log-likelihood over M samples, where the model predicts each token ti 
+
+> C,j
+
+of the i-th sequence ti 
+
+> C
+
+conditioned on its preceding tokens 
+
+ti 
+
+> C,<j
+
+and the corresponding BiQ:        
+
+> LGTG =−1
+> M
+> M∑
+> i=1
+> |C i|
+> ∑
+> j=1
+> log P
+> (
+> ti
+> C,j |ti
+> C,<j , B iQ
+> )
+> .(8)
+
+The loss for Stage 2 is the sum of the three ob-jectives: LStage2 = LGTC + LGTM + LGTG .
+
+4.3 Instruction-Based Task Adaptation 4.3.1 Frozen LLM 
+
+CGB RIDGE uses a domain-specialized code LLM as the final inference engine (Fig. 3(c)). We keep the LLM fully frozen and perform task adaptation solely through the Bridge module, thereby leverag-ing the foundation model’s knowledge while avoid-ing the computational cost of LLM fine-tuning. 
+
+4.3.2 Training Procedure 
+
+Following cross-modal alignment, this final stage adapts the Bridge module to downstream tasks un-der a frozen LLM setup (Fig. 3(c)). Specifically, the task instruction I and source code C are first tokenized and mapped into continuous embeddings through the LLM’s input embedding layer, denoted as E(I) and E(C). The soft prompt PG from Bridge Module is then concatenated with these text embeddings in the continuous space, forming the composite LLM input: CLLM = [ PG ; E(I); E(C)] .
+
+The frozen LLM is then conditioned on CLLM to au-toregressively generate the target answer sequence 
+
+TA. Training in Stage 3 is supervised and updates only the Bridge parameters θB by minimizing the negative log-likelihood of the target tokens:       
+
+> LStage3 (θB) = −
+> |TA|
+> ∑
+> i=1
+> log PLLM (ti|t<i , C LLM ).(9)
+
+5 Experiments 
+
+5.1 Experimental Setup Datasets and Tasks. We evaluate CGB RIDGE 
+
+on two representative code intelligence tasks that require deep structural understanding. (1) Code Summarization requires capturing key control-flow paths, data dependencies, and functional roles to produce accurate natural language descriptions; we use the CodeSearchNet (Python subset) (Husain et al., 2020). (2) Code Translation re-expresses the same semantics across different languages, and thus relies on preserving abstract syntax and long-range dependencies; we use the XLCoST (Python to Java) (Zhu et al., 2022). For each snippet, we con-struct a CPG (AST+CFG+DFG) as the structural input. Detailed dataset refinement, graph construc-tion, and statistics are provided in Appendix H. The training data used in each stage of CGB RIDGE and for the baselines are detailed in Appendix J. 
+
+Backbones and Baselines. We evaluate CG-BRIDGE across four code LLM backbones span-ning multiple families and scales: Qwen2.5-Coder (1.5B, 7B) (Hui et al., 2024), CodeLlama-7B (Roz-ière et al., 2024), and DeepSeek-Coder (1.3B, 6.7B) (Guo et al., 2024). For each backbone, we compare against three general baseline categories: Zero-shot (vanilla LLM), +LoRA (Hu et al., 2022) (text-only PEFT), and +GraphText (Wang et al., 2023) (graph-as-text prompting). In addition, we report a focused comparison with representative 8949 Table 1: Code Summarization (left) and Code Translation (right) results across model groups. All scores are in %, except LLM-J (0–4). Bold denotes the best per group.                                                                                                          
+
+> Method Code Summarization Code Translation
+> ROUGE-L SBCS B-Score LLM-J CB SM DM EA Qwen2.5-Coder-1.5B 16.40 56.68 81.96 2.70 58.89 71.43 40.74 70.63 + LoRA 23.40 56.97 84.86 2.85 63.76 76.64 63.44 84.68 + GraphText 13.69 51.61 81.36 2.66 55.68 64.27 54.28 57.26 + CGB RIDGE 23.04 59.12 85.56 3.18 69.81 78.80 68.55 89.01
+> Qwen2.5-Coder-7B 19.91 59.13 83.57 2.78 63.39 74.67 48.07 89.46 + LoRA 23.60 60.53 86.27 2.98 71.16 77.72 66.42 97.21 + GraphText 15.94 53.18 82.77 2.96 63.52 67.85 67.52 70.75 + CGB RIDGE 20.08 61.62 86.61 3.23 73.91 77.20 74.18 98.26
+> CodeLlama-7B 18.71 55.85 82.91 2.83 27.64 54.65 46.05 71.76 + LoRA 25.31 60.44 86.23 2.89 69.10 74.14 70.88 93.17 + GraphText 14.30 49.50 81.60 2.87 57.81 62.84 59.02 60.32 + CGB RIDGE 23.38 60.65 88.35 2.99 71.32 79.21 74.49 95.07
+
+Graph-LLM integrated methods—GALLa (Zhang et al., 2025e), GraphLLM (Chai et al., 2023), and GraphCLIP (Zhu et al., 2025)—on the Qwen2.5-Coder-1.5B. We limit these specialized baselines to a single backbone due to their distinct training paradigms and relatively high computational cost. 
+
+Evaluation Metrics. To prioritize structural and 
+
+semantic fidelity while adhering to established metrics in neural software engineering, we fo-cus on reference-free and functional metrics, and report lexical similarity as complementary. For summarization, we use LLM-as-a-Judge (LLM-J) (Wu et al., 2024; Wang et al., 2025) to score overall quality (0–4) based on {Coherence, Con-sistency, Fluency, Relevance}, supplemented by ROUGE-L (Lin, 2004), Sentence-BERT cosine similarity (SBCS) (Reimers and Gurevych, 2019) and BERTScore (B-Score) (Zhang et al., 2020). For translation, we measure functional correctness via Execution Accuracy (EA), alongside CodeBLEU (CB) (Ren et al., 2020), Syntax Match (SM), and Dataflow Match (DM) for structural alignment. 
+
+Implementation Details. We provide implementa-tion details (including the CGE selection), hyper-parameters with sensitivity analysis, and prompt templates in Appendices J, K, and L respectively. 
+
+5.2 Overall Performance Overall performance across backbones. Ta-ble 1 shows that CGB RIDGE yields consistent gains across model families and scales, especially on our primary semantic and functional metrics. 
+
+On summarization , CGB RIDGE improves LLM-J across backbones (e.g., 2.83 (Zero-shot) / 2.89 (LoRA) →2.99 (CGB RIDGE ) on CodeLlama-7B and 2.78 / 2.98 → 3.23 on Qwen2.5-Coder-7B), in-dicating that structural alignment yields more log-
+
+Table 2: Comparison with Graph-LLM Methods. 
+
+Method CB SM DM EA Qwen2.5-Coder-1.5B 58.89 71.43 40.74 70.63 + GraphLLM 65.11 74.68 53.81 79.89 + GraphCLIP 68.24 76.57 50.25 74.76 + GALLa 69.47 78.19 62.73 86.39 + CGB RIDGE 69.81 78.80 68.55 89.01 
+
+ically faithful summaries beyond surface overlap. In contrast, LoRA remains competitive on lexical-overlap metrics (ROUGE-L), its gains on semantic metrics (B-Score and LLM-J) are marginal, sug-gesting that text-only adaptation mainly improves surface form rather than semantic fidelity and over-all quality. On translation , CGB RIDGE improves both functional correctness and structural align-ment (e.g., on Qwen2.5-Coder-1.5B, EA: 70.63 / 84.68 → 89.01 (CGB RIDGE ); DM: 40.74 / 63.44 
+
+→ 68.55), indicating better capture of executable semantics and variable dependencies than text-only baselines. We also observe consistent improve-ments on DeepSeek-Coder (1.3B/6.7B); full results are reported in Appendix A. To verify statistical robustness, 5-seed evaluations on the Qwen2.5-Coder-7B backbone demonstrate that CGB RIDGE 
+
+consistently outperforms LoRA with lower vari-ance (detailed in Appendix G). 
+
+Comparison with Graph–LLM Methods. Ta-ble 2 compares CGB RIDGE with representative Graph–LLM approaches on a controlled setting (Qwen2.5-Coder-1.5B, code translation). CG-BRIDGE achieves the best CB (69.81) and EA (89.01), outperforming GraphLLM and Graph-CLIP by +9.12 and +14.25 EA points, respectively, and also surpasses GALLa in EA (89.01 vs. 86.39) under a frozen backbone. These results show that explicit inference-time structural grounding via the 8950 Short Medium Long 15 20 ROUGE-L (%)   
+
+> Short Medium Long 82 84 BERTScore (%)
+> Short Medium Long 2.75 3.00 3.25 LLM as judge
+> Vanilla (Zero-shot) +LoRA (Text-only) +Bridge (Ours)
+
+Figure 4: Performance across different code length bins. Table 3: Robustness to variable renaming.                 
+
+> Method Original Obfuscated Change
+> Qwen2.5-Coder-7B 2.78 2.71 -2.5% + LoRA 2.98 2.53 -15.1% + GraphText 2.96 2.13 -28.4% +CGB RIDGE 3.23 3.22 -0.3%
+
+Bridge module is an effective and competitive de-sign for graph-enhanced code understanding. 
+
+Performance vs. Code Complexity. To further examine whether the observed gains are associ-ated with improved long-range structural under-standing, we partition the test set into three rela-tive code-length bins via equal-frequency binning based on token counts computed with the Qwen2.5 tokenizer. As code becomes longer, all methods de-grade, but CGB RIDGE exhibits the smallest drop, especially on semantic metrics (BERTScore and LLM-J), whereas text-only baselines deteriorate more noticeably on Long code. This suggests that explicit CPG-based structural anchoring helps frozen LLMs preserve program-level semantics and long-range dependencies in more complex code. 
+
+5.3 Additional Evaluations Code execution understanding on CRUXEval-O. We further evaluate CGB RIDGE on CRUXEval-O, the output-prediction task of CRUXEval (Gu et al., 2024), which explicitly tests execution trac-ing and structural reasoning. We report Pass@1 both with and without Stage 3 task adaptation. CG-BRIDGE improves performance in both settings, while Stage 3 adaptation yields additional gains, further supporting the benefit of explicit graph grounding for structural code understanding. De-tailed results are provided in Appendix B. 
+
+Cross-language generalization. To verify that CGB RIDGE generalizes beyond Python source in-puts, we further evaluate it on the XLCoST (Java to Python) translation task. CGB RIDGE consis-tently yields substantial and statistically significant improvements, confirming robust cross-language generalization beyond Python-input settings. De-tailed results are provided in Appendix C. 
+
+Table 4: Efficiency Analysis.                   
+
+> Method Trainable Params (M) Training Time (s) a
+> Infer. Latency (ms) b
+> Qwen2.5-Coder-7B --∼299 + LoRA 43.12 110.5 ∼1463 + GraphText --∼1197 +CGB RIDGE c180.80 272.1 ∼371
+> aMeasured per epoch. bMeasured per sample.
+> cInference latency excludes offline graph construction ( ∼281 ms/sample) and embedding generation ( ∼0.42 ms/sample).
+
+Compatibility with instruct and thinking vari-ants. We further evaluate CGB RIDGE on an in-struct/thinking pair from the Qwen3-4B (Yang et al., 2025) series as an additional compatibil-ity check. CGB RIDGE yields statistically signif-icant gains on both variants, indicating that ex-plicit structural grounding remains beneficial under both standard instruction-following and reasoning-augmented decoding styles. Detailed results are provided in Appendix D. 
+
+5.4 Robustness to Identifiers Renaming CGB RIDGE exhibits superior robustness to identifier renaming by reducing reliance on surface-level semantics. Following (Hooda et al., 2024), we verify this by systematically replacing function and variable names with random identi-fiers (e.g., compute →xYz ) while preserving exter-nal library calls. Since renaming makes lexical n-gram metrics (ROUGE) less informative, we report the semantic LLM-J score. On Qwen2.5-Coder-7B (Table 3), text-only baselines degrade substantially (e.g., LoRA drops by 15.1%), whereas CGB RIDGE 
+
+remains stable with only a -0.3% change; results on 1.5B show the same trend (Appendix E). These results suggest that explicit structural graphs help capture program logic and data flow, resisting su-perficial identifier variations. 
+
+5.5 Efficiency Analysis 
+
+Table 4 compares the spatial and temporal effi-ciency of CGB RIDGE with baselines on 7B, while Appendix F details results for 1.5B. 
+
+CGB RIDGE achieves strong inference efficiency, 
+
+delivering a ∼4× speedup over LoRA on both 7B (∼371ms vs. ∼1463ms) and 1.5B ( ∼215ms vs. 
+
+∼969ms). CGB RIDGE gains efficiency by inject-ing compact prefixes upfront, avoiding the context inflation of GraphText or the per-layer autoregres-sive decoding overhead of LoRA. Regarding the pre-processing cost, the graph construction and embedding generation ( ∼282 ms/sample) can be 8951 Table 5: Ablation experiments of graph components. 
+
+Graph Components CB SM DM EA 
+
+AST 69.97 76.55 65.95 93.12 AST + CFG 70.64 74.82 69.21 94.53 AST + DFG 71.76 74.07 73.62 97.39 CFG + DFG 65.10 68.21 72.00 91.57 CPG (AST + CFG + DFG) 73.91 77.20 74.18 98.26 CodeBLEU Execution Accuracy 050 CodeBLEU (%)  73.91 72.04 71.99 72.60 64.74 62.70 71.15 
+
+050 100 Execution Accuracy (%) 
+
+> 98.26 97.20 96.58 94.52 89.47 87.02 89.92
+> CGBridge w/o GTC w/o GTM w/o GTG w/o Stage1 w/o Stage2 w/o Stage3
+
+Figure 5: Ablation experiments of training components. 
+
+executed fully offline and parallelized, making it negligible for real-time inference. 
+
+CGB RIDGE exhibits excellent scalability in pa-rameter efficiency . The Bridge module main-tains a fixed size (180.80M) independent of the LLM scale, so its relative overhead shrinks as the backbone grows (from ∼11.5% (1.5B) to ∼2.5% (7B), and a projected ∼0.26% at 70B), making CG-BRIDGE a parameter-efficient solution for adapting future large-scale foundation models. 
+
+5.6 Ablation Study 
+
+We conduct two ablation studies on code translation with Qwen2.5-Coder-7B. 
+
+Impact of Graph Components. Table 5 shows that the full CPG achieves the best EA (98.26%). Notably, removing the AST backbone (leaving only CFG+DFG) drops EA to 91.57% (-6.69%), even below AST-only. This suggests that AST provides the dense syntactic backbone that keeps struc-tural context well-formed ; without it, the remain-ing CFG/DFG edges become too sparse and less well-connected, weakening message passing and di-minishing the benefit of semantic edges. Thus, the superior performance stems from anchoring seman-tic flows onto this dense syntactic structure. We verified the statistical significance of these graph-component contributions. Detailed paired signif-icance test results (with p-values < 0.05 for all structural additions) are provided in Appendix G. 
+
+Impact of Training Components. Figure 5 val-idates the necessity of our multi-stage pipeline. 
+
+Stage 2 (cross-modal semantic alignment) is the most critical : removing it reduces EA from 98.26% to 87.02%, confirming that explicit bridg-632 647 662 677 692 707 722 737 752 767 782 797 812 827 842 857 872 
+
+Input Token Position (Start from P )
+
+> 012345678910 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27
+> Layer Index (0-27)
+
+Structural Prefix P (32 tokens) 
+
+> 0.1 0.2 0.3 0.4 0.5 0.6 0.7
+> Attention Weight
+
+Figure 6: Static attention during encoding. Sustained attention from late-position tokens to the prefix confirms it acts as a globally accessible anchor .0 50 100 150 200 250 300 
+
+Generation Step 
+
+> 0.00 0.05 0.10 0.15 0.20
+> Attention Weight
+
+...      
+
+> Layer 0 Layer 1 Layer 10 Layer 20 Layer 27 Average
+
+Figure 7: Dynamic attention during decoding. Con-sistent attention weights across generation steps indicate that the model continuously refers to structural priors. Effectively captures the core functionality               
+
+> with no critical flaws. Score: (3/4)
+> 123
+> 4
+> 56def get_conn(self): if self.cosmos_client is not None: return self.cosmos_client
+> self.cosmos_client = cosmos_client.CosmosClient(self.endpoint_uri,
+> {'masterKey': self.master_key}) return self.cosmos_client
+> Summarize the following code:
+> Retrieves the Cosmos DB client instance.
+> Base 1.5B +LoRA
+> def get_conn (self ):if self .cosmos_client …
+> Fails to reflect the conditional check and
+> initialization logic. Score: (2/4)
+> +CGBridge
+> Get the CosmosClient instance. If it is not already created, create it and return it.
+> Omits critical logic . Score: (2/4)
+> Flat text view Code graph view
+> Returns the existing Cosmos DB client, or creates a new one if not available.
+> get_conn
+> If … not None return … cosmos_client = …
+> True
+> False
+> return …
+> CGB RIDGE
+> LLM as a Judge
+> Get the Cosmos client instance
+> LLM as a Judge
+> LLM as a Judge
+
+Figure 8: Case study on capturing control flow logic. 
+
+While Base and LoRA models miss the critical lazy-initialization check ( if... is not None ), CGB RIDGE 
+
+accurately captures this conditional logic. 
+
+ing is necessary to project graph-derived structure into the LLM token space as an effective soft-prefix; otherwise, the model cannot reliably lever-age structural signals. Furthermore, removing spe-cific objectives (e.g., w/o GTG) also degrades per-formance, indicating that both contrastive align-ment and generative grounding are essential for translating structural cues into executable code. 8952 5.7 Qualitative Analysis 
+
+To understand how CGB RIDGE utilizes the in-jected structural prefix during the encoding and generation stages, we analyze attention patterns following standard protocols (Vig, 2019), along-side a case study. 
+
+Structure is fused early and acts as a global anchor. Fig. 6 (Prompt Stage) visualizes atten-tion from input text tokens to the structural pre-fix during encoding. Attention concentrates in lower-to-mid layers, suggesting that the model inte-grates structural constraints early in the processing pipeline. Crucially, non-trivial attention persists for late-position tokens (e.g., index > 740 ), indicat-ing that the structural prefix remains a global con-text throughout long-context processing. We fur-ther provide a micro-level analysis of how distinct Bridge query tokens capture specific graph seman-tics (e.g., data vs. control flow) in Appendix M.1. 
+
+Structural guidance persists throughout decod-ing. Fig. 7 shows that the model maintains consis-tent attention to the prefix across decoding steps. This suggests the injected structure is not discarded but acts as a continuous reference. Layer-wise, mid layers attend steadily, while later layers show occasional peaks, indicating dynamic revisits to structural cues during token prediction. 
+
+CGB RIDGE captures fine-grained control flow. 
+
+Fig. 8 illustrates a Python function involving lazy initialization, where capturing the conditional branch and return path is crucial for accuracy sum-mary. While Base and +LoRA models produce fluent but incomplete summaries (missing key con-ditional logic), CGB RIDGE yields a faithful de-scription consistent with the program’s control flow. This confirms that explicit structural guidance en-hances logic coverage, explaining the quantitative gains in summary fidelity. Additional success and failure cases are in Appendix M.2. 
+
+6 Conclusion 
+
+We proposed CGB RIDGE , a plug-and-play frame-work that bridges heterogeneous program struc-tures and LLMs. Unlike approaches that rely on implicit structural priors or lengthy graph-as-text prompting, we treat the Code Property Graph as an independent modality and align it with the LLM’s representation space via a lightweight, trainable Bridge module. Our three-stage alignment strategy enables frozen LLMs to leverage explicit structural anchors during inference. Experiments across mul-tiple model families and scales confirm that CG-BRIDGE boosts performance on code summariza-tion and translation. Moreover, explicit structural anchoring mitigates the "code-as-text" brittleness and strengthens robustness to identifier renaming. By decoupling structural reasoning from text gener-ation, CGB RIDGE offers a modular, efficient, and model-agnostic way to equip foundation models with deeper structure-aware code understanding. 
+
+Limitations 
+
+Although CGB RIDGE achieves strong perfor-mance, several limitations remain. First, our frame-work relies on static analysis tools such as Tree-sitter for CPG construction. It is therefore best suited to code understanding settings with syntac-tically parseable inputs, and is less applicable to severely malformed snippets in early-stage code completion, repair, or debugging scenarios. Sec-ond, the gains on short code snippets are rela-tively limited due to sparse structural signals (Ap-pendix M.2), suggesting that CGB RIDGE is most beneficial for logic-heavy code with rich structural dependencies. Finally, although we adopt estab-lished automated metrics such as LLM-as-a-judge for scalable evaluation, human studies with devel-opers would further strengthen the assessment of real-world utility. We leave the exploration of adap-tive structural injection and more comprehensive human evaluations to future work. 
+
+References     
+
+> Ziwei Chai, Tianjie Zhang, Liang Wu, Kaiqiao Han, Xiaohai Hu, Xuanwen Huang, and Yang Yang. 2023. Graphllm: Boosting graph reasoning ability of large language model. Preprint , arXiv:2310.05845. Junkai Chen, Xing Hu, Zhenhao Li, Cuiyun Gao, Xin Xia, and David Lo. 2024a. Code search is all you need? improving code suggestions with code search. In Proceedings of the IEEE/ACM 46th International Conference on Software Engineering , ICSE ’24, New York, NY, USA. Association for Computing Machin-ery. Runjin Chen, Tong Zhao, Ajay Kumar Jaiswal, Neil Shah, and Zhangyang Wang. 2024b. Llaga: Large language and graph assistant. In Forty-first Interna-tional Conference on Machine Learning, ICML 2024, Vienna, Austria, July 21-27, 2024 .Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. 2019. BERT: pre-training of
+
+8953 deep bidirectional transformers for language under-standing. In Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Tech-nologies, NAACL-HLT 2019, Minneapolis, MN, USA, June 2-7, 2019, Volume 1 (Long and Short Papers) ,pages 4171–4186. Association for Computational Linguistics. Matthias Fey, Jinu Sunil, Akihiro Nitta, Rishi Puri, Manan Shah, Blaz Stojanovic, Ramona Bendias, Alexandria Barghi, Vid Kocijan, Zecheng Zhang, Xinwei He, Jan Eric Lenssen, and Jure Leskovec. 2025. Pyg 2.0: Scalable learning on real world graphs. ArXiv , abs/2507.16991. Aditya Grover and Jure Leskovec. 2016. node2vec: Scalable feature learning for networks. In Proceed-ings of the 22nd ACM SIGKDD International Con-ference on Knowledge Discovery and Data Mining ,KDD ’16, page 855–864, New York, NY, USA. As-sociation for Computing Machinery. Alex Gu, Baptiste Rozière, Hugh James Leather, Ar-mando Solar-Lezama, Gabriel Synnaeve, and Sida Wang. 2024. Cruxeval: A benchmark for code reasoning, understanding and execution. In Forty-first International Conference on Machine Learn-ing, ICML 2024, Vienna, Austria, July 21-27, 2024 ,Proceedings of Machine Learning Research, pages 16568–16621. PMLR / OpenReview.net. Jiawei Gu, Xuhui Jiang, Zhichao Shi, Hexiang Tan, Xuehao Zhai, Chengjin Xu, Wei Li, Yinghan Shen, Shengjie Ma, Honghao Liu, Saizhuo Wang, Kun Zhang, Yuanzhuo Wang, Wen Gao, Lionel Ni, and Jian Guo. 2025. A survey on llm-as-a-judge. 
+
+Preprint , arXiv:2411.15594. Daya Guo, Shuai Lu, Nan Duan, Yanlin Wang, Ming Zhou, and Jian Yin. 2022. Unixcoder: Unified cross-modal pre-training for code representation. In Pro-ceedings of the 60th Annual Meeting of the Associa-tion for Computational Linguistics (Volume 1: Long Papers), ACL 2022, Dublin, Ireland, May 22-27, 2022 , pages 7212–7225. Association for Computa-tional Linguistics. Daya Guo, Shuo Ren, Shuai Lu, Zhangyin Feng, Duyu Tang, Shujie Liu, Long Zhou, Nan Duan, Alexey Svy-atkovskiy, Shengyu Fu, Michele Tufano, Shao Kun Deng, Colin B. Clement, Dawn Drain, Neel Sundare-san, Jian Yin, Daxin Jiang, and Ming Zhou. 2021. Graphcodebert: Pre-training code representations with data flow. In 9th International Conference on Learning Representations, ICLR 2021, Virtual Event, Austria, May 3-7, 2021 .Daya Guo, Qihao Zhu, Dejian Yang, Zhenda Xie, Kai Dong, Wentao Zhang, Guanting Chen, Xiao Bi, Y. Wu, Y. K. Li, Fuli Luo, Yingfei Xiong, and Wen-feng Liang. 2024. Deepseek-coder: When the large language model meets programming – the rise of code intelligence. Preprint , arXiv:2401.14196. Ashish Hooda, Mihai Christodorescu, Miltiadis Alla-manis, Aaron Wilson, Kassem Fawaz, and Somesh Jha. 2024. Do large code models understand pro-gramming concepts? counterfactual analysis for code predicates. In Forty-first International Conference on Machine Learning, ICML 2024, Vienna, Austria, July 21-27, 2024 .Edward J. Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. 2022. Lora: Low-rank adaptation of large language models. In The Tenth International Conference on Learning Representations, ICLR 2022, Virtual Event, April 25-29, 2022 .Binyuan Hui, Jian Yang, Zeyu Cui, Jiaxi Yang, Day-iheng Liu, Lei Zhang, Tianyu Liu, Jiajun Zhang, Bowen Yu, Keming Lu, Kai Dang, Yang Fan, Yichang Zhang, An Yang, Rui Men, Fei Huang, Bo Zheng, Yibo Miao, Shanghaoran Quan, and 5 oth-ers. 2024. Qwen2.5-coder technical report. Preprint ,arXiv:2409.12186. Hamel Husain, Ho-Hsiang Wu, Tiferet Gazit, Miltiadis Allamanis, and Marc Brockschmidt. 2020. Code-searchnet challenge: Evaluating the state of semantic code search. Preprint , arXiv:1909.09436. Sarthak Jain and Byron C. Wallace. 2019. Attention is not Explanation. In Proceedings of the 2019 Con-ference of the North American Chapter of the Asso-ciation for Computational Linguistics: Human Lan-guage Technologies, Volume 1 (Long and Short Pa-pers) , pages 3543–3556, Minneapolis, Minnesota. Association for Computational Linguistics. Ahmed Lekssays, Hamza Mouhcine, Khang Tran, Ting Yu, and Issa Khalil. 2025. Llmxcpg: Context-aware vulnerability detection through code prop-erty graph-guided large language models. Preprint ,arXiv:2507.16585. Jinyang Li, Binyuan Hui, Reynold Cheng, Bowen Qin, Chenhao Ma, Nan Huo, Fei Huang, Wenyu Du, Luo Si, and Yongbin Li. 2023a. Graphix-t5: mixing pre-trained transformers with graph-aware layers for text-to-sql parsing. In Proceedings of the Thirty-Seventh AAAI Conference on Artificial Intelligence and Thirty-Fifth Conference on Innovative Applica-tions of Artificial Intelligence and Thirteenth Sympo-sium on Educational Advances in Artificial Intelli-gence , AAAI’23/IAAI’23/EAAI’23. Junnan Li, Dongxu Li, Silvio Savarese, and Steven C. H. Hoi. 2023b. BLIP-2: bootstrapping language-image pre-training with frozen image encoders and large language models. In International Conference on Machine Learning, ICML 2023, 23-29 July 2023, Honolulu, Hawaii, USA , volume 202, pages 19730– 19742. PMLR. Junnan Li, Dongxu Li, Caiming Xiong, and Steven C. H. Hoi. 2022. Blip: Bootstrapping language-image pre-training for unified vision-language understanding and generation. In International Conference on Ma-chine Learning .8954 Qimai Li, Zhichao Han, and Xiao-Ming Wu. 2018. Deeper insights into graph convolutional networks for semi-supervised learning. In Proceedings of the Thirty-Second AAAI Conference on Artificial Intelli-gence, (AAAI-18), the 30th innovative Applications of Artificial Intelligence (IAAI-18), and the 8th AAAI Symposium on Educational Advances in Artificial In-telligence (EAAI-18), New Orleans, Louisiana, USA, February 2-7, 2018 , pages 3538–3545. Chin-Yew Lin. 2004. ROUGE: A package for auto-matic evaluation of summaries. In Text Summariza-tion Branches Out , pages 74–81, Barcelona, Spain. Association for Computational Linguistics. Jiahao Liu, Jun Zeng, Xiang Wang, and Zhenkai Liang. 2023. Learning graph-based code representations for source-level functional similarity detection. In 
+
+2023 IEEE/ACM 45th International Conference on Software Engineering (ICSE) , pages 345–357. Xiangyan Liu, Bo Lan, Zhiyuan Hu, Yang Liu, Zhicheng Zhang, Fei Wang, Michael Qizhe Shieh, and Wenmeng Zhou. 2025. Codexgraph: Bridging large language models and code repositories via code graph databases. In Proceedings of the 2025 Confer-ence of the Nations of the Americas Chapter of the Association for Computational Linguistics: Human Language Technologies, NAACL 2025 - Volume 1: Long Papers, Albuquerque, New Mexico, USA, April 29 - May 4, 2025 , pages 142–160. Association for Computational Linguistics. Guilong Lu, Xiaolin Ju, Xiang Chen, Wenlong Pei, and Zhilong Cai. 2024. Grace: Empowering llm-based software vulnerability detection with graph structure and in-context learning. J. Syst. Softw. , 212(C). Siru Ouyang, Wenhao Yu, Kaixin Ma, Zilin Xiao, Zhi-han Zhang, Mengzhao Jia, Jiawei Han, Hongming Zhang, and Dong Yu. 2025. Repograph: Enhancing AI software engineering with repository-level code graph. In The Thirteenth International Conference on Learning Representations, ICLR 2025, Singapore, April 24-28, 2025 .Nils Reimers and Iryna Gurevych. 2019. Sentence-bert: Sentence embeddings using siamese bert-networks. In Proceedings of the 2019 Conference on Empiri-cal Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing, EMNLP-IJCNLP 2019, Hong Kong, China, November 3-7, 2019 , pages 3980–3990. Association for Computational Linguistics. Shuo Ren, Daya Guo, Shuai Lu, Long Zhou, Shujie Liu, Duyu Tang, Neel Sundaresan, Ming Zhou, Ambrosio Blanco, and Shuai Ma. 2020. Codebleu: a method for automatic evaluation of code synthesis. Preprint ,arXiv:2009.10297. Joshua David Robinson, Ching-Yao Chuang, Suvrit Sra, and Stefanie Jegelka. 2021. Contrastive learning with hard negative samples. In 9th International Conference on Learning Representations, ICLR 2021, Virtual Event, Austria, May 3-7, 2021 .Baptiste Rozière, Jonas Gehring, Fabian Gloeckle, Sten Sootla, Itai Gat, Xiaoqing Ellen Tan, Yossi Adi, Jingyu Liu, Romain Sauvestre, Tal Remez, Jérémy Rapin, Artyom Kozhevnikov, Ivan Evtimov, Joanna Bitton, Manish Bhatt, Cristian Canton Ferrer, Aaron Grattafiori, Wenhan Xiong, Alexandre Défossez, and 7 others. 2024. Code llama: Open foundation models for code. Preprint , arXiv:2308.12950. Yunsheng Shi, Zhengjie Huang, Shikun Feng, Hui Zhong, Wenjing Wang, and Yu Sun. 2021. Masked label prediction: Unified message passing model for semi-supervised classification. In Proceedings of the Thirtieth International Joint Conference on Artificial Intelligence, IJCAI 2021, Virtual Event / Montreal, Canada, 19-27 August 2021 , pages 1548–1554. ij-cai.org. Weisong Sun, Chunrong Fang, Yun Miao, Yudu You, Mengzhe Yuan, Yuchen Chen, Quanjun Zhang, An Guo, Xiang Chen, Yang Liu, and Zhenyu Chen. 2023. Abstract syntax tree for programming lan-guage understanding and representation: How far are we? Preprint , arXiv:2312.00413. Hongyuan Tao, Ying Zhang, Zhenhao Tang, Hongen Peng, Xukun Zhu, Bingchang Liu, Yingguang Yang, Ziyin Zhang, Zhaogui Xu, Haipeng Zhang, Linchao Zhu, Rui Wang, Hang Yu, Jianguo Li, and Peng Di. 2025. Code graph model (cgm): A graph-integrated large language model for repository-level software engineering tasks. Preprint , arXiv:2505.16901. Weixi Tong and Tianyi Zhang. 2024. Codejudge: Eval-uating code generation with large language models. In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing, EMNLP 2024, Miami, FL, USA, November 12-16, 2024 , pages 20032–20051. Aäron van den Oord, Yazhe Li, and Oriol Vinyals. 2018. Representation learning with contrastive predictive coding. CoRR , abs/1807.03748. Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Lukasz Kaiser, and Illia Polosukhin. 2017. Attention is all you need. In Neural Information Processing Systems .Anh Viet Phan, Minh Le Nguyen, and Lam Thu Bui. 2017. Convolutional neural networks over control flow graphs for software defect prediction. In 2017 IEEE 29th International Conference on Tools with Artificial Intelligence (ICTAI) , pages 45–52. Jesse Vig. 2019. A multiscale visualization of attention in the transformer model. In Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics: System Demonstrations , pages 37–42, Florence, Italy. Association for Computational Lin-guistics. Yao Wan, Zhangqian Bi, Yang He, Jianguo Zhang, Hongyu Zhang, Yulei Sui, Guandong Xu, Hai Jin, and Philip Yu. 2024. Deep learning for code intelli-gence: Survey, benchmark and toolkit. ACM Comput. Surv. , 56(12). 8955 Heng Wang, Shangbin Feng, Tianxing He, Zhaoxuan Tan, Xiaochuang Han, and Yulia Tsvetkov. 2023. Can language models solve graph problems in natural language? In Advances in Neural Information Pro-cessing Systems 36: Annual Conference on Neural Information Processing Systems 2023, NeurIPS 2023, New Orleans, LA, USA, December 10 - 16, 2023 .Peiding Wang, Li Zhang, Fang Liu, Chongyang Tao, and Yinghao Zhu. 2026. Codemem: Ast-guided adaptive memory for repository-level iterative code generation. 
+
+Preprint , arXiv:2601.02868. Ruiqi Wang, Jiyu Guo, Cuiyun Gao, Guodong Fan, Chun Yong Chong, and Xin Xia. 2025. Can llms replace human evaluators? an empirical study of llm-as-a-judge in software engineering. Proc. ACM Softw. Eng. , 2(ISSTA):1955–1977. Xin-Cheng Wen, Cuiyun Gao, Jiaxin Ye, Yichen Li, Zhihong Tian, Yan Jia, and Xuan Wang. 2024. Meta-path based attentional graph learning model for vul-nerability detection. IEEE Trans. Software Eng. ,50(3):360–375. Yang Wu, Yao Wan, Zhaoyang Chu, Wenting Zhao, Ye Liu, Hongyu Zhang, Xuanhua Shi, Hai Jin, and Philip S. Yu. 2024. Can large language models serve as evaluators for code summarization? IEEE Trans-actions on Software Engineering , 51:3205–3217. Lingling Xu, Haoran Xie, Si-Zhao Joe Qin, Xiaohui Tao, and Fu Lee Wang. 2023. Parameter-efficient fine-tuning methods for pretrained language mod-els: A critical review and assessment. Preprint ,arXiv:2312.12148. Fabian Yamaguchi, Nico Golde, Daniel Arp, and Kon-rad Rieck. 2014. Modeling and discovering vulner-abilities with code property graphs. In 2014 IEEE Symposium on Security and Privacy , pages 590–604. An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, Chujie Zheng, Day-iheng Liu, Fan Zhou, Fei Huang, Feng Hu, Hao Ge, Haoran Wei, Huan Lin, Jialong Tang, and 41 others. 2025. Qwen3 technical report. Preprint ,arXiv:2505.09388. Yuning You, Tianlong Chen, Yongduo Sui, Ting Chen, Zhangyang Wang, and Yang Shen. 2020. Graph con-trastive learning with augmentations. In Advances in Neural Information Processing Systems , volume 33, pages 5812–5823. Curran Associates, Inc. Hao Zhang, Mengsi Lyu, Zhuo Chen, Xingrun Xing, Yulong Ao, and Yonghua Lin. 2025a. Pdtrim: Tar-geted pruning for prefill-decode disaggregation in inference. arXiv preprint arXiv:2509.04467 .Hao Zhang, Mengsi Lyu, Chenrui He, Yulong Ao, and Yonghua Lin. 2025b. Trimtokenator: Towards adap-tive visual token pruning for large multimodal mod-els. arXiv preprint arXiv:2509.00320 .Hao Zhang, Mengsi Lyu, Bo Huang, Yulong Ao, and Yonghua Lin. 2025c. Trimtokenator-lc: To-wards adaptive visual token pruning for large mul-timodal models with long contexts. arXiv preprint arXiv:2512.22748 .Tianyi Zhang, Varsha Kishore, Felix Wu, Kilian Q. Weinberger, and Yoav Artzi. 2020. Bertscore: Evalu-ating text generation with BERT. In 8th International Conference on Learning Representations, ICLR 2020, Addis Ababa, Ethiopia, April 26-30, 2020 .Yilin Zhang, Xinran Zhao, Zora Zhiruo Wang, Chenyang Yang, Jiayi Wei, and Tongshuang Wu. 2025d. cast: Enhancing code retrieval-augmented generation with structural chunking via abstract syn-tax tree. Preprint , arXiv:2506.15655. Yuhui Zhang, Yuichiro Wada, Hiroki Waida, Kaito Goto, Yusaku Hino, and Takafumi Kanamori. 2023. Deep clustering with a constraint for topological invariance based on symmetric infonce. Neural Computation ,35(7):1288–1339. Ziyin Zhang, Hang Yu, Sage Lee, Peng Di, Jianguo Li, and Rui Wang. 2025e. Galla: Graph aligned large language models for improved source code under-standing. In Proceedings of the 63rd Annual Meet-ing of the Association for Computational Linguistics (Volume 1: Long Papers), ACL 2025, Vienna, Austria, July 27 - August 1, 2025 , pages 13784–13802. Jianan Zhao, Le Zhuo, Yikang Shen, Meng Qu, Kai Liu, Michael Bronstein, Zhaocheng Zhu, and Jian Tang. 2023. Graphtext: Graph reasoning in text space. 
+
+Preprint , arXiv:2310.01089. Ming Zhu, Aneesh Jain, Karthik Suresh, Roshan Ravin-dran, Sindhu Tipirneni, and Chandan K. Reddy. 2022. Xlcost: A benchmark dataset for cross-lingual code intelligence. Preprint , arXiv:2206.08474. Yun Zhu, Haizhou Shi, Xiaotang Wang, Yongchao Liu, Yaoke Wang, Boci Peng, Chuntao Hong, and Siliang Tang. 2025. Graphclip: Enhancing transferability in graph foundation models for text-attributed graphs. In Proceedings of the ACM on Web Conference 2025 ,WWW ’25, page 2183–2197, New York, NY, USA. Association for Computing Machinery. 
+
+A Additional Backbone Results: DeepSeek-Coder 
+
+To further assess the generality of CGB RIDGE 
+
+beyond the backbones reported in the main pa-per (Table 1), we additionally evaluate it on the DeepSeek-Coder family under the same dataset-s/splits, prompt templates, training protocol, and evaluation metrics as in Section 5.2. Table 6 sum-marizes the results on code summarization and translation. Overall, CGB RIDGE yields consistent improvements over the base model and text-only 8956 Table 6: Results on DeepSeek-Coder under the same setup as Table 1.                                                                          
+
+> Method Code Summarization Code Translation
+> ROUGE-L SBCS B-Score LLM-J CB SM DM EA Deepseek-coder-1.3B 6.12 45.30 79.08 1.63 48.82 67.67 55.58 51.37 + LoRA 5.88 49.74 80.05 1.87 55.33 69.85 54.75 73.96 + GraphText 14.76 48.76 81.86 1.94 55.02 60.39 54.22 69.31 + CGB RIDGE 16.30 50.44 84.02 2.61 55.48 69.67 55.44 76.18
+> Deepseek-coder-6.7B 17.33 56.79 82.29 2.93 61.34 73.21 56.20 90.93 + LoRA 21.11 58.21 84.30 2.97 64.40 73.12 70.67 93.88 + GraphText 16.90 49.62 82.64 2.72 58.42 62.61 60.01 53.97 + CGB RIDGE 24.79 59.10 85.75 3.22 68.09 76.20 72.28 95.92
+
+Table 7: CRUXEval-O results (Pass@1, %) under set-tings with and without Stage 3 adaptation.                 
+
+> Model Vanilla + CGB RIDGE
+> (w/o Stage 3) *
+> + CGB RIDGE
+> (w/ Stage 3) *
+> CodeLlama-7B 36.4 39.3 52.0
+> DeepSeek-Coder-6.7B 41.3 43.8 54.5
+> Qwen2.5-Coder-7B 59.0 60.9 64.9
+> Qwen3-4B 36.0 38.4 49.0
+> *All reported improvements over the vanilla backbone are statistically significant under the corresponding paired tests ( p < 0.05 ).
+
+adaptation baselines, suggesting that the proposed structural anchoring transfers across different code LLM families. 
+
+B CRUXEval Results 
+
+We further evaluate CGB RIDGE on CRUXEval-O ,the output-prediction task of CRUXEval, where the model predicts the program output given the pro-gram and its input. We report results both with and without Stage 3 adaptation. Specifically, the “w/o Stage 3” setting serves as a zero-shot evaluation without task-specific adaptation on CRUXEval-O, while the “w/ Stage 3” setting follows the same Stage 3 adaptation protocol as in the main down-stream tasks. As shown in Table 7, CGB RIDGE 
+
+consistently improves Pass@1 across all evaluated backbones, and Stage 3 adaptation yields additional gains. 
+
+C Cross-Language Generalization 
+
+To demonstrate that CGB RIDGE ’s structural an-choring is not limited to Python source inputs, we additionally evaluated our framework on a Java-to-Python translation task using the XLCoST bench-mark. As shown in Table 8, applying CGB RIDGE 
+
+to the Qwen2.5-Coder-7B backbone yields substan-tial improvements over the vanilla model. Specifi-cally, it achieves a +11.73% increase in CodeBLEU and a +10.37% increase in Execution Accuracy. Both improvements are highly statistically signifi-cant. These results confirm that explicit structural 
+
+Table 8: Cross-language generalization results on the XLCoST (Java to Python) translation task using the Qwen2.5-Coder-7B backbone. 
+
+Method CB EA 
+
+Qwen2.5-Coder-7B 63.39 54.73 + CGB RIDGE * 75.12 65.10       
+
+> *Improvements in both metrics are highly statistically significant (CB:
+> p < 0.001 via Wilcoxon signed-rank test; EA: p < 0.001 via McNemar’s test).
+
+Table 9: Results on Qwen3-4B instruct/thinking variants on XLCoST (Python to Java). 
+
+Model Variant CB EA 
+
+Qwen3-4B-Instruct 63.71 90.13 + CGB RIDGE * 74.27 95.58 
+
+Qwen3-4B-Thinking 72.10 94.35 + CGB RIDGE * 74.31 95.89   
+
+> *All reported improvements are statistically significant under the corresponding paired tests ( p < 0.05 ).
+
+graph grounding generalizes robustly across differ-ent source programming languages. 
+
+D Results on Instruct and Thinking Variants 
+
+To further examine the compatibility of CG-BRIDGE with both standard instruction-following and reasoning-augmented decoding styles, we eval-uate it on an instruct/thinking pair from the Qwen3-4B series on XLCoST (Python to Java) . As shown in Table 9, CGB RIDGE consistently im-proves both CodeBLEU and Execution Accuracy on the two variants. Notably, Qwen3-4B-Instruct + CGB RIDGE surpasses standalone Qwen3-4B-Thinking, suggesting that explicit structural mod-eling can provide benefits complementary to the backbone’s reasoning capabilities. 
+
+E Extended Robustness Analysis 
+
+Table 10 reports the variable-renaming robustness results on the 1.5B backbone. The trend is consis-8957 Table 10: Robustness to variable renaming.                              
+
+> Method Original Obfuscated Change
+> Qwen2.5-Coder-1.5B 2.70 2.59 -4.1% + LoRA 2.85 2.36 -17.2% + GraphText 2.66 1.90 -28.6% +CGB RIDGE 3.18 3.13 -1.6%
+> Qwen2.5-Coder-7B 2.78 2.71 -2.5% + LoRA 2.98 2.53 -15.1% + GraphText 2.96 2.13 -28.4% +CGB RIDGE 3.23 3.22 -0.3%
+
+Table 11: Efficiency Analysis.                                
+
+> Method Trainable Params (M) Training Time (s) a
+> Inference Latency (ms) b
+> Qwen2.5-Coder-1.5B --∼202 + LoRA 18.46 56.2 ∼969 + GraphText --∼598 +CGB RIDGE c180.80 67.5 ∼215
+> Qwen2.5-Coder-7B --∼299 + LoRA 43.12 110.5 ∼1463 + GraphText --∼1197 +CGB RIDGE c180.80 272.1 ∼371
+> aMeasured per epoch. bMeasured per sample.
+> cInference latency excludes offline graph construction ( ∼281 ms/sample) and embedding generation ( ∼0.42 ms/sample).
+
+tent with the 7B setting in the main paper (Table 3): text-only adaptations suffer notable degradation (e.g., LoRA: -17.2%), while CGB RIDGE remains stable (-1.6%), suggesting stronger invariance to identifier-level perturbations. These results suggest that by leveraging explicit structural graphs, our framework captures true program logic and data flow, effectively resisting superficial identifier vari-ations—a key weakness of text-only approaches. 
+
+F Extended Efficiency Results 
+
+In Section 5.5, we highlighted the efficiency and scalability of CGB RIDGE on the 7B model. Here, we further report efficiency on Qwen2.5-Coder-1.5B in Table 11. CGB RIDGE adds only negligible latency over the vanilla model ( ∼202 →∼ 215ms), while being ∼4.5 × faster than LoRA ( ∼969ms). In terms of parameter overhead, the fixed-size Bridge (180.80M) corresponds to ∼11.5% of a 1.5B backbone, confirming that the relative over-head decreases as the backbone scales. CGB RIDGE 
+
+gains efficiency by injecting compact prefixes up-front, avoiding the context inflation of GraphText or the per-layer autoregressive decoding overhead of LoRA. This efficiency-oriented design is com-plementary to orthogonal efforts that improve in-ference efficiency through pruning (Zhang et al., 2025a) and token reduction in large language and 
+
+Table 12: Five-seed robustness results on XLCoST (Python to Java) with Qwen2.5-Coder-7B.          
+
+> Model CB (Mean ±Std) EA (Mean ±Std) Qwen2.5-Coder-7B 63.39 89.46 + LoRA 71.17 ±0.37 97.21 ±0.34 +CGB RIDGE 73.91 ±0.16 98.26 ±0.21
+
+Table 13: Paired significance tests for graph-component ablations. 
+
+Comparison CB ( p-value) EA ( p-value) AST + CFG vs. AST 0.003 0.019 AST + DFG vs. AST 2.0 × 10 −13 7.3 × 10 −12 
+
+CPG vs. AST + CFG 1.0 × 10 −39 1.3 × 10 −8
+
+CPG vs. AST + DFG 1.2 × 10 −19 0.021 CPG vs. CFG + DFG 7.0 × 10 −129 2.5 × 10 −15 
+
+multimodal models (Zhang et al., 2025b,c). 
+
+G Statistical Robustness and Significance Analysis 
+
+To assess whether the improvements of CG-BRIDGE are robust to random initialization, we repeated the main translation experiments on Qwen2.5-Coder-7B over five random seeds and report the mean performance and standard devia-tion in Table 12. As shown, CGB RIDGE consis-tently outperforms LoRA while exhibiting lower variance across runs. We also conduct paired sig-nificance tests for the graph-component ablations in Table 5. The results in Table 13 show that the observed gains remain statistically significant even when the absolute margins are relatively small. 
+
+H Details of the CPG dataset Construction 
+
+We construct our dataset from two primary bench-marks: CodeSearchNet (Husain et al., 2020) (Python subset) for code summarization and XL-CoST (Zhu et al., 2022) (Python-to-Java) for code translation. To establish a foundation for our ex-periments, we refined and constructed a large-scale code graph dataset comprising approximately 
+
+270K samples . This process involved two main steps: data refinement and graph construction. 
+
+H.1 Dataset Refinement. 
+
+To improve source data quality, we performed task-specific refinement. For CodeSearchNet , we re-moved inline comments and utilized GPT-4-0613 to refine the ground-truth summaries, reducing 8958 Table 14: List of supported node types in the constructed CPGs.    
+
+> VTv
+> Nodes module, function_definition, identifier, parameters, default_parameter, none, comment, block, try_statement, if_statement, comparison_operator, expression_statement, assignment, call, argument_list, for_statement, integer, binary_operator, subscript, pattern_list, expression_list, while_statement, parenthesized_expression, string, string_start, string_content, string_end, elif_clause, else_clause, augmented_assignment, break_statement, continue_statement, return_statement, except_clause, finally_clause
+
+Table 15: Taxonomy of fine-grained textual attributes for CPG edges.      
+
+> TeFine-grained Textual Attributes
+> AST has_name, has_parameters, has_body, has_condition, has_then_body, has_else_body, has_elif_branch, has_target, has_value, contains CFG sequential_execution, true_branch, false_branch, alternate_condition_branch, condition_evaluation, for_loop_body, for_loop, iteration_range, while_loop_body, while_loop_condition, try_block, exception_handler, finally_block, block_exit, loop_exit, loop_back, break_jump, condition_false_jump, function_call DFG contributes_to, flows_to
+
+noise and aligning them better with the code logic. For XLCoST , we processed and formatted the code snippets to ensure syntactic correctness and exe-cutability, filtering out incomplete or unparseable fragments. 
+
+H.2 Graph Construction. 
+
+Following refinement, we construct a CPG for each snippet. Formally, the CPG is defined as 
+
+G = ( V, E, T v, T e). Here, V denotes the set of nodes with a type mapping function ϕ : V → T v,associating each node vi ∈ V with a type tvi ∈ T v
+
+(e.g., identifier ). Similarly, E denotes the set of edges with a type mapping function ψ : E → T e,assigning each edge eij = ( vi, v j ) ∈ E a relation type teij ∈ T e (e.g., flows_to ). Adopting established graph construction proto-cols (Liu et al., 2023; Guo et al., 2021; Chen et al., 2024a), we begin by parsing the source code us-ing Tree-sitter 1. Each graph node corresponds to a named AST element. As detailed in Table 14, these nodes are labeled with predefined types ( e.g. ,
+
+> 1https://tree-sitter.github.io/tree-sitter
+
+Table 16: Structural statistics for the refined code graph datasets.             
+
+> Statistic CodeSearchNet XLCoST
+> Total Samples 261,372 10,344 Avg. Nodes 125.41 145.77 Avg. AST Edges 124.41 144.77 Avg. CFG Edges 16.21 27.95 Avg. DFG Edges 22.85 32.23
+
+assignment , if_statement ). For textual repre-sentation, high-level statement nodes retain only the first line of their source text ( e.g. , the condition in an if statement) to reduce redundancy, while atomic nodes ( e.g. , expressions , identifiers )retain their full span. Edges in the CPG encode structural and se-mantic relations. We categorize them into three types, with their fine-grained textual attributes comprehensively detailed in Table 15. AST edges capture syntactic hierarchy ( e.g. , has_name ,
+
+contains ). CFG and DFG edges are both derived from the static analysis of the AST: CFG edges encode control-flow semantics ( e.g. ,
+
+sequential_execution , true_branch ) by ana-lyzing statement sequences and control structures, while DFG edges model data dependencies ( e.g. ,
+
+flows_to , contributes_to ) based on variable definition and usage patterns. Each edge is also assigned a textual attribute indicating its semantic role. Finally, all node and edge textual attributes are encoded into dense feature vectors using a pre-trained code encoder ( e.g ., UniXCoder) or LLM encoder, and the resulting graph is stored and pro-cessed using the PyG (Fey et al., 2025) for down-stream GNN computation. Table 16 summarizes the scale and structural density of our curated datasets. The high number of structural edges rel-ative to nodes highlights the richness of the logic captured by our CPGs. 
+
+I Detailed InfoNCE Loss Formulation 
+
+This section provides the detailed mathematical formulation of the symmetric InfoNCE loss used in Eq. 6 for Graph–Text Contrastive Learning (GTC). Given a batch of M graph–text pairs, the loss is 8959 expanded as:            
+
+> LGTC =−12M
+> M∑
+> i=1
+> (
+> log exp( s(BiQ, h i
+> cls )/τ )
+> ∑Mj=1 exp( s(BiQ, h j
+> cls )/τ )+ log exp( s(hi
+> cls , B iQ)/τ )
+> ∑Mj=1 exp( s(hi
+> cls , B jQ)/τ )
+> )
+> ,
+> (10)
+
+where BiQ ∈ RNq ×dmodel is the Bridge output (a set of Nq graph-query embeddings) for the i-th graph, and hi 
+
+> cls
+
+∈ Rdmodel is the corresponding [CLS] em-bedding from H(Lb) 
+
+> C
+
+.
+
+Similarity function. The similarity s(·, ·) is de-fined via the maximum cosine similarity over all query tokens: 
+
+s(BiQ, h j
+
+> cls
+
+) = max   
+
+> k∈{ 1,...,N q}
+
+cos 
+
+(
+
+BiQ,k , h j
+
+> cls
+
+)
+
+,
+
+(11) where BiQ,k ∈ Rdmodel denotes the k-th query em-bedding in BiQ and cos( ·, ·) is the cosine similarity. We use the same definition for s(hi
+
+> cls
+
+, B jQ). The temperature τ is learnable and scales similarity scores in Eq. 10. 
+
+J Implementation Details of Experiments. 
+
+We implement the CGE using a 2-layer Graph Transformer, with the Bridge Module utilizing 
+
+Nq = 32 query tokens. The Bridge Module is initialized with the weights of a pre-trained BERT-base-uncased model (Devlin et al., 2019), adopting its original architecture, including the number of layers Lb. The initial node and edge features are encoded using UniXcoder-base (Guo et al., 2022). For Stage 1 self-supervised structural pretraining and Stage 2 cross-modal semantic alignment, we use the Python training split of CodeSearchNet .Specifically, Stage 1 uses the code-only portion, while Stage 2 uses the corresponding code-text pairs. For Stage 3 instruction-based task adapta-tion, we use the task-specific training splits, namely 
+
+CodeSearchNet for code summarization and XL-CoST for code translation. For fair comparison, the LoRA baselines are trained on the same down-stream training splits as Stage 3. We conduct ex-periments on a variety of open-source Code LLMs, including Qwen2.5-Coder-Instruct (1.5B, 7B) (Hui et al., 2024), CodeLlama7b-Instruct-hf (Rozière et al., 2024), and Deepseek-coder-Instruct (1.3B, 6.7B) (Guo et al., 2024). All experiments are per-formed on a server equipped with 8 NVIDIA H800 80GB GPUs. 
+
+J.1 The Choice of Graph Encoder. 
+
+CGBridge is designed to be encoder-agnostic : the CGE serves as a reusable structural expert that pro-duces structural embeddings HG for the Bridge, and thus can be instantiated with different graph en-coders. In this work, we adopt a Graph Transformer (GT) (Shi et al., 2021) as the default CGE and com-pare it with representative message-passing GNNs (e.g., GCN and GAT). 
+
+Rationale. We choose GT as a strong default for three reasons. (1) Generality and reusabil-ity. We deliberately avoid highly specialized code-specific GNNs (e.g. MAGNET (Wen et al., 2024), TAILOR (Liu et al., 2023)) so that improvements can be attributed to the structure-as-modality 
+
+paradigm and the Bridge-based alignment, and the CGE can be upgraded without changing the Bridge– LLM interface. (2) Long-range dependencies. 
+
+Program structure contains long-distance relations (e.g., def–use and control dependencies) that shal-low message passing may struggle to capture with-out deep stacking and potential over-smoothing; GT-style global attention provides a direct mech-anism to model such interactions over structural tokens. (3) Heterogeneity. CPGs include multi-ple relation types (AST/CFG/DFG). GT integrates relation-aware signals to differentiate structural re-lations and flexibly weight their contributions. 
+
+Empirical Comparison. We conducted an ab-lation study comparing GT against standard base-lines (GCN and GAT) on the Qwen2.5-Coder-1.5B backbone. As shown in Table 17, all graph en-coders yield performance gains over the text-only baseline, demonstrating the general effectiveness of our CGB RIDGE framework in utilizing struc-tural signals. Among them, the Graph Transformer achieves the most favorable results, supporting it as a stable default for aligning heterogeneous pro-gram graphs with LLM semantics. We emphasize that CGB RIDGE does not strictly depend on GT; the choice of encoder is orthogonal, and more spe-cialized program-graph encoders can be seamlessly plugged into our framework. 
+
+K Hyperparameter Analysis and Settings 
+
+In this section, we first analyze the sensitivity of key hyperparameters to validate our design choices, and then provide the detailed configuration tables for reproducibility. 8960 Table 17: Ablation study on the GNN backbone for the Code Graph Encoder (CGE), evaluated on the Qwen2.5-Coder-1.5B model.                                  
+
+> GNN Type Code Summarization Code Translation
+> ROUGE-L SBCS B-Score LLM-J CB SM DM EA GCN 22.86 57.49 85.03 3.16 66.13 74.39 57.11 84.23 GAT 21.77 54.82 84.50 2.98 72.09 76.75 70.48 85.37 GT 23.04 59.12 85.56 3.18 69.81 78.80 68.55 89.01
+
+K.1 Hyper-parameter Sensitivity Analysis 
+
+To validate our design and assess the robustness of CGB RIDGE , we study two key hyperparameters: the number of GNN layers Lg in the CGE and the number of Bridge queries Nq. Experiments are conducted on the code translation task (Qwen2.5-Coder-1.5B), using Execution Accuracy (EA) as the primary metric, and CodeBLEU (CB) as a com-plementary metric. 
+
+Analysis on the GNN Layers ( Lg). Lg is crucial for capturing multi-hop dependencies. As shown in Figure 9 (left), performance peaks at Lg = 2 .A single-layer GNN lacks capacity for capturing structural patterns, while deeper GNNs ( Lg > 2)suffer from over-smoothing (Li et al., 2018) and re-dundancy in the heterogeneous code graph, as CFG and DFG edges already encode many shortcuts. 
+
+Analysis on the Bridge Queries ( Nq). Nq gov-erns the information capacity of the Bridge module in extracting structural knowledge. As illustrated in Figure 9 (right), with the Qwen2.5-Coder-1.5B backbone, EA peaks at Nq = 32 , while CB remains relatively stable across different values. This indi-cates that Nq = 32 achieves a favourable trade-off, providing sufficient representation power while mit-igating the noise introduced by excessive queries. A small Nq may limit information flow, whereas a large Nq risks signal dilution. 
+
+K.2 Detailed Experimental Configurations 
+
+Based on the analysis above and standard practices, our main experiment hyperparameter configura-1 2 3 4    
+
+> Lg
+> 60 80 100
+> Scores (%)
+> 816 32 64
+> Nq
+> 60 80 100
+> Scores (%)
+> CodeBLEU Execution Accuracy
+
+Figure 9: Analysis of the hyper-parameter Nq and L.Table 18: Hyperparameters for Stage 1: Self-Supervised Structural Pretraining.                       
+
+> Parameter Value
+> GNN Type Graph Transformer Input Dimension 768 Hidden Dimension 1024 Output Dimension 768 GNN Layers Lg2Attention Heads 4Dropout Rate 0.1 Node Feature Drop Rate 0.05 Edge Drop Rate 0.05 Batch Size 128 Learning Rate 1e-5 Weight Decay 0.01 Contrastive Temperature τcl 0.3 Contrastive Loss Weight λcl 0.6 Edge Prediction Loss Weight λedge 0.4 Negative Sampling Ratio 0.5 Early Stopping Patience 20
+
+tions are detailed in the tables below. We structure them by our three-stage training: Table 18 (Stage 1: Self-Supervised Structural Pretraining), Table 19 (Stage 2: Cross-Modal Alignment), and Table 20 (Stage 3: Instruction-Based Task Adaptation). All experiments, including ablation studies, adhere to these settings unless stated otherwise. 
+
+L Prompt Templates 
+
+This section provides the exact instruction tem-plates used during the instruction-based task adap-tation and for LLM-as-a-judge evaluation. 
+
+L.1 Code summarization 
+
+The goal is to generate a high-quality PEP 257–compliant docstring for a given code snippet. 
+
+System Prompt : You are an expert Python assis-tant. Generate clear, concise, and accurate doc-strings strictly following PEP 257 triple quote formatting. 
+
+User Prompt : Generate a Python docstring for the code below. Format: PEP 257 triple quotes. 8961 Table 19: Hyperparameters for Stage 2: Cross-Modal Alignment.                    
+
+> Parameter Value
+> Initial Weight BERT-base-uncased Bridge layers Lb12 Query Tokens Nq32 Graph Embedding Dim 768 Model Dim dmodel 768 Cross-Attention Frequency 2Batch Size 16 Contrastive Temperature τ0.07 Learning Rate 5e-7 Weight Decay 0.01 Warmup Ratio 0.01 Max Epochs 200 Scheduler Type Plateau Early Stopping Patience 20
+
+Table 20: Hyperparameters for Stage 3: Instruction-Based Task Adaptation.                
+
+> Parameter Value
+> Bridge Module Initialized from Stage 2 Precision bfloat16 Batch Size 8Learning Rate 1e-6 Weight Decay 0.01 Max Epochs 200 Warmup Ratio 0.01 Early Stopping Patience 20 Scheduler Type Plateau Scheduler Patience 2Scheduler Factor 0.5 Min Learning Rate 1e-10 Temperature 0Repetition Penalty 1.1
+
+Required Structure: - One-line summary of the function. (Optional) More detailed explanations are provided if the logic is complex. - Parameters: param_name (param_type): De-scription of parameter. (Use ’None’ if no param-eters) - Returns: return_type: Description of returned value. (Use ’None’ if no explicit return) Code: 
+
+L.2 Code Translation 
+
+The goal is to translate source functions into func-tionally equivalent, runnable target code. 
+
+System Prompt :Role: Python to Java Translator. Output: Single, runnable Java class (e.g., `Solu-tion ` or `Main `). Structure: 1. Core logic in a `public static ` method. 2. `public static void main(String[] args) `:Calls static method (use user’s sample inputs if given, else defaults) and prints output via `Sys-tem.out.println() `.Ensure: - Functional Python-Java equivalence. - Correct Java types and standard library mapping. - Necessary `import `s. - Compilable and runnable code. 
+
+User Prompt :Translate the following Python code to Java. 
+
+L.3 LLM as a Judge 
+
+For reference-free evaluation of code summariza-tion, we use GPT-4-0613 as the LLM evaluator con-sistently across all compared methods (Wu et al., 2024; Wang et al., 2025; Gu et al., 2025; Tong and Zhang, 2024). The following prompts guide the LLM to score the generated summaries based on predefined criteria, with a heavy emphasis on functional consistency. 
+
+System Prompt :You are an expert Principal Software Engineer acting as a meticulous Code Reviewer. Your sole task is to provide a critical and objective evaluation of a candidate code summary based on the provided source code. Your evaluation must follow these steps: - Care-fully read the source code to fully understand its functionality, inputs, outputs, and key logic. - Critically analyze the candidate summary against the code. - Provide a structured evaluation based on the four dimensions below. Evaluation Dimensions: - Coherence (0-4): How logically organized and well-structured is the summary? Does it form a coherent description of the code? (0=Incoherent, 4=Perfectly coherent). - Consistency (0-4): Does the summary accu-rately reflect the code’s functionality and logic? Are there any factual errors or hallucinations? This is the most critical dimension. (0=Contra-dicts the code, 4=Perfectly consistent). - Fluency (0-4): Is the summary written in clear, natural, and grammatically correct language? 8962 (0=Unreadable, 4=Perfectly fluent). - Relevance (0-4): Does the summary capture the essential information without including redun-dant or trivial details? (0=Irrelevant, 4=Perfectly relevant). Overall Score: After rating the four dimensions, provide a holis-tic Overall Score (0-4). This score is NOT a simple average. You must weigh Consistency most heavily, as an inconsistent summary is fun-damentally flawed, regardless of its fluency. 
+
+User Prompt :Please evaluate the following code summary. Source Code: Candidate Summary: {candidate} 
+
+M Extended Qualitative Analysis 
+
+M.1 Interpreting Bridge Query Tokens (Micro-level Alignment) 
+
+To obtain a fine-grained view of what Bridge queries encode, we inspect the cross-attention from query tokens to the structural embeddings inside the Bridge on the case-study instance in Fig. 8. For each query qk, we extract its cross-attention weights over graph nodes from the (last) Bridge layer and average them over attention heads. We then aggregate these weights by CPG node type (e.g., if_statement , return_statement ) to com-pute a per-type attention share: 
+
+pk,t =
+
+∑ 
+
+> i: type( vi)= t
+
+Ak,i 
+
+∑ 
+
+> i
+
+Ak,i 
+
+, (12) where Ak,i denotes the (head-averaged) attention weight from qk to node vi. Table 21 reports the top-attended node types for representative queries. While strict one-to-one correspondences are un-common due to distributed representations, we con-sistently observe dominant query-to-type patterns that are semantically plausible (e.g., control-flow cues vs. return-path cues). We emphasize that at-tention provides a diagnostic signal rather than a definitive causal explanation (Jain and Wallace, 2019). 
+
+M.2 Additional Cases 
+
+To provide a holistic view of CGB RIDGE ’s capa-bilities and boundaries, we present detailed case studies covering both success and failure scenarios across Code Summarization and Code Translation tasks. These examples are selected to empirically validate our core hypothesis: structural information (AST, CFG, DFG) acts as an anchor for complex al-gorithmic logic, but may offer diminishing returns in short, linear, or dependency-heavy contexts. For clarity, comments within the displayed code snip-pets (e.g., highlighting errors or logic flow) were added manually for illustrative purposes and were not part of the raw model outputs. 
+
+M.2.1 Analysis of Code Translation 
+
+In Code Translation, CGB RIDGE better preserves deep algorithmic structures. The success case (or Figure 8 in Section 5.7 or Table 22 ) shows how CFG/DFG constraints enable the model to recon-struct complex recursive logic (e.g., linked list sub-traction) where baselines suffer from task hallu-cination. However, we also identify two critical failure modes (Tables 23 and 24): (1) Metric Mis-alignment: CGB RIDGE may receive lower n-gram scores (e.g., CodeBLEU) due to valid code refac-toring, despite semantic correctness. (2) Graph Incompleteness: The reliance on static analysis implies that if external dependencies (e.g., library imports) are not resolved in the CPG, the model may fail to generate necessary ‘import‘ statements. Furthermore, our analysis highlights that execu-tion success on isolated test cases does not always equate to semantic correctness, as demonstrated by the baseline passing through mathematical coinci-dence despite incorrect logic. 
+
+M.2.2 Analysis of Code Summarization 
+
+In Code Summarization, we observe that CG-BRIDGE excels in scenarios involving complex control flows. As shown in the success case (Ta-ble 25), the model leverages CFG connections to accurately describe exception handling and fallback logic, which baseline models (and occasionally ground-truth references) often miss. Conversely, failure cases (Table 26) reveal a limitation in han-dling extremely short code snippets. When struc-tural signals are sparse (e.g., linear "one-liners"), graph priors provide little advantage over strong variable naming conventions, occasionally leading to over-generic summaries compared to baselines that attend closely to surface text. 8963 Table 21: Micro-level interpretability of Bridge queries via cross-attention mass to CPG node types on the case study in Fig. 8. Percentages are computed by aggregating cross-attention weights from a query token to all graph nodes of a given type (averaged over heads/layers) and normalizing across types. 
+
+Query Token Top-attended Nodes Interpretation 
+
+Query #7 if_statement (41%) Focuses on control flow (if self.cosmos_client is not None: )Query #25 assignment, call (38%) Focuses on data flow (. . . = CosmosClient (. . . )) Query #31 return_statement (45%) Focuses on the function’s return path (return self.cosmos_client )
+
+Table 22: Good Case (Translation). Comparison on Linked List Subtraction. CGB RIDGE captures the correct recursive logic, while the Baseline hallucinates a completely different task (List Reordering). 
+
+Input (Python) Reference (Java) CGB RIDGE (Ours) Baseline 
+
+# ... Node class omitted ... # Helper for recursive logic 
+
+def subtractLinkedListHelper(l1, l2): 
+
+global borrow # Base case 
+
+if l1 is None and l2 is None and not borrow: 
+
+return None # Recursive step matches structure previous = subtractLinkedListHelper( l1. next if l1 else None, l2. next if l2 else None )d1 = l1.data d2 = l2.data # Borrow logic 
+
+if borrow: d1 -= 1 borrow = False 
+
+if d1 < d2: borrow = True d1 += 10 sub = d1 - d2 current = newNode(sub) current. next = previous 
+
+return current 
+
+def subtractLinkedList(l1, l2): # ... (Pad zeros logic omitted) ... 
+
+return subtractLinkedListHelper( lNode, sNode) # ... main omitted ... // ... Node class omitted ... Node subtractLinkedListHelper(Node l1, Node l2) { 
+
+if (l1 == null && l2 == null && borrow == false )
+
+return null ;// Reference recursion Node previous = subtractLinkedListHelper( (l1 != null ) ? l1.next : 
+
+null ,(l2 != null ) ? l2.next : 
+
+null 
+
+); 
+
+int d1 = l1.data; 
+
+int d2 = l2.data; // Logic exactly matches Python 
+
+if (borrow) { d1--; borrow = false ;}
+
+if (d1 < d2) { borrow = true ;d1 = d1 + 10; }Node current = new Node(d1 - d2) ;current.next = previous; 
+
+return current; // ... main omitted ... }// ... Node class omitted ... 
+
+static Node subtractLinkedListHelper (Node l1, Node l2) { 
+
+if (l1 == null && l2 == null && !borrow) 
+
+return null ;// CGBridge correctly generates // the recursive calls Node previous = subtractLinkedListHelper( (l1!= null )? l1.next: null ,(l2!= null )? l2.next: null 
+
+); 
+
+int d1 = l1.data; 
+
+int d2 = l2.data; // Correctly handles borrow state 
+
+if (borrow) { d1 -= 1; borrow = false ;}
+
+if (d1 < d2) { borrow = true ;d1 += 10; }Node current = newNode(d1 - d2); current.next = previous; 
+
+return current; // ... main omitted ... }
+
+CB: 55.55 Exec: ✓
+
+// ... Node class omitted ... 
+
+public class Main { 
+
+static Node left = null ;// HALLUCINATION: // Generates "Reorder List" logic // instead of Subtraction! 
+
+public static void rearrange( Node head) { left = head; reorderListUtil(left); }
+
+public static void 
+
+reorderListUtil(Node right) { 
+
+if (right == null ) return ;reorderListUtil(right.next); // This logic folds the list // (L0->Ln->L1...) // Completely unrelated to subtraction 
+
+if (left != right && left. next != right) { Node temp = left.next; left.next = right; right.next = temp; left = temp; }// ... }// ... main omitted ... }
+
+CB: 22.29 Exec: ✗
+
+Analysis: The task requires implementing Linked List Subtraction . CGB RIDGE (Column 3) successfully aligns with the Python reference, correctly implementing the subtractLinkedListHelper with recursive borrow logic. In stark contrast, the Baseline (Column 4) fails to identify the task semantics, hallucinating a reorderListUtil function (likely retrieving a solution for "Reorder List") which is functionally irrelevant. 
+
+Why CGB RIDGE Succeeds: It leverages explicit structural anchors— AST preserves the recursive skeleton, CFG enforces the correct execution order (length alignment → recursive calls), and DFG maintains critical data dependencies for the global 
+
+borrow state. These graph priors constrain the generation to the correct subtraction algorithm. 
+
+Metric Consistency: The significant gap in CodeBLEU (55.55 vs. 22.29) quantitatively confirms the Baseline’s severe hallucination. While the Baseline collapses due to task divergence, CGB RIDGE achieves a robust score. Notably, CGB RIDGE ’s score is capped at 55.55 due to valid code refactoring rather than errors: it uses a static borrow field and a newNode factory, differing from the reference’s instance fields and constructors. These stylistic choices reduce n-gram matching but preserve perfect functional equivalence. 8964 Table 23: Failure Case #1 (Translation). An example of metric misalignment. CodeBLEU penalizes valid code refactoring. CGB RIDGE generates a concise one-liner, while the Reference uses a verbose two-step assignment. The metric penalizes CGB RIDGE for missing the intermediate variable tokens, despite the logic being identical. 
+
+Input (Python) Reference (Java) CGB RIDGE (Ours) Baseline 
+
+def CountWays(n): ans = (n - 1) // 2 
+
+return ans N = 8 
+
+print (CountWays(N)) 
+
+class GFG { 
+
+static int CountWays( int n) { // Verbose style 
+
+int ans = (n - 1) / 2; 
+
+return ans; }// ... main omitted }
+
+public class Main {
+
+static int CountWays( int n) { // Concise Refactoring 
+
+return (n - 1) / 2; }// ... main omitted }
+
+CB: 67.13 
+
+Execution Accuracy: ✓
+
+public class Main { 
+
+public static int countWays( int 
+
+n) { // Matches Verbosity 
+
+int ans = (n - 1) / 2; 
+
+return ans; }// ... main omitted }
+
+CodeBELU: 71.67 Execution Accuracy: ✓
+
+Analysis: CGB RIDGE (Column 3) produces a functionally correct but concise translation, collapsing the reference’s two-step body ( int ans = ...; return ans; ) into a single expression. CodeBLEU penalizes this refactoring because it reduces n-gram overlap (missing tokens int , ans , =) and simplifies the AST. In contrast, the Baseline (Column 4) scores higher simply because it mimics the verbose style of the Reference. This demonstrates how surface-level metrics can discourage efficient coding styles. 
+
+Table 24: Failure Case #2 (Translation). An example of graph incompleteness (missing import) in CGB RIDGE ,and a False Positive execution in the Baseline caused by task hallucination. The specific input array is critical to explaining the baseline’s lucky pass. 
+
+Input (Python) Reference (Java) CGB RIDGE (Ours) Baseline 
+
+def maxPossibleSum(arr, N): arr.sort() # Ascending total_sum = 0 j = N - 3 
+
+while j >= 0: total_sum += arr[j] j -= 3 
+
+print (total_sum) 
+
+if __name__ == "__main__": arr = [7, 4, 5, 2, 3, 1, 5, 9] N = 8 maxPossibleSum(arr, N) 
+
+import java.io.*; 
+
+import java.util.*; 
+
+class GFG { 
+
+public static void 
+
+maxPossibleSum( int [] arr, int 
+
+N) { Arrays.sort(arr); 
+
+int sum = 0; 
+
+int j = N - 3; 
+
+while (j >= 0) { sum += arr[j]; j -= 3; }System.out.println(sum); }
+
+public static void main(String[] args) { 
+
+int [] arr = {7, 4, 5, 2, 3, 1, 5, 9}; 
+
+int N = arr.length; maxPossibleSum(arr, N); }}// MISSING IMPORT 
+
+class GFG { 
+
+static void maxPossibleSum( int 
+
+arr[], int N) { // Compile Error: // cannot find symbol ' Arrays' Arrays.sort(arr); 
+
+int total_sum = 0; 
+
+for (int j = N - 3; j >= 0; j -= 3) { total_sum += arr[j]; }System.out.println(total_sum ); }
+
+public static void main(String[] args) { 
+
+int arr[] = new int []{7, 4, 5, 2, 3, 1, 5, 9}; 
+
+int N = 8; maxPossibleSum(arr, N); }}
+
+CodeBLEU: 46.75 Execution Accuracy: ✗
+
+import java.util.*; 
+
+public class Main { 
+
+public static void main(String[] args) { // Same input data Integer arr[] = new Integer []{7, 4, 5, 2, 3, 1, 5, 9}; 
+
+int N = 8; maxPossibleSum(arr, N); }
+
+public static void 
+
+maxPossibleSum(Integer arr[], 
+
+int N){ // HALLUCINATION: Descending !Arrays.sort(arr, Collections. reverseOrder()); 
+
+int total_sum = 0; 
+
+for (int j=N-3; j>=0; j-=3) {total_sum += arr[j]; }System.out.println(total_sum ); }}
+
+CodeBLEU: 40.40 
+
+Execution Accuracy: ✓*
+
+Analysis: CGB RIDGE (Column 3) fails execution due to a missing import . The Baseline (Column 4) is marked with ✓∗ to indicate a false positive. It hallucinates a reverseOrder sort (violating the Python semantics). However, it passes this specific test case because the input array [7, 4, 5, 2, 3, 1, 5, 9] creates a mathematical coincidence: the indices summed (2 and 5) correspond to values ( 3 and 5 in ascending sort, 5 and 3 in descending sort) that sum to the same result ( 8). This demonstrates that execution success on isolated or limited test cases does not strictly guarantee semantic correctness, highlighting the importance of structural alignment. 8965 Table 25: Good Case (Summarization). CGB RIDGE leverages CFG information to capture the exception handling logic, whereas the Baseline misses the fallback path. 
+
+Input Code (Python):     
+
+> def _dag_file_to_dict(self):
+> try :dag_file = open (os.path.join(self.workdir, ".treeDag.json")) dag_json = json.load(dag_file)
+> except (FileNotFoundError, json.decoder.JSONDecodeError): # Capturing this exception logic is the key challenge logger.warning(colored_print( "WARNING: dotfile named .treeDag.json not found or corrupted", "red_bold")) dag_json = {}
+> return dag_json
+
+Reference CGB RIDGE (Ours) Baseline 
+
+Function that opens the dotfile named .treeDag.json in the current working di-rectory. Convert the dag file to a dictionary. If the file is not found or corrupted, re-turn an empty dict.   
+
+> ROUGE-L: 12.50
+> BERTScore: 84.99
+> LLM-as-a-Judge: 3.75
+
+Converts the contents of a .treeDag.json file to a dictionary.  
+
+> ROUGE-L: 25.00 BERTScore: 90.59 LLM-as-a-Judge: 3.0
+
+Analysis: This case highlights a reference bias where standard metrics penalize semantic completeness. The ground-truth Reference describes only the successful execution path (“opens the dotfile”), omitting the critical exception handling logic visible in the code’s try-except block. The Baseline mimics this omission, achieving high ROUGE/BERTScore (25.00/90.59) simply by copying the specific string literal “.treeDag.json”. In contrast, CGB RIDGE abstracts the filename to “dag file” (lowering lexical overlap scores to 12.50) but uniquely captures the control-flow semantics: “If the file is not found... return an empty dict.” The LLM-as-a-Judge correctly identifies this superiority (3.75 vs 3.0), recognizing that CGB RIDGE provides a more faithful description of the function’s actual behavior, even if it deviates from the reference’s phrasing. 
+
+Table 26: Failure Cases for Code Summarization. In extremely short code snippets with sparse structural signals, CGB RIDGE tends to generate generic summaries compared to the Baseline, as the graph priors offer limited gain over strong naming conventions. 
+
+Input Code Reference CGB RIDGE (Ours) Baseline 
+
+Case #1: One-liner (Loss of Specificity)           
+
+> def filter_dict_by_key(d, keys):
+> return {k: v for k, v in d. items() if kin keys}
+
+Filter the dict *d* to remove keys not in *keys* .Filter a dictionary by keys.   
+
+> ROUGE-L: 26.67
+> BERTScore: 87.09 LLM-as-a-Judge: 3.0
+
+Filter a dictionary by keep-ing only the keys that are in a given list.  
+
+> ROUGE-L: 33.33 BERTScore: 86.86
+> LLM-as-a-Judge: 3.5
+
+Case #2: Linear Control Flow (Dominance of Naming Priors)   
+
+> def create_secret_link(self, title, description=None, expires_at=None): self.link = SecretLink.create (title, self.receiver, extra_data= dict (recid= self.recid), description=description, expires_at=expires_at, )
+> return self.link
+
+Create a secret link from re-quest. Creates a secret link.   
+
+> ROUGE-L: 80.00 BERTScore: 88.88
+> LLM-as-a-Judge: 3.5
+
+Creates a secret link for the current user . 
+
+> ROUGE-L: 57.14
+> BERTScore: 90.71 LLM: 3.75
+
+Analysis: These cases illustrate the trade-off between faithfulness and informativeness in sparse contexts. 
+
+Case #1: CGB RIDGE generates a concise summary ("Filter... by keys"), achieving a high BERTScore (87.09) as it captures the general intent. However, it fails to specify the filtering direction ("keeping only" vs "removing"), whereas the Baseline (ROUGE 33.33) explicitly captures this whitelist logic, albeit with more verbose phrasing. 
+
+Case #2: CGB RIDGE relies heavily on the function name, producing a faithful but generic summary ("Creates a secret link"). This results in a very high ROUGE (80.00) due to exact token overlap with the reference. In contrast, the Baseline infers implicit context ("for the current user") from the self.receiver argument. Although this lowers its ROUGE score (57.14), the LLM-Judge prefers this informative detail (3.75 vs 3.5), highlighting that graph priors (which drive CGB RIDGE ) offer limited gain in simple linear code compared to semantic inference. 8966
